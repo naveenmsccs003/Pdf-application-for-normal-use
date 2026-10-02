@@ -28,6 +28,8 @@ Open http://localhost:5000.
   - **Clear Highlights** removes all highlights; **Esc** leaves highlight mode
   - Highlights are kept in memory in PDF coordinates, so they stay in place at any zoom/fit/window size.
     The original PDF is never modified.
+- Light and dark mode: follows the system setting; the sun/moon button in the header switches it and the
+  choice is remembered in the browser. The PDF page itself always stays white.
 
 ## API
 
@@ -57,6 +59,7 @@ frontend/
   app/controllers/pdfViewerController.js   toolbar/status state and commands
   app/services/pdfService.js      validate, upload, load and render pages (pdf.js)
   app/services/highlightService.js  in-memory highlight store
+  app/services/themeService.js    light / dark theme
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
   app/directives/fileInputDirective.js  file input change binding
   app/views/pdf-viewer.html       layout: toolbar, viewer, status bar
@@ -85,5 +88,5 @@ Covered: invalid / empty / oversized / corrupt / truncated / password-protected 
 a 45 MB PDF, landscape, rotated and mixed page sizes, image-based and form PDFs, a real-world PDF
 (pdf.js test corpus, downloaded by `npm run fixtures`), navigation, zoom limits, Fit Page / Fit Width,
 highlight create / select / remove / clear and their positions after zoom, fit, page change and window resize,
-render failure recovery, tablet viewport with touch highlighting, and no console errors.
+render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.

@@ -3,8 +3,8 @@
 
     /** Toolbar and status bar state: open, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
-        '$scope', '$document', 'pdfService', 'highlightService', 'VIEWER_CONFIG',
-        function ($scope, $document, pdfService, highlightService, VIEWER_CONFIG) {
+        '$scope', '$document', 'pdfService', 'highlightService', 'themeService', 'VIEWER_CONFIG',
+        function ($scope, $document, pdfService, highlightService, themeService, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -226,6 +226,10 @@
                 vm.error = '';
                 vm.status = vm.hasDocument() ? pageStatus() : 'Open a PDF to get started.';
             };
+
+            // ----- Theme -----
+            vm.isDarkTheme = themeService.isDark;
+            vm.toggleTheme = themeService.toggle;
 
             // ----- Keyboard shortcuts -----
             function onKeyDown(event) {

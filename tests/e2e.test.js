@@ -336,6 +336,37 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         await shot('07-real-world');
     } else skip('real-world PDF', 'fixture not downloaded');
 
+    // ===== Light / dark theme =====
+    const theme = () => page.evaluate(() => ({
+        attr: document.documentElement.getAttribute('data-theme'),
+        bg: getComputedStyle(document.body).backgroundColor,
+        pageBg: document.querySelector('.pdf-page') ? getComputedStyle(document.querySelector('.pdf-page')).backgroundColor : null,
+        label: document.querySelector('.theme-toggle').getAttribute('aria-label')
+    }));
+    const LIGHT_BG = 'rgb(238, 240, 243)', DARK_BG = 'rgb(22, 24, 29)';
+    let systemThemeSupported = true;
+    try { await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }]); } catch { systemThemeSupported = false; }
+    await page.evaluate(() => localStorage.removeItem('pdfViewer.theme'));
+    await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.toolbar'); await sleep(300);
+    let th = await theme();
+    if (systemThemeSupported) {
+        check('theme follows system dark setting', th.attr === null && th.bg === DARK_BG && th.label === 'Switch to light mode', th);
+    } else skip('theme follows system dark setting', 'media emulation unsupported in ' + BROWSER);
+    await page.click('.theme-toggle'); await sleep(250); th = await theme();
+    const firstChoice = th.attr;
+    check('toggle switches theme', (firstChoice === 'light' && th.bg === LIGHT_BG) || (firstChoice === 'dark' && th.bg === DARK_BG), th);
+    await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.toolbar'); await sleep(300); th = await theme();
+    check('theme choice remembered after reload', th.attr === firstChoice, th);
+    if (firstChoice === 'light') { await page.click('.theme-toggle'); await sleep(250); }
+    await open('ten-pages.pdf'); th = await theme();
+    check('dark mode: UI dark, PDF page stays white', th.attr === 'dark' && th.bg === DARK_BG && th.pageBg === 'rgb(255, 255, 255)', th);
+    await click('Highlight'); await drag(40, 100, 300, 130); await click('Highlight');
+    await shot('09-dark');
+    await page.click('.theme-toggle'); await sleep(250); th = await theme();
+    check('toggle back to light', th.attr === 'light' && th.bg === LIGHT_BG, th);
+    await page.evaluate(() => localStorage.removeItem('pdfViewer.theme'));
+    if (systemThemeSupported) await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }]);
+
     // ===== Tablet viewport =====
     await page.setViewport({ width: 768, height: 1024, isMobile: BROWSER === 'chrome', hasTouch: BROWSER === 'chrome' });
     await sleep(800);

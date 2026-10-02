@@ -1,17 +1,74 @@
 :root {
     --bg: #eef0f3;
     --surface: #ffffff;
+    --surface-hover: #f4f6f8;
     --border: #d5d9e0;
     --text: #1f2933;
     --muted: #616e7c;
     --primary: #1a5fb4;
     --primary-hover: #154c91;
+    --on-primary: #ffffff;
     --active-bg: #e3edfa;
     --error-bg: #fdecea;
+    --error-border: #f5c2bb;
     --error-text: #a52714;
+    --hl-button-bg: #fff6bf;
+    --hl-button-border: #c9a700;
+    --hl-button-text: #6b5800;
+    --overlay: rgba(238, 240, 243, 0.6);
+    --page-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
     --highlight: rgba(255, 221, 0, 0.42);
     --highlight-selected: #e07b00;
     --radius: 6px;
+    color-scheme: light;
+}
+
+/* Dark theme: follows the system setting unless the user picked a theme (data-theme on <html>).
+   The PDF page itself stays white, like paper, so documents look as intended. */
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --bg: #16181d;
+        --surface: #22252b;
+        --surface-hover: #2c3038;
+        --border: #3a3f48;
+        --text: #e4e7eb;
+        --muted: #9aa5b1;
+        --primary: #4c8ee6;
+        --primary-hover: #6aa1ec;
+        --on-primary: #0d1117;
+        --active-bg: #1d3352;
+        --error-bg: #3b1d1a;
+        --error-border: #6b2c24;
+        --error-text: #ff9b8c;
+        --hl-button-bg: #4a4010;
+        --hl-button-border: #c9a700;
+        --hl-button-text: #ffe066;
+        --overlay: rgba(22, 24, 29, 0.6);
+        --page-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
+        color-scheme: dark;
+    }
+}
+
+:root[data-theme="dark"] {
+    --bg: #16181d;
+    --surface: #22252b;
+    --surface-hover: #2c3038;
+    --border: #3a3f48;
+    --text: #e4e7eb;
+    --muted: #9aa5b1;
+    --primary: #4c8ee6;
+    --primary-hover: #6aa1ec;
+    --on-primary: #0d1117;
+    --active-bg: #1d3352;
+    --error-bg: #3b1d1a;
+    --error-border: #6b2c24;
+    --error-text: #ff9b8c;
+    --hl-button-bg: #4a4010;
+    --hl-button-border: #c9a700;
+    --hl-button-text: #ffe066;
+    --overlay: rgba(22, 24, 29, 0.6);
+    --page-shadow: 0 1px 3px rgba(0, 0, 0, 0.6), 0 4px 16px rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -59,6 +116,8 @@ html, body {
 }
 
 .file-name {
+    flex: 1;
+    min-width: 0;
     color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -92,23 +151,24 @@ html, body {
     background: var(--surface);
     color: var(--text);
     font: inherit;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
 }
 
-.btn:hover:not(:disabled):not(.is-disabled) { background: #f4f6f8; }
+.btn:hover:not(:disabled):not(.is-disabled) { background: var(--surface-hover); }
 .btn:focus-visible, .page-input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .btn:disabled, .btn.is-disabled { opacity: 0.45; cursor: default; }
 .btn.is-active { background: var(--active-bg); border-color: var(--primary); color: var(--primary); }
 
-.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 .btn-primary:hover:not(.is-disabled) { background: var(--primary-hover) !important; }
 .btn-primary:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 .btn-icon { width: 34px; padding: 0; font-size: 18px; }
 .zoom-value { min-width: 64px; font-variant-numeric: tabular-nums; }
-.btn-highlight.is-active { background: #fff6bf; border-color: #c9a700; color: #6b5800; }
+.btn-highlight.is-active { background: var(--hl-button-bg); border-color: var(--hl-button-border); color: var(--hl-button-text); }
 
 .page-form { display: flex; align-items: center; gap: 4px; margin: 0; }
 
@@ -127,6 +187,15 @@ html, body {
 
 .page-total { color: var(--muted); min-width: 36px; font-variant-numeric: tabular-nums; }
 
+.theme-toggle {
+    margin-left: auto;
+    align-self: center;
+    width: 34px;
+    padding: 0;
+}
+
+.theme-toggle svg { width: 18px; height: 18px; }
+
 /* ----- Error message ----- */
 .alert {
     display: flex;
@@ -136,7 +205,7 @@ html, body {
     padding: 8px 16px;
     background: var(--error-bg);
     color: var(--error-text);
-    border-bottom: 1px solid #f5c2bb;
+    border-bottom: 1px solid var(--error-border);
 }
 
 .alert-close {
@@ -188,7 +257,7 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     position: relative;
     margin: 0 auto;
     background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--page-shadow);
 }
 
 .canvas-layer, .interaction-layer, .highlight-layer {
@@ -258,7 +327,7 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(238, 240, 243, 0.6);
+    background: var(--overlay);
 }
 
 .spinner {
