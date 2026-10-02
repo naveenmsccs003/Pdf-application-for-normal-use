@@ -69,6 +69,13 @@ public class PdfService
             : null;
     }
 
+    /// <summary>Path of a stored upload, or null if it does not exist (e.g. expired).</summary>
+    public string? GetStoredPath(Guid id)
+    {
+        var path = GetPath(id);
+        return File.Exists(path) ? path : null;
+    }
+
     // The id is a Guid, so the resulting path can never escape the storage folder.
     private string GetPath(Guid id) => Path.Combine(_storageDir, id.ToString("N") + ".pdf");
 

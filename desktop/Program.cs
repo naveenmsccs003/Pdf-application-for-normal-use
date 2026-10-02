@@ -20,8 +20,10 @@ public static class Program
 
         if (testPort is not null)
         {
-            app.MapPost("/api/test/open", async (TestOpenRequest request, DesktopBridge bridge) =>
-                Results.Ok(await bridge.OpenForTestAsync(request.Path)));
+            // Sends one UI message to the host; dialog answers come from the request.
+            app.MapPost("/api/test/message", async (TestMessage request, DesktopBridge bridge) =>
+                Results.Ok(await bridge.HandleForTestAsync(request.Message,
+                    new PresetFileDialogs(request.Files, request.Save, request.Folder))));
             app.Run();
             return;
         }
@@ -67,6 +69,7 @@ public static class Program
 
         builder.Services.AddSingleton<PdfiumService>();
         builder.Services.AddSingleton<DesktopBridge>();
+        builder.Services.AddSingleton<DesktopTools>();
         builder.Services.AddControllers();
 
         var app = builder.Build();
@@ -90,5 +93,5 @@ public static class Program
         return app;
     }
 
-    private record TestOpenRequest(string Path);
+    private record TestMessage(string Message, string[]? Files, string? Save, string? Folder);
 }

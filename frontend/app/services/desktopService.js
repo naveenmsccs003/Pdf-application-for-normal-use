@@ -29,9 +29,10 @@
             isDesktop: isDesktop,
             /** Registers the handler for a host message type (one per type). */
             on: function (type, handler) { handlers[type] = handler; },
-            send: function (type) {
+            /** Sends { type, ...data } to the host. */
+            send: function (type, data) {
                 if (isDesktop) {
-                    external.sendMessage(JSON.stringify({ type: type }));
+                    external.sendMessage(JSON.stringify(angular.extend({ type: type }, data)));
                 }
             }
         };

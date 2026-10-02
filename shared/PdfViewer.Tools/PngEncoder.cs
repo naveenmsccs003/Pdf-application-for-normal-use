@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
 
-namespace PdfViewer.Desktop.Services;
+namespace PdfViewer.Tools;
 
 /// <summary>Minimal PNG writer for RGBA pixel data (written as RGB; rendered pages are opaque).</summary>
 public static class PngEncoder

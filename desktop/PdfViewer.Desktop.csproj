@@ -22,4 +22,8 @@
     <PackageReference Include="Photino.NET" Version="4.0.16" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\shared\PdfViewer.Tools\PdfViewer.Tools.csproj" />
+  </ItemGroup>
+
 </Project>

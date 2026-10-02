@@ -23,6 +23,8 @@
             vm.error = '';
             vm.status = 'Open a PDF to get started.';
             vm.viewer = null;           // API exposed by the pdf-viewer directive
+            vm.source = null;           // where the open document lives, for the PDF tools:
+                                        // { kind: 'web', id } (upload id) or { kind: 'desktop' }
             vm.isDesktop = desktopService.isDesktop;
 
             // Side panels start open on wide screens; on narrow screens they slide over the page when
@@ -65,6 +67,7 @@
                 pdfService.upload(file).then(function (uploaded) {
                     vm.status = 'Opening ' + uploaded.fileName + '…';
                     return pdfService.load(VIEWER_CONFIG.apiBase + '/' + uploaded.id).then(function (pageCount) {
+                        vm.source = { kind: 'web', id: uploaded.id };
                         return showDocument(uploaded.fileName, pageCount);
                     });
                 }).catch(openFailed).finally(function () {
@@ -81,6 +84,7 @@
                 });
                 desktopService.on('opened', function (message) {
                     pdfService.loadLocal(message).then(function (pageCount) {
+                        vm.source = { kind: 'desktop' };
                         return showDocument(message.fileName, pageCount);
                     }).catch(openFailed).finally(function () {
                         vm.busy = false;
@@ -108,9 +112,11 @@
                     return;
                 }
                 pdfService.close();
+                desktopService.send('close');
                 highlightService.clear();
                 vm.selectedHighlightId = null;
                 vm.highlightMode = false;
+                vm.source = null;
                 vm.fileName = '';
                 vm.pageCount = 0;
                 vm.currentPage = 0;

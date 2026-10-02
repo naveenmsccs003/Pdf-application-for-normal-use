@@ -16,6 +16,7 @@ const FIXTURES = path.join(__dirname, 'fixtures');
 const APP_URL = process.env.APP_URL || 'http://localhost:5000/';
 const BROWSER = (process.argv[2] || process.env.BROWSER || 'chrome').toLowerCase();
 const SCREENSHOTS = path.join(__dirname, 'screenshots');
+const DOWNLOADS = path.join(__dirname, 'downloads');
 
 const CANDIDATE_PATHS = {
     chrome: ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser',
@@ -45,6 +46,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         process.exit(2);
     }
     fs.mkdirSync(SCREENSHOTS, { recursive: true });
+    fs.rmSync(DOWNLOADS, { recursive: true, force: true });
+    fs.mkdirSync(DOWNLOADS, { recursive: true });
 
     console.log(`Browser: ${BROWSER} (${executablePath})\nApp:     ${APP_URL}\n`);
     const browser = await puppeteer.launch({
@@ -53,6 +56,26 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     });
     const page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
+    // Chrome: save downloads to a folder so the tool results can be checked.
+    // Firefox: headless downloads can freeze the tab after a few files, so download links are only
+    // recorded there (the tool's result message is still checked).
+    let canCheckDownloads = false;
+    if (BROWSER === 'chrome') {
+        const cdp = await page.createCDPSession();
+        await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DOWNLOADS });
+        canCheckDownloads = true;
+    } else {
+        await page.evaluateOnNewDocument(() => {
+            const click = HTMLAnchorElement.prototype.click;
+            HTMLAnchorElement.prototype.click = function () {
+                if (this.hasAttribute('download')) {
+                    window.__downloads = (window.__downloads || []).concat(this.download);
+                    return;
+                }
+                return click.call(this);
+            };
+        });
+    }
 
     const consoleErrors = [];
     page.on('console', m => { if (m.type() === 'error' || m.type() === 'warn' || m.type() === 'warning') consoleErrors.push(m.text()); });
@@ -149,6 +172,9 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     s = await state();
     check('initial empty state', s.empty && s.pageStatus === 'Page: – / –', s.pageStatus);
     check('all buttons disabled without a document', Object.values(s.disabled).every(Boolean) && s.zoomInDisabled && s.zoomOutDisabled, s.disabled);
+    const toolsDisabled = await page.evaluate(() => ['Split', 'Compress', 'Convert'].map(t => document.querySelector(`button[aria-label="${t}"]`).disabled));
+    check('Split/Compress/Convert need a document; Merge does not', toolsDisabled.every(Boolean) &&
+        !(await page.$eval('button[aria-label="Merge"]', b => b.disabled)), toolsDisabled);
     await shot('01-empty');
 
     // ===== Invalid files (before any document is open) =====
@@ -373,6 +399,99 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         await click('Highlight');
         await shot('07-real-world');
     } else skip('real-world PDF', 'fixture not downloaded');
+
+    // ===== PDF tools (merge, split, compress, convert) =====
+    const dialogState = () => page.evaluate(() => ({
+        open: !!document.querySelector('.dialog'),
+        items: [...document.querySelectorAll('.merge-list .merge-name')].map(e => e.textContent.trim()),
+        error: (document.querySelector('.dialog-message.is-error') || {}).textContent || '',
+        result: (document.querySelector('.dialog-message.is-success') || {}).textContent || '',
+        runDisabled: document.querySelector('.dialog-footer .tool-primary') ? document.querySelector('.dialog-footer .tool-primary').disabled : null
+    }));
+    const runTool = async () => {
+        await page.click('.dialog-footer .tool-primary');
+        try {
+            await page.waitForFunction(() => document.querySelector('.dialog-message'), { timeout: 120000 });
+        } catch (e) {
+            const why = await page.evaluate(() => ({
+                dialog: !!document.querySelector('.dialog'),
+                working: !!document.querySelector('.dialog-working'),
+                runDisabled: document.querySelector('.dialog-footer .tool-primary')?.disabled
+            }));
+            console.log('     tool did not finish:', JSON.stringify(why));
+        }
+        await sleep(300);
+        return dialogState();
+    };
+    const waitForDownload = async (name, timeout = 30000) => {
+        const file = path.join(DOWNLOADS, name);
+        for (let t = 0; t < timeout; t += 250) {
+            if (fs.existsSync(file) && !fs.existsSync(file + '.crdownload') && fs.statSync(file).size > 0) return fs.readFileSync(file);
+            await sleep(250);
+        }
+        return null;
+    };
+    const zipEntries = buf => buf.toString('latin1').split('PK\x01\x02').length - 1;   // central directory records
+    const closeDialog = async () => { await page.keyboard.press('Escape'); await sleep(200); };
+
+    await open('ten-pages.pdf');
+    await click('Merge'); let d = await dialogState();
+    check('merge dialog lists the open document first', d.open && d.items.length === 1 && /ten-pages\.pdf/.test(d.items[0]) && d.runDisabled, d);
+    await (await page.$('.dialog input[type=file]')).uploadFile(path.join(FIXTURES, 'one-page.pdf'), path.join(FIXTURES, 'landscape.pdf'));
+    await sleep(300);
+    await page.click('button[aria-label="Move landscape.pdf up"]'); await sleep(100); d = await dialogState();
+    check('merge list: add files and reorder', d.items.length === 3 && d.items[1] === 'landscape.pdf' && !d.runDisabled, d.items);
+    await (await page.$('.dialog input[type=file]')).uploadFile(path.join(FIXTURES, 'notes.txt')); await sleep(200); d = await dialogState();
+    check('merge list rejects non-PDF files', d.items.length === 3 && /Please select a PDF file/.test(d.error), d);
+    d = await runTool();
+    check('merge result', /Merged 3 files \(14 pages\)/.test(d.result), d);
+    if (canCheckDownloads) {
+        const merged = await waitForDownload('merged.pdf');
+        check('merged.pdf downloaded', merged && merged.subarray(0, 5).toString() === '%PDF-', merged && merged.length);
+    }
+    await closeDialog();
+    check('Esc closes the dialog', !(await dialogState()).open);
+
+    await click('Split'); await page.click('input[value=ranges]'); await page.type('.inline-text', '3-99');
+    d = await runTool(); check('split: invalid range reported', /outside pages 1 to 10/.test(d.error), d.error);
+    await page.click('input[value=chunks]'); await page.$eval('.inline-number', e => { e.value = ''; });
+    await page.type('.inline-number', '3'); await page.$eval('.inline-number', e => e.dispatchEvent(new Event('input')));
+    d = await runTool(); check('split into chunks of 3', /Created 4 PDF files/.test(d.result), d);
+    if (canCheckDownloads) {
+        const zip = await waitForDownload('ten-pages-split.zip');
+        check('split ZIP contains 4 PDFs', zip && zipEntries(zip) === 4, zip && zipEntries(zip));
+    }
+    await closeDialog();
+
+    await page.keyboard.press('Escape');
+    await click('Convert'); await page.click('input[value=docx]'); d = await runTool();
+    check('convert to Word', /ten-pages\.docx \(text only\)/.test(d.result), d);
+    if (canCheckDownloads) {
+        const docx = await waitForDownload('ten-pages.docx');
+        check('Word file downloaded with text', docx && docx.subarray(0, 2).toString() === 'PK', docx && docx.length);
+    }
+    await page.click('input[value=xlsx]'); d = await runTool();
+    check('convert to Excel', /ten-pages\.xlsx \(text only\)/.test(d.result), d);
+    await page.click('input[value=png]'); await page.select('.choice-indent select', 'number:72'); d = await runTool();
+    check('convert to PNG images', /ten-pages-png\.zip/.test(d.result), d);
+    if (canCheckDownloads) {
+        const pngZip = await waitForDownload('ten-pages-png.zip');
+        check('PNG ZIP has one image per page', pngZip && zipEntries(pngZip) === 10, pngZip && zipEntries(pngZip));
+    }
+    await closeDialog();
+
+    await open('image-based.pdf');
+    await click('Compress'); await page.click('input[value=small]'); d = await runTool();
+    check('compress image-based PDF', /% smaller|already compact|Ghostscript, which is not installed/.test(d.result + d.error), d);
+    await closeDialog();
+
+    await open('ten-pages.pdf');
+    await click('Merge'); d = await dialogState();
+    check('merge needs at least two files', d.runDisabled === true);
+    const pageBefore = (await state()).pageStatus;
+    await page.keyboard.press('ArrowRight'); await sleep(300);
+    check('viewer shortcuts are blocked while a dialog is open', (await state()).pageStatus === pageBefore);
+    await closeDialog();
 
     // ===== Side panels =====
     await click('Thumbnails panel'); await click('Markups panel'); s = await state();

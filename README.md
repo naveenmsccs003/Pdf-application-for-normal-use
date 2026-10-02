@@ -72,6 +72,31 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Status bar**: first / previous / page number / next / last, status text, zoom out / % / zoom in
 - On narrow windows and tablets the panels close and slide over the page when opened
 
+## PDF tools
+
+In the **Tools** group of the toolbar (web and desktop):
+
+| Tool | What it does | Output (web) | Output (desktop) |
+| --- | --- | --- | --- |
+| **Merge** | Combines up to 20 PDFs in the order you choose (the open document is listed first) | `merged.pdf` download | file you choose |
+| **Split** | One file per page, every N pages, or page ranges like `1-3, 5, 8-10` | ZIP download | new subfolder in a folder you choose |
+| **Compress** | Ghostscript with three levels: smallest (72 dpi), balanced (150 dpi), high quality (300 dpi). Never returns a bigger file | PDF download | file you choose |
+| **Convert** | Word (.docx) or Excel (.xlsx) **text only**, or PNG images (72/150/300 dpi) | download (PNG as ZIP) | file / subfolder you choose |
+
+Notes:
+
+- **Compress needs [Ghostscript](https://ghostscript.com/releases/)** installed on the computer that runs the
+  backend or desktop app (`sudo apt install ghostscript`; on Windows the default install location is found
+  automatically, or set `PDFVIEWER_GHOSTSCRIPT` to `gswin64c.exe`). Ghostscript is AGPL-licensed: fine for
+  personal and internal use; check the licence before selling or distributing the app.
+  Scanned and image-heavy PDFs shrink most; text-only PDFs shrink little.
+- **Word/Excel conversion is text only.** Word gets one paragraph per line and a page break per page;
+  Excel gets one sheet per page (one sheet with a Page column above 200 pages), and text separated by
+  tabs or wide gaps goes into separate columns. Layout, images and table formatting are not kept, and
+  scanned pages contain no text. Layout-preserving conversion would need a commercial library.
+- Merge, split and PNG export use PDFium (BSD licence); Word/Excel files are written with the
+  Open XML SDK (MIT licence).
+
 ## Features
 
 - Open a PDF (validated in the browser and on the server: `.pdf` only, non-empty, max 50 MB, real `%PDF-` header)
@@ -92,6 +117,10 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 | --- | --- | --- |
 | POST | `/api/pdf/upload` | Upload a PDF (multipart field `file`). Returns `{ id, fileName, size }` |
 | GET | `/api/pdf/{id}` | Download an uploaded PDF (supports range requests) |
+| POST | `/api/tools/merge` | `items` (`id:{guid}` or `file:{n}`, in order) + `files` |
+| POST | `/api/tools/split` | `id` or `file`, `mode` (`pages`/`chunks`/`ranges`), `pagesPerFile`, `ranges` |
+| POST | `/api/tools/compress` | `id` or `file`, `level` (`small`/`medium`/`high`) |
+| POST | `/api/tools/convert` | `id` or `file`, `format` (`docx`/`xlsx`/`png`), `dpi` |
 
 Uploads are stored under random GUID names in the system temp folder (`pdf-viewer-uploads`) and
 deleted automatically after `PdfStorage:RetentionMinutes` (default 60); a background task checks
@@ -105,6 +134,7 @@ backend/
   Controllers/PdfController.cs    upload + download endpoints
   Services/PdfService.cs          validation, filename sanitising, temp storage, cleanup
   Services/PdfCleanupService.cs   periodic deletion of expired uploads
+  Controllers/ToolsController.cs  merge / split / compress / convert endpoints
   Models/PdfFileModel.cs          response model, options, validation exception
   Program.cs                      serves ../frontend, security headers, size limits, error handling
   appsettings.json
@@ -116,15 +146,26 @@ frontend/
   app/services/highlightService.js  in-memory highlight store
   app/services/themeService.js    light / dark theme
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
+  app/services/toolsService.js    tools: web downloads or desktop host messages
+  app/controllers/toolsController.js  tools dialog
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker
+shared/PdfViewer.Tools/          PDF tools used by both apps
+  PdfTools.cs                     merge, split, PNG export, text extraction (PDFium)
+  OfficeExport.cs                 text-only Word and Excel files (Open XML SDK)
+  Ghostscript.cs                  compression via Ghostscript
+  PageRanges.cs                   "1-3, 5" parsing, chunks
+  Pdfium.cs                       shared PDFium lock, open and save helpers
+  PngEncoder.cs                   small PNG writer
 desktop/
   Program.cs                      starts the local server (127.0.0.1, random port) and the native window
-  DesktopBridge.cs                messages between UI and host: native open dialog, open results
+  DesktopBridge.cs                messages between UI and host: open, close, tools
+  DesktopTools.cs                 tools on disk with native save / folder dialogs
+  FileDialogs.cs                  native dialogs (and preset answers for tests)
   LinuxEnvironment.cs             fixes snap environment leaks (e.g. VS Code snap terminal) for WebKit
   Controllers/LocalPdfController.cs  page sizes and rendered page images for the opened file
   Services/PdfiumService.cs       open with PDFium, render pages

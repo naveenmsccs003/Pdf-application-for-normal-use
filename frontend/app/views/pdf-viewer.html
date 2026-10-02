@@ -17,6 +17,13 @@
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1"/><rect x="13" y="3" width="8" height="10" rx="1"/><path d="M7 13v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-3M12 18v3"/></symbol>
+    <symbol id="i-split" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="8" rx="1"/><path d="M12 10v3M12 13l-6 3M12 13l6 3"/><rect x="2" y="16" width="8" height="6" rx="1"/><rect x="14" y="16" width="8" height="6" rx="1"/></symbol>
+    <symbol id="i-compress" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/><path d="M12 9v4M10 11l2 2 2-2M10 17h4"/></symbol>
+    <symbol id="i-convert" viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
 </svg>
 
@@ -72,6 +79,24 @@
                 ng-class="{'is-active': vm.fitMode === 'width'}" aria-pressed="{{ vm.fitMode === 'width' }}"
                 aria-label="Fit Width" title="Fit width">
             <svg class="icon"><use href="#i-fit-width"></use></svg>
+        </button>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="PDF tools">
+        <button type="button" class="tool tool-labelled" ng-click="tools.open('merge')" ng-disabled="vm.busy" aria-label="Merge" title="Combine several PDFs into one">
+            <svg class="icon"><use href="#i-merge"></use></svg><span>Merge</span>
+        </button>
+        <button type="button" class="tool tool-labelled" ng-click="tools.open('split')" ng-disabled="!vm.hasDocument() || vm.busy"
+                aria-label="Split" title="Split this PDF into several files">
+            <svg class="icon"><use href="#i-split"></use></svg><span>Split</span>
+        </button>
+        <button type="button" class="tool tool-labelled" ng-click="tools.open('compress')" ng-disabled="!vm.hasDocument() || vm.busy"
+                aria-label="Compress" title="Make this PDF smaller">
+            <svg class="icon"><use href="#i-compress"></use></svg><span>Compress</span>
+        </button>
+        <button type="button" class="tool tool-labelled" ng-click="tools.open('convert')" ng-disabled="!vm.hasDocument() || vm.busy"
+                aria-label="Convert" title="Convert this PDF to Word, Excel or images">
+            <svg class="icon"><use href="#i-convert"></use></svg><span>Convert</span>
         </button>
     </div>
 
@@ -232,3 +257,93 @@
         </button>
     </div>
 </footer>
+
+<!-- PDF tools dialog -->
+<div class="dialog-backdrop" ng-if="tools.active" ng-click="tools.close()">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="dialog-title">{{ tools.titles[tools.active] }}</h2>
+            <button type="button" class="panel-close" ng-click="tools.close()" ng-disabled="tools.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+
+        <form class="dialog-body" novalidate ng-submit="tools.run()" id="tool-form">
+            <!-- Merge -->
+            <div ng-if="tools.active === 'merge'">
+                <p class="dialog-intro">Files are combined in this order. Use the arrows to reorder.</p>
+                <ol class="merge-list" ng-if="tools.mergeItems.length">
+                    <li ng-repeat="item in tools.mergeItems track by $index">
+                        <svg class="icon icon-sm"><use href="#i-file"></use></svg>
+                        <span class="merge-name" title="{{ item.name }}">{{ item.name }}<em ng-if="item.current"> (open document)</em></span>
+                        <span class="merge-size">{{ tools.formatSize(item.size) }}</span>
+                        <button type="button" class="tool tool-sm" ng-click="tools.move($index, -1)" ng-disabled="$first || tools.busy" aria-label="Move {{ item.name }} up">
+                            <svg class="icon icon-sm"><use href="#i-up"></use></svg></button>
+                        <button type="button" class="tool tool-sm" ng-click="tools.move($index, 1)" ng-disabled="$last || tools.busy" aria-label="Move {{ item.name }} down">
+                            <svg class="icon icon-sm"><use href="#i-down"></use></svg></button>
+                        <button type="button" class="tool tool-sm" ng-click="tools.remove($index)" ng-disabled="tools.busy" aria-label="Remove {{ item.name }} from list">
+                            <svg class="icon icon-sm"><use href="#i-close"></use></svg></button>
+                    </li>
+                </ol>
+                <p class="dialog-note" ng-if="!tools.mergeItems.length">No files yet.</p>
+                <label class="tool tool-labelled tool-outline" ng-if="!tools.isDesktop" ng-class="{'is-disabled': tools.busy}">
+                    <input type="file" accept="application/pdf,.pdf" multiple class="visually-hidden"
+                           on-file-selected="tools.addWebFiles(files)" ng-disabled="tools.busy">
+                    <svg class="icon"><use href="#i-plus"></use></svg><span>Add PDF files</span>
+                </label>
+                <button type="button" class="tool tool-labelled tool-outline" ng-if="tools.isDesktop" ng-click="tools.addDesktopFiles()" ng-disabled="tools.busy">
+                    <svg class="icon"><use href="#i-plus"></use></svg><span>Add PDF files</span>
+                </button>
+            </div>
+
+            <!-- Split -->
+            <fieldset ng-if="tools.active === 'split'" ng-disabled="tools.busy">
+                <legend>Split <strong>{{ vm.fileName }}</strong> ({{ vm.pageCount }} pages)</legend>
+                <label class="choice"><input type="radio" name="split-mode" value="pages" ng-model="tools.split.mode"> One file per page</label>
+                <label class="choice"><input type="radio" name="split-mode" value="chunks" ng-model="tools.split.mode">
+                    Every <input type="number" class="inline-number" min="1" max="{{ vm.pageCount }}" ng-model="tools.split.pagesPerFile"
+                                 ng-focus="tools.split.mode = 'chunks'" aria-label="Pages per file"> pages</label>
+                <label class="choice"><input type="radio" name="split-mode" value="ranges" ng-model="tools.split.mode">
+                    Page ranges <input type="text" class="inline-text" placeholder="e.g. 1-3, 5, 8-10" ng-model="tools.split.ranges"
+                                       ng-focus="tools.split.mode = 'ranges'" aria-label="Page ranges"></label>
+                <p class="dialog-note">{{ tools.isDesktop ? 'You choose a folder; the files are saved in a new subfolder.' : 'The files are downloaded as a ZIP archive.' }}</p>
+            </fieldset>
+
+            <!-- Compress -->
+            <fieldset ng-if="tools.active === 'compress'" ng-disabled="tools.busy">
+                <legend>Compress <strong>{{ vm.fileName }}</strong></legend>
+                <label class="choice"><input type="radio" name="level" value="small" ng-model="tools.compress.level">
+                    <span><strong>Smallest file</strong><small>Images at screen quality (72 dpi)</small></span></label>
+                <label class="choice"><input type="radio" name="level" value="medium" ng-model="tools.compress.level">
+                    <span><strong>Balanced</strong> (recommended)<small>Good for email and sharing (150 dpi)</small></span></label>
+                <label class="choice"><input type="radio" name="level" value="high" ng-model="tools.compress.level">
+                    <span><strong>High quality</strong><small>Suitable for printing (300 dpi)</small></span></label>
+                <p class="dialog-note">Uses Ghostscript. Text-only PDFs usually shrink little; scanned and image-heavy PDFs shrink most.</p>
+            </fieldset>
+
+            <!-- Convert -->
+            <fieldset ng-if="tools.active === 'convert'" ng-disabled="tools.busy">
+                <legend>Convert <strong>{{ vm.fileName }}</strong> to</legend>
+                <label class="choice"><input type="radio" name="format" value="docx" ng-model="tools.convert.format">
+                    <span><strong>Word</strong> (.docx)<small>Text only: one paragraph per line, a page break per page</small></span></label>
+                <label class="choice"><input type="radio" name="format" value="xlsx" ng-model="tools.convert.format">
+                    <span><strong>Excel</strong> (.xlsx)<small>Text only: one sheet per page, one row per line</small></span></label>
+                <label class="choice"><input type="radio" name="format" value="png" ng-model="tools.convert.format">
+                    <span><strong>Images</strong> (PNG)<small>One image per page</small></span></label>
+                <label class="choice-indent" ng-if="tools.convert.format === 'png'">Resolution
+                    <select ng-model="tools.convert.dpi" ng-options="d as d + ' dpi' for d in [72, 150, 300]"></select></label>
+                <p class="dialog-note" ng-if="tools.convert.format !== 'png'">Layout, images and table formatting are not kept; scanned pages have no text to convert.</p>
+            </fieldset>
+
+            <div class="dialog-message is-error" role="alert" ng-if="tools.error">{{ tools.error }}</div>
+            <div class="dialog-message is-success" role="status" ng-if="tools.result">{{ tools.result }}</div>
+        </form>
+
+        <div class="dialog-footer">
+            <span class="dialog-working" ng-if="tools.busy"><span class="spinner spinner-sm"></span> Working&hellip;</span>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="tools.close()" ng-disabled="tools.busy">{{ tools.result ? 'Close' : 'Cancel' }}</button>
+            <button type="submit" form="tool-form" class="tool tool-labelled tool-primary" ng-disabled="!tools.canRun()">
+                {{ tools.titles[tools.active].split(' ')[0] }}</button>
+        </div>
+    </div>
+</div>

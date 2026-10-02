@@ -1,13 +1,15 @@
 using System.Runtime.InteropServices;
 using PDFiumCore;
 using PdfViewer.Desktop.Models;
+using PdfViewer.Tools;
 
 namespace PdfViewer.Desktop.Services;
 
 /// <summary>
 /// Opens PDFs from disk with PDFium and renders single pages to PNG.
 /// PDFium reads only the parts of the file it needs, so very large files open quickly.
-/// PDFium is not thread-safe: every call goes through one lock.
+/// PDFium is not thread-safe: every call goes through the process-wide <see cref="Pdfium.Lock"/>,
+/// shared with the merge/split/convert tools.
 /// </summary>
 public sealed class PdfiumService : IDisposable
 {
@@ -17,13 +19,24 @@ public sealed class PdfiumService : IDisposable
     private const int RenderAnnotations = 0x01;
     private const int ReverseByteOrder = 0x10;   // gives RGBA instead of BGRA
 
-    private readonly object _gate = new();
+    private readonly object _gate = Pdfium.Lock;
     private FpdfDocumentT? _document;
     private Guid _token;
+    private string? _path;
 
     public PdfiumService()
     {
-        fpdfview.FPDF_InitLibrary();
+        Pdfium.EnsureInitialized();
+    }
+
+    /// <summary>Path and name of the document open in the viewer, or null.</summary>
+    public (string Path, string Name)? Current
+    {
+        get
+        {
+            lock (_gate)
+                return _path is null ? null : (_path, Path.GetFileName(_path));
+        }
     }
 
     /// <summary>
@@ -69,7 +82,7 @@ public sealed class PdfiumService : IDisposable
         {
             var document = fpdfview.FPDF_LoadDocument(path, null);
             if (document == null)
-                throw new LocalPdfException(ErrorMessage(fpdfview.FPDF_GetLastError()));
+                throw new LocalPdfException(Pdfium.ErrorMessage(fpdfview.FPDF_GetLastError()));
 
             var pageCount = fpdfview.FPDF_GetPageCount(document);
             if (pageCount < 1)
@@ -81,6 +94,7 @@ public sealed class PdfiumService : IDisposable
             CloseCurrent();
             _document = document;
             _token = Guid.NewGuid();
+            _path = path;
             return new LocalPdfInfo(_token, Path.GetFileName(path), new FileInfo(path).Length, pageCount);
         }
     }
@@ -154,14 +168,12 @@ public sealed class PdfiumService : IDisposable
         return fpdfview.FPDF_LoadPage(_document, pageNumber - 1);
     }
 
-    private static string ErrorMessage(ulong code) => code switch
+    /// <summary>Closes the document shown in the viewer (tab closed).</summary>
+    public void Close()
     {
-        2 => "The selected file could not be opened.",
-        3 => "The selected file is not a valid PDF.",
-        4 => "This PDF is password-protected and cannot be opened.",
-        5 => "This PDF uses a security handler that is not supported.",
-        _ => "Unable to open this PDF."
-    };
+        lock (_gate)
+            CloseCurrent();
+    }
 
     private void CloseCurrent()
     {
@@ -169,15 +181,13 @@ public sealed class PdfiumService : IDisposable
         {
             fpdfview.FPDF_CloseDocument(_document);
             _document = null;
+            _path = null;
         }
     }
 
     public void Dispose()
     {
         lock (_gate)
-        {
             CloseCurrent();
-            fpdfview.FPDF_DestroyLibrary();
-        }
     }
 }

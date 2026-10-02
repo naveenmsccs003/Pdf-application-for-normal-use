@@ -63,20 +63,21 @@ async function startHost() {
         page.on('console', m => { if (m.type() === 'error' || m.type() === 'warn') consoleErrors.push(m.text()); });
         page.on('pageerror', e => consoleErrors.push('pageerror: ' + e.message));
 
-        // Stand-in for Photino's bridge: "open" opens window.__nextOpenPath through the test endpoint.
+        // Stand-in for Photino's bridge: every message goes to the host's test endpoint, with the
+        // answers for any native dialog taken from window.__dialog = { files, save, folder }.
         await page.evaluateOnNewDocument(() => {
             const listeners = [];
             const bridge = {
                 sendMessage(raw) {
                     const message = JSON.parse(raw);
                     window.__sent = (window.__sent || []).concat(message.type);
-                    if (message.type !== 'open') return;
-                    fetch('/api/test/open', {
+                    fetch('/api/test/message', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: window.__nextOpenPath })
+                        body: JSON.stringify(Object.assign({ message: raw }, window.__dialog || {}))
                     }).then(r => r.json()).then(replies => {
                         replies.forEach(reply => listeners.forEach(l => l(JSON.stringify(reply))));
-                        window.__openReplies = (window.__openReplies || 0) + 1;
+                        if (message.type === 'open') window.__openReplies = (window.__openReplies || 0) + 1;
+                        window.__replyCount = (window.__replyCount || 0) + 1;
                     });
                 },
                 receiveMessage(callback) { listeners.push(callback); }
@@ -124,7 +125,7 @@ async function startHost() {
             await settle();
         };
         const open = async (file, timeout) => {
-            await page.evaluate(p => { window.__nextOpenPath = p; }, path.isAbsolute(file) ? file : fixture(file));
+            await page.evaluate(p => { window.__dialog = { files: [p] }; }, path.isAbsolute(file) ? file : fixture(file));
             const before = await page.evaluate(() => window.__openReplies || 0);
             const t0 = Date.now();
             await click('Open PDF');
@@ -211,6 +212,68 @@ async function startHost() {
             await dismiss();
             check('8 GB document still open after the rejection', s.fileName === 'huge-8gb-classic.pdf', s.fileName);
         } else skip('huge sparse PDFs', 'not generated on this platform');
+
+        // ----- PDF tools (native dialogs answered by the test) -----
+        const os = require('os');
+        const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfviewer-tools-'));
+        const dialogResult = () => page.evaluate(() => ({
+            error: (document.querySelector('.dialog-message.is-error') || {}).textContent || '',
+            result: (document.querySelector('.dialog-message.is-success') || {}).textContent || ''
+        }));
+        // Runs the tool and waits for the host's reply (a cancelled dialog shows no message).
+        const runTool = async dialog => {
+            const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
+            await page.click('.dialog-footer .tool-primary');
+            await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 120000 }, before);
+            await sleep(200);
+            return dialogResult();
+        };
+        const closeDialog = async () => { await page.keyboard.press('Escape'); await sleep(200); };
+        let r;
+
+        await open('ten-pages.pdf');
+        await click('Merge');
+        await page.evaluate(d => { window.__dialog = d; }, { files: [fixture('one-page.pdf'), fixture('landscape.pdf')] });
+        await page.click('.dialog .tool-outline');   // "Add PDF files" -> native multi-select
+        await page.waitForFunction(() => document.querySelectorAll('.merge-list li').length === 3, { timeout: 10000 });
+        const mergedPath = path.join(outDir, 'merged');   // the app adds .pdf
+        r = await runTool({ save: mergedPath });
+        check('desktop merge writes the chosen file', /Merged 3 files \(14 pages\) into merged\.pdf/.test(r.result) &&
+            fs.readFileSync(mergedPath + '.pdf').subarray(0, 5).toString() === '%PDF-', r);
+        r = await runTool({ save: fixture('ten-pages.pdf') });
+        check('desktop merge refuses to overwrite an input file', /cannot replace one of the input files/.test(r.error), r.error);
+        r = await runTool({});
+        check('cancelling the save dialog does nothing', !r.error && !r.result, r);
+        await closeDialog();
+
+        await click('Split'); await page.click('input[value=chunks]');
+        await page.$eval('.inline-number', e => { e.value = ''; }); await page.type('.inline-number', '4');
+        await page.$eval('.inline-number', e => e.dispatchEvent(new Event('input')));
+        r = await runTool({ folder: outDir });
+        const splitDir = path.join(outDir, 'ten-pages-split');
+        check('desktop split writes files into a new subfolder', /Created 3 PDF files/.test(r.result) &&
+            fs.readdirSync(splitDir).sort().join(',') === 'ten-pages-p1-4.pdf,ten-pages-p5-8.pdf,ten-pages-p9-10.pdf', r);
+        r = await runTool({ folder: outDir });
+        check('second split goes to a separate folder', fs.existsSync(path.join(outDir, 'ten-pages-split (2)')), r);
+        await closeDialog();
+
+        await click('Convert'); await page.click('input[value=docx]');
+        r = await runTool({ save: path.join(outDir, 'text.docx') });
+        check('desktop convert to Word', /Saved text\.docx/.test(r.result) && fs.readFileSync(path.join(outDir, 'text.docx')).subarray(0, 2).toString() === 'PK', r);
+        await page.click('input[value=png]'); await page.select('.choice-indent select', 'number:72');
+        r = await runTool({ folder: outDir });
+        check('desktop convert to PNG', /Saved 10 PNG images/.test(r.result) && fs.readdirSync(path.join(outDir, 'ten-pages-images')).length === 10, r);
+        await closeDialog();
+
+        await open('image-based.pdf');
+        await click('Compress');
+        r = await runTool({ save: path.join(outDir, 'small.pdf') });
+        check('desktop compress', /% smaller|already compact|Ghostscript, which is not installed/.test(r.result + r.error) &&
+            (!/smaller/.test(r.result) || fs.statSync(path.join(outDir, 'small.pdf')).size < fs.statSync(fixture('image-based.pdf')).size), r);
+        await closeDialog();
+        const leftovers = fs.readdirSync(outDir).filter(f => f.endsWith('.tmp'));
+        check('no temporary files left behind', leftovers.length === 0, leftovers);
+        fs.rmSync(outDir, { recursive: true, force: true });
 
         // ----- Security: API only serves the opened file -----
         const probe = await page.evaluate(async () => {

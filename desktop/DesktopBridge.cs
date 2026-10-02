@@ -7,39 +7,50 @@ namespace PdfViewer.Desktop;
 
 /// <summary>
 /// Messages between the web UI and the desktop host (Photino web messaging).
-///   UI -> host: { type: "ready" } | { type: "open" }
+///   UI -> host: { type: "ready" } | { type: "open" } | { type: "close" }
+///               | { type: "pick-pdfs" } | { type: "run-tool", tool, inputs, options }
 ///   host -> UI: { type: "opening", fileName } | { type: "opened", token, fileName, size, pageCount }
 ///             | { type: "open-error", message } | { type: "open-cancelled" }
+///             | { type: "picked-pdfs", files } | { type: "tool-done" | "tool-error", message } | { type: "tool-cancelled" }
 /// </summary>
-public class DesktopBridge(PdfiumService pdfium, ILogger<DesktopBridge> logger)
+public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, ILogger<DesktopBridge> logger)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly (string, string[])[] PdfFilter = [("PDF files", ["*.pdf"]), ("All files", ["*"])];
 
     private Action<string>? _send;
     private string? _startupFile;
+
+    // Test mode: replies go to the collector of the request being handled. AsyncLocal keeps
+    // overlapping test requests (e.g. "ready" and "open") from receiving each other's replies.
+    private readonly AsyncLocal<List<JsonElement>?> _testReplies = new();
 
     public void Attach(PhotinoWindow window, string? startupFile)
     {
         _startupFile = startupFile;
         _send = message => window.SendWebMessage(message);
-        window.RegisterWebMessageReceivedHandler((_, message) => OnMessage(window, message));
+        var dialogs = new PhotinoFileDialogs(window);
+        // Runs on the UI thread up to the first await, so dialogs open on the right thread.
+        window.RegisterWebMessageReceivedHandler((_, message) => _ = HandleAsync(dialogs, message));
     }
 
-    /// <summary>Used by tests (no window): opens a path and returns the messages that would be sent.</summary>
-    public async Task<List<object>> OpenForTestAsync(string path)
+    /// <summary>Test mode: handles one message with preset dialog answers and returns the replies.</summary>
+    public async Task<List<JsonElement>> HandleForTestAsync(string message, IFileDialogs dialogs)
     {
-        var messages = new List<object>();
-        _send = json => messages.Add(JsonSerializer.Deserialize<JsonElement>(json));
-        await OpenAsync(path);
-        return messages;
+        var replies = new List<JsonElement>();
+        _testReplies.Value = replies;
+        await HandleAsync(dialogs, message);
+        return replies;
     }
 
-    private void OnMessage(PhotinoWindow window, string message)
+    private async Task HandleAsync(IFileDialogs dialogs, string message)
     {
+        JsonElement root;
         string? type;
         try
         {
-            type = JsonDocument.Parse(message).RootElement.GetProperty("type").GetString();
+            root = JsonDocument.Parse(message).RootElement;
+            type = root.GetProperty("type").GetString();
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
         {
@@ -52,16 +63,27 @@ public class DesktopBridge(PdfiumService pdfium, ILogger<DesktopBridge> logger)
             case "ready" when _startupFile is not null:
                 var file = _startupFile;
                 _startupFile = null;
-                _ = OpenAsync(file);
+                await OpenAsync(file);
                 break;
 
             case "open":
-                // Runs on the UI thread, as native dialogs require.
-                var paths = window.ShowOpenFile("Open PDF", null, false, [("PDF files", ["*.pdf"]), ("All files", ["*"])]);
+                var paths = dialogs.OpenFiles("Open PDF", false, PdfFilter);
                 if (paths is { Length: > 0 } && !string.IsNullOrEmpty(paths[0]))
-                    _ = OpenAsync(paths[0]);
+                    await OpenAsync(paths[0]);
                 else
                     Send(new { type = "open-cancelled" });
+                break;
+
+            case "close":
+                pdfium.Close();
+                break;
+
+            case "pick-pdfs":
+                Send(tools.PickPdfs(dialogs));
+                break;
+
+            case "run-tool":
+                Send(await tools.RunAsync(dialogs, root));
                 break;
         }
     }
@@ -86,5 +108,14 @@ public class DesktopBridge(PdfiumService pdfium, ILogger<DesktopBridge> logger)
         }
     }
 
-    private void Send(object message) => _send?.Invoke(JsonSerializer.Serialize(message, Json));
+    private void Send(object message)
+    {
+        var json = JsonSerializer.Serialize(message, Json);
+        if (_testReplies.Value is { } replies)
+        {
+            lock (replies) replies.Add(JsonSerializer.Deserialize<JsonElement>(json));
+            return;
+        }
+        _send?.Invoke(json);
+    }
 }
