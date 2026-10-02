@@ -271,6 +271,34 @@ async function startHost() {
         check('desktop compress', /% smaller|already compact|Ghostscript, which is not installed/.test(r.result + r.error) &&
             (!/smaller/.test(r.result) || fs.statSync(path.join(outDir, 'small.pdf')).size < fs.statSync(fixture('image-based.pdf')).size), r);
         await closeDialog();
+        // Save highlights into a copy (PDFium writes the annotations; PDFium renders them on reopen)
+        const yellowCount = () => page.evaluate(() => {
+            const canvas = document.querySelector('.canvas-layer canvas');
+            const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+            let yellow = 0;
+            for (let i = 0; i < data.length; i += 4) if (data[i] > 200 && data[i + 1] > 170 && data[i + 2] < 120) yellow++;
+            return yellow;
+        });
+        await open('ten-pages.pdf'); await click('Reset zoom');
+        await click('Highlight'); await drag(60, 120, 360, 160); await click('Highlight');
+        const saveHighlights = async dialog => {
+            const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
+            await page.click('button[aria-label="Save with highlights"]');
+            await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 60000 }, before);
+            await sleep(200);
+            return page.$eval('.status-text', e => e.textContent);
+        };
+        let status = await saveHighlights({ save: fixture('ten-pages.pdf') });
+        check('desktop: saving highlights never overwrites the open PDF', /cannot replace one of the input files/.test(status), status);
+        await dismiss();
+        const highlightedPath = path.join(outDir, 'with-highlights.pdf');
+        status = await saveHighlights({ save: highlightedPath });
+        check('desktop: copy with highlights saved', /with-highlights\.pdf with 1 highlight/.test(status) && fs.existsSync(highlightedPath), status);
+        check('desktop: original PDF unchanged', fs.statSync(fixture('ten-pages.pdf')).size === fs.readFileSync(fixture('ten-pages.pdf')).length &&
+            !fs.readFileSync(fixture('ten-pages.pdf')).includes('/Highlight'));
+        await open(highlightedPath); await click('Reset zoom');
+        check('desktop: reopened copy shows the highlight (PDFium)', (await state()).highlights.length === 0 && await yellowCount() > 5000, await yellowCount());
+
         const leftovers = fs.readdirSync(outDir).filter(f => f.endsWith('.tmp'));
         check('no temporary files left behind', leftovers.length === 0, leftovers);
         fs.rmSync(outDir, { recursive: true, force: true });

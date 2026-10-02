@@ -95,6 +95,24 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                     });
                     return Done($"Saved {Path.GetFileName(output)} (text only).");
                 }
+                case "save-highlights":
+                {
+                    var (path, name) = Single(inputs);
+                    var highlights = options.GetProperty("highlights").EnumerateArray()
+                        .Select(h => new HighlightRect(
+                            h.GetProperty("pageNumber").GetInt32(),
+                            h.GetProperty("x").GetDouble(), h.GetProperty("y").GetDouble(),
+                            h.GetProperty("width").GetDouble(), h.GetProperty("height").GetDouble()))
+                        .ToList();
+                    if (highlights.Count == 0)
+                        throw new ToolException("There are no highlights to save.");
+
+                    // A copy: the open document is never overwritten (enforced in AskSaveFile).
+                    var output = AskSaveFile(dialogs, "Save a copy with highlights", path, ".pdf", inputs, $"{BaseName(name)}-highlighted");
+                    if (output is null) return Cancelled;
+                    var count = await WriteFileAsync(output, stream => PdfTools.SaveWithHighlights(path, highlights, stream));
+                    return Done($"Saved {Path.GetFileName(output)} with {count} highlight{(count == 1 ? "" : "s")}.");
+                }
                 default:
                     throw new ToolException("Unknown tool.");
             }
@@ -102,6 +120,11 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
         catch (ToolException ex)
         {
             return new { type = "tool-error", message = ex.Message };
+        }
+        catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or FormatException)
+        {
+            logger.LogWarning(ex, "Malformed tool request");
+            return new { type = "tool-error", message = "Invalid request." };
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

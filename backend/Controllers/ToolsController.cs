@@ -146,6 +146,22 @@ public class ToolsController(PdfService pdfService, ILogger<ToolsController> log
             }
         });
 
+    /// <summary>Returns a copy of the open document with its highlights as PDF Highlight annotations.</summary>
+    [HttpPost("save-highlights")]
+    public Task<IActionResult> SaveHighlights([FromBody] SaveHighlightsRequest request, CancellationToken ct) =>
+        Run(async () =>
+        {
+            var path = StoredPath(request.Id);
+            var highlights = (request.Highlights ?? [])
+                .Select(h => new HighlightRect(h.PageNumber, h.X, h.Y, h.Width, h.Height))
+                .ToList();
+
+            var output = CreateTempFile();
+            var count = await Task.Run(() => PdfTools.SaveWithHighlights(path, highlights, output), ct);
+            Response.Headers["X-Highlight-Count"] = count.ToString();
+            return Download(output, "application/pdf", $"{BaseName(request.Name)}-highlighted.pdf");
+        });
+
     private async Task<IActionResult> Run(Func<Task<IActionResult>> action)
     {
         try

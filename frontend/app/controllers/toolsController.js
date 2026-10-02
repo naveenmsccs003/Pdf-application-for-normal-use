@@ -118,6 +118,30 @@
                 });
             };
 
+            // ----- Save highlights into a copy of the PDF (no dialog on the web; save dialog on desktop) -----
+            tools.saving = false;
+
+            tools.canSaveHighlights = function () {
+                return vm().hasDocument() && vm().highlights.length > 0 && !vm().busy && !tools.saving;
+            };
+
+            tools.saveHighlights = function () {
+                if (!tools.canSaveHighlights()) { return; }
+                var view = vm();
+                tools.saving = true;
+                view.error = '';
+                view.status = 'Saving a copy with highlights\u2026';
+                toolsService.saveHighlights(view.source, view.fileName, view.highlights).then(function (message) {
+                    view.status = message || 'Not saved.';
+                }, function (message) {
+                    var text = typeof message === 'string' ? message : 'Unable to save the highlights.';
+                    view.error = text;
+                    view.status = text;
+                }).finally(function () {
+                    tools.saving = false;
+                });
+            };
+
             tools.formatSize = function (bytes) {
                 if (!bytes) { return ''; }
                 if (bytes >= 1073741824) { return (bytes / 1073741824).toFixed(1) + ' GB'; }

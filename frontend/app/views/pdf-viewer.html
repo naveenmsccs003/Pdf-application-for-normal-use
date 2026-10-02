@@ -21,6 +21,7 @@
     <symbol id="i-split" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="8" rx="1"/><path d="M12 10v3M12 13l-6 3M12 13l6 3"/><rect x="2" y="16" width="8" height="6" rx="1"/><rect x="14" y="16" width="8" height="6" rx="1"/></symbol>
     <symbol id="i-compress" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/><path d="M12 9v4M10 11l2 2 2-2M10 17h4"/></symbol>
     <symbol id="i-convert" viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -66,6 +67,10 @@
         <button type="button" class="tool" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
                 aria-label="Clear Highlights" title="Clear all highlights">
             <svg class="icon"><use href="#i-clear"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
+                aria-label="Save with highlights" title="Save a copy of the PDF with the highlights (the original is not changed)">
+            <svg class="icon"><use href="#i-save"></use></svg>
         </button>
     </div>
 
@@ -213,6 +218,14 @@
         <p class="panel-empty" ng-if="!vm.highlights.length">
             No markups yet.<br>Use <strong>Highlight</strong> and drag over the page.
         </p>
+        <div class="panel-footer" ng-if="vm.highlights.length">
+            <button type="button" class="tool tool-labelled tool-outline panel-action" ng-click="tools.saveHighlights()"
+                    ng-disabled="!tools.canSaveHighlights()" title="The original PDF is not changed">
+                <span class="spinner spinner-sm" ng-if="tools.saving"></span>
+                <svg class="icon" ng-if="!tools.saving"><use href="#i-save"></use></svg>
+                <span>{{ tools.saving ? 'Saving\u2026' : 'Save copy with highlights' }}</span>
+            </button>
+        </div>
     </aside>
 </div>
 

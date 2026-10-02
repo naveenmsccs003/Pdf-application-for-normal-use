@@ -68,7 +68,8 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
 - **Document tab** with the file name and a close button
-- **Markups panel** (right): every highlight with page and time; click to jump to it, or delete it
+- **Markups panel** (right): every highlight with page and time; click to jump to it, delete it,
+  or save a copy of the PDF with all highlights
 - **Status bar**: first / previous / page number / next / last, status text, zoom out / % / zoom in
 - On narrow windows and tablets the panels close and slide over the page when opened
 
@@ -108,6 +109,12 @@ Notes:
   - **Clear Highlights** removes all highlights; **Esc** leaves highlight mode
   - Highlights are kept in memory in PDF coordinates, so they stay in place at any zoom/fit/window size.
     The original PDF is never modified.
+  - **Save with highlights** (toolbar save icon, or the button under the Markups list) writes a *copy* of the
+    PDF with the highlights as standard PDF Highlight annotations (yellow, printable, with appearance
+    streams), so Adobe Reader, browsers and other PDF tools show them and can edit them.
+    Web: downloads `<name>-highlighted.pdf`. Desktop: asks where to save; it refuses to overwrite the open file.
+    Reopening a saved copy shows the highlights as part of the page (they are not loaded back into the
+    Markups list for editing).
 - Light and dark mode: follows the system setting; the sun/moon button in the header switches it and the
   choice is remembered in the browser. The PDF page itself always stays white.
 

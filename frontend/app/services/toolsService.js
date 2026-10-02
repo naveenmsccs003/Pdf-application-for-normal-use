@@ -54,12 +54,16 @@
                 form.append('name', fileName);
             }
 
-            function post(endpoint, form) {
-                return $http.post('api/tools/' + endpoint, form, {
-                    transformRequest: angular.identity,
-                    headers: { 'Content-Type': undefined },
-                    responseType: 'blob'
-                }).then(function (response) {
+            /** Posts FormData (multipart) or a plain object (JSON) and downloads the response. */
+            function post(endpoint, body) {
+                var config = { responseType: 'blob' };
+                if (body instanceof FormData) {
+                    // Let the browser send multipart with its boundary; JSON uses $http's defaults.
+                    // (Setting these to undefined for JSON would replace the defaults, not keep them.)
+                    config.transformRequest = angular.identity;
+                    config.headers = { 'Content-Type': undefined };
+                }
+                return $http.post('api/tools/' + endpoint, body, config).then(function (response) {
                     var name = downloadName(response.headers('Content-Disposition')) || 'download';
                     saveBlob(response.data, name);
                     return { name: name, headers: response.headers };
@@ -182,8 +186,23 @@
                 });
             }
 
+            /** Saves a copy of the open document with the highlights as PDF annotations. */
+            function saveHighlights(source, fileName, highlights) {
+                var payload = highlights.map(function (h) {
+                    return { pageNumber: h.pageNumber, x: h.x, y: h.y, width: h.width, height: h.height };
+                });
+                if (desktopService.isDesktop) {
+                    return runDesktop('save-highlights', ['current'], { highlights: payload });
+                }
+                return post('save-highlights', { id: source.id, name: fileName, highlights: payload }).then(function (result) {
+                    var count = result.headers('X-Highlight-Count');
+                    return 'Downloaded ' + result.name + ' with ' + count + ' highlight' + (count === '1' ? '' : 's') + '.';
+                });
+            }
+
             return {
                 isDesktop: desktopService.isDesktop,
+                saveHighlights: saveHighlights,
                 validateFile: pdfService.validateFile,
                 pickDesktopFiles: pickDesktopFiles,
                 merge: merge,

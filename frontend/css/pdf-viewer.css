@@ -390,6 +390,9 @@ page-thumbnails { display: block; flex: 1; min-height: 0; }
 .markup-row:hover .markup-delete, .markup-row.is-selected .markup-delete, .markup-delete:focus-visible { opacity: 1; }
 .markup-delete:hover { background: var(--tool-hover); color: var(--error-text); }
 
+.panel-footer { padding: 8px; border-top: 1px solid var(--border); }
+.panel-action { width: 100%; }
+
 /* Document area */
 .document-area { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 

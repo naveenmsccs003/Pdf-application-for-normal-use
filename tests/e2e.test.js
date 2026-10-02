@@ -493,6 +493,43 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('viewer shortcuts are blocked while a dialog is open', (await state()).pageStatus === pageBefore);
     await closeDialog();
 
+    // ===== Save highlights into a copy of the PDF =====
+    // Share of yellow-ish pixels in a page-space rectangle of the rendered canvas.
+    const yellowShare = rect => page.evaluate(r => {
+        const canvas = document.querySelector('.canvas-layer canvas');
+        const k = canvas.width / parseFloat(canvas.style.width);   // device pixels per CSS pixel
+        const data = canvas.getContext('2d').getImageData(Math.round(r.x * k), Math.round(r.y * k), Math.round(r.w * k), Math.round(r.h * k)).data;
+        let yellow = 0;
+        for (let i = 0; i < data.length; i += 4) if (data[i] > 200 && data[i + 1] > 170 && data[i + 2] < 120) yellow++;
+        return yellow / (data.length / 4);
+    }, rect);
+
+    await open('ten-pages.pdf'); await click('Reset zoom');
+    check('Save with highlights disabled without highlights', await page.$eval('button[aria-label="Save with highlights"]', b => b.disabled));
+    await click('Highlight');
+    await drag(60, 120, 360, 160); await drag(60, 300, 260, 330);
+    await click('Highlight');
+    check('canvas has no yellow before saving (overlay only)', await yellowShare({ x: 70, y: 125, w: 280, h: 30 }) < 0.05);
+    await click('Save with highlights');
+    await page.waitForFunction(() => /highlight|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('save highlights reports the copy', /ten-pages-highlighted\.pdf with 2 highlights/.test(s.status), s.status);
+    check('viewer keeps the in-memory highlights after saving', s.highlights.length === 2);
+    if (canCheckDownloads) {
+        const saved = await waitForDownload('ten-pages-highlighted.pdf');
+        check('highlighted copy downloaded', saved && saved.subarray(0, 5).toString() === '%PDF-', saved && saved.length);
+        if (saved) {
+            const input = await page.$('.toolbar input[type=file]');
+            await input.uploadFile(path.join(DOWNLOADS, 'ten-pages-highlighted.pdf')); await sleep(300); await settle();
+            await click('Reset zoom');
+            const inside = await yellowShare({ x: 70, y: 125, w: 280, h: 30 });
+            const outside = await yellowShare({ x: 70, y: 200, w: 280, h: 30 });
+            check(`saved highlights are part of the PDF (pdf.js shows them: ${Math.round(inside * 100)}% yellow inside, ${Math.round(outside * 100)}% outside)`,
+                inside > 0.5 && outside < 0.05);
+        }
+    }
+
     // ===== Side panels =====
     await click('Thumbnails panel'); await click('Markups panel'); s = await state();
     const widePanelsClosed = await page.evaluate(() => getComputedStyle(document.querySelector('.thumbnails-panel')).display === 'none' &&
@@ -554,7 +591,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }
     await shot('08-tablet');
 
-    const unexpected = consoleErrors.filter(e => !/status of (400|413)/.test(e) && !/\b(400|413)\b.*Bad Request|Payload Too Large/i.test(e));
+    // The pixel checks use getImageData, which makes Chrome log a performance hint.
+    const unexpected = consoleErrors.filter(e => !/status of (400|413)/.test(e) && !/\b(400|413)\b.*Bad Request|Payload Too Large/i.test(e) && !/willReadFrequently/.test(e));
     check('no unexpected console errors', unexpected.length === 0, unexpected);
 
     await browser.close();
