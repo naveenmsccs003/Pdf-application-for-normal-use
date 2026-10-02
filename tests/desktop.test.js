@@ -100,10 +100,10 @@ async function startHost() {
             return {
                 empty: !!q('.empty-state'),
                 hint: q('.empty-state .hint') ? q('.empty-state .hint').textContent.trim() : '',
-                openIsButton: !!q('.toolbar button.btn-primary') && !q('.toolbar input[type=file]'),
+                openIsButton: !!q('.toolbar button.tool-primary') && !q('.toolbar input[type=file]'),
                 error: q('.alert') ? q('.alert span').textContent.trim() : '',
                 fileName: q('.file-name') ? q('.file-name').textContent.trim() : '',
-                pageStatus: q('.page-status').textContent.trim(),
+                pageStatus: 'Page: ' + (q('.page-input').value || '–') + ' / ' + q('.page-total').textContent.replace('of', '').trim(),
                 zoom: q('.zoom-value').textContent.trim(),
                 canvasW: canvas ? parseFloat(canvas.style.width) : 0,
                 canvasH: canvas ? parseFloat(canvas.style.height) : 0,
@@ -119,8 +119,8 @@ async function startHost() {
             await sleep(300);
         };
         const click = async label => {
-            await page.evaluate(l => [...document.querySelectorAll('.toolbar button')]
-                .find(b => b.textContent.replace(/[‹›]/g, '').trim() === l || b.getAttribute('aria-label') === l).click(), label);
+            await page.evaluate(l => (document.querySelector(`button[aria-label="${l}"]`) ||
+                [...document.querySelectorAll('button')].find(b => b.textContent.trim() === l)).click(), label);
             await settle();
         };
         const open = async (file, timeout) => {
@@ -161,7 +161,7 @@ async function startHost() {
         await open('ten-pages.pdf'); s = await state();
         check('10-page PDF opens via PDFium', s.pageStatus === 'Page: 1 / 10' && s.fileName === 'ten-pages.pdf' && !s.error, s);
         check('page rendered at 100% with content', s.canvasW === 595 && s.canvasH === 842 && s.inked > 1000, [s.canvasW, s.canvasH, s.inked]);
-        await click('Next'); s = await state(); check('Next -> page 2', s.pageStatus === 'Page: 2 / 10' && s.inked > 1000);
+        await click('Next page'); s = await state(); check('Next -> page 2', s.pageStatus === 'Page: 2 / 10' && s.inked > 1000);
         await click('Zoom in'); s = await state(); check('zoom 125% re-renders', s.zoom === '125%' && near(s.canvasW, 743.75) && s.inked > 1000, [s.zoom, s.canvasW]);
         await click('Fit Page'); s = await state(); check('Fit Page', s.canvasH <= s.availH && s.availH - s.canvasH < 3, [s.canvasH, s.availH]);
         await click('Fit Width'); s = await state(); check('Fit Width', s.canvasW <= s.availW && s.availW - s.canvasW < 3, [s.canvasW, s.availW]);
@@ -171,12 +171,12 @@ async function startHost() {
         check('highlight created', s.highlights.length === 1);
         await click('Zoom out'); s = await state(); const k2 = s.canvasW / 595;
         check('highlight follows zoom (PDFium mode)', s.highlights.length === 1 && near(s.highlights[0].w, hlW * k2), [s.highlights[0], hlW * k2]);
-        await click('Next'); s = await state(); check('highlight stays on its page', s.highlights.length === 0);
-        await click('Prev'); s = await state(); check('highlight restored on its page', s.highlights.length === 1);
+        await click('Next page'); s = await state(); check('highlight stays on its page', s.highlights.length === 0);
+        await click('Previous page'); s = await state(); check('highlight restored on its page', s.highlights.length === 1);
         await click('Highlight');
 
         // ----- Failed open keeps the current document -----
-        await open('corrupt.pdf'); await dismiss(); await click('Next'); s = await state();
+        await open('corrupt.pdf'); await dismiss(); await click('Next page'); s = await state();
         check('previous document still works after failed open', s.pageStatus === 'Page: 3 / 10' && s.inked > 1000 && !s.error, s.pageStatus);
 
         // ----- Orientation and real-world content -----
@@ -184,7 +184,7 @@ async function startHost() {
         check('rotated 90° page is landscape', s.canvasW === 842 && s.canvasH === 595 && s.inked > 1000, [s.canvasW, s.canvasH]);
         await open('mixed-sizes.pdf'); await click('Fit Page');
         let allFit = true;
-        for (let p = 1; p <= 5; p++) { s = await state(); allFit = allFit && s.canvasW <= s.availW + 1 && s.canvasH <= s.availH + 1; if (p < 5) await click('Next'); }
+        for (let p = 1; p <= 5; p++) { s = await state(); allFit = allFit && s.canvasW <= s.availW + 1 && s.canvasH <= s.availH + 1; if (p < 5) await click('Next page'); }
         check('mixed page sizes all fit', allFit);
         if (fs.existsSync(fixture('tracemonkey.pdf'))) {
             await open('tracemonkey.pdf'); await click('Fit Width'); s = await state();
@@ -201,7 +201,7 @@ async function startHost() {
         if (fs.existsSync(fixture('huge-8gb-classic.pdf'))) {
             ms = await open('huge-8gb-classic.pdf', 60000); s = await state();
             check(`8 GB PDF opens (${ms} ms)`, s.pageStatus === 'Page: 1 / 2' && s.inked > 500 && !s.error && ms < 15000, [s.pageStatus, s.error]);
-            const t0 = Date.now(); await click('Next'); s = await state();
+            const t0 = Date.now(); await click('Next page'); s = await state();
             check(`8 GB PDF: page stored at the end of the file renders (${Date.now() - t0} ms)`, s.pageStatus === 'Page: 2 / 2' && s.inked > 500 && !s.error);
             await page.screenshot({ path: path.join(__dirname, 'screenshots', 'desktop-8gb.png') });
 

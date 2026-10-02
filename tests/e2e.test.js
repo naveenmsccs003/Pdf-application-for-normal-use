@@ -70,8 +70,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     // ----- helpers -----
     const state = () => page.evaluate(() => {
         const q = s => document.querySelector(s);
-        const label = b => b.textContent.replace(/[‹›]/g, '').trim();
-        const btn = t => [...document.querySelectorAll('.toolbar button')].find(b => label(b) === t);
+        const btn = t => document.querySelector(`button[aria-label="${t}"]`);
         const canvas = q('.canvas-layer canvas');
         const scroll = q('.viewer-scroll');
         const pad = parseFloat(getComputedStyle(scroll).paddingLeft) * 2;
@@ -79,19 +78,28 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
             empty: !!q('.empty-state'),
             error: q('.alert') ? q('.alert span').textContent.trim() : '',
             fileName: q('.file-name') ? q('.file-name').textContent.trim() : '',
-            pageStatus: q('.page-status').textContent.trim(),
+            pageStatus: 'Page: ' + (q('.page-input').value || '–') + ' / ' + q('.page-total').textContent.replace('of', '').trim(),
             status: q('.status-text').textContent.trim(),
             zoom: q('.zoom-value').textContent.trim(),
             canvasW: canvas ? parseFloat(canvas.style.width) : 0,
             canvasH: canvas ? parseFloat(canvas.style.height) : 0,
             availW: scroll.clientWidth - pad, availH: scroll.clientHeight - pad,
             hScroll: scroll.scrollWidth > scroll.clientWidth, vScroll: scroll.scrollHeight > scroll.clientHeight,
-            canvases: document.querySelectorAll('canvas').length,
+            canvases: document.querySelectorAll('.canvas-layer canvas').length,
+            thumbs: [...document.querySelectorAll('.thumb')].map(t => ({
+                page: Number(t.querySelector('.thumb-frame').getAttribute('data-page')),
+                current: t.classList.contains('is-current'),
+                drawn: !!t.querySelector('canvas'),
+                marks: t.querySelector('.thumb-marks') ? Number(t.querySelector('.thumb-marks').textContent) : 0
+            })),
+            markups: [...document.querySelectorAll('.markup-row')].map(r => ({
+                text: r.querySelector('.markup-meta').textContent.trim(), selected: r.classList.contains('is-selected')
+            })),
             highlights: [...document.querySelectorAll('.highlight:not(.is-draft)')].map(h => ({
                 l: parseFloat(h.style.left), t: parseFloat(h.style.top), w: parseFloat(h.style.width), h: parseFloat(h.style.height),
                 sel: h.classList.contains('is-selected')
             })),
-            disabled: Object.fromEntries(['Prev', 'Next', 'Fit Page', 'Fit Width', 'Highlight', 'Remove', 'Clear Highlights']
+            disabled: Object.fromEntries(['First page', 'Previous page', 'Next page', 'Last page', 'Fit Page', 'Fit Width', 'Highlight', 'Remove', 'Clear Highlights']
                 .map(t => [t, btn(t).disabled])),
             zoomOutDisabled: q('[aria-label="Zoom out"]').disabled,
             zoomInDisabled: q('[aria-label="Zoom in"]').disabled
@@ -103,8 +111,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         await sleep(350);
     };
     const click = async label => {
-        await page.evaluate(l => [...document.querySelectorAll('.toolbar button')]
-            .find(b => b.textContent.replace(/[‹›]/g, '').trim() === l || b.getAttribute('aria-label') === l).click(), label);
+        await page.evaluate(l => (document.querySelector(`button[aria-label="${l}"]`) ||
+            [...document.querySelectorAll('button')].find(b => b.textContent.trim() === l)).click(), label);
         await settle();
     };
     const open = async (file, timeout) => {
@@ -160,13 +168,13 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await open('ten-pages.pdf'); s = await state();
     check('10-page PDF opens on page 1', s.pageStatus === 'Page: 1 / 10' && !s.empty && !s.error, s.pageStatus);
     check('rendered at 100%', s.zoom === '100%' && s.canvasW === 595 && s.canvasH === 842, [s.zoom, s.canvasW, s.canvasH]);
-    check('Prev disabled on first page', s.disabled.Prev && !s.disabled.Next);
+    check('Prev disabled on first page', s.disabled['Previous page'] && !s.disabled['Next page']);
     await shot('02-opened');
 
-    await click('Next'); s = await state(); check('Next -> page 2', s.pageStatus === 'Page: 2 / 10', s.pageStatus);
-    await click('Prev'); s = await state(); check('Prev -> page 1', s.pageStatus === 'Page: 1 / 10', s.pageStatus);
+    await click('Next page'); s = await state(); check('Next -> page 2', s.pageStatus === 'Page: 2 / 10', s.pageStatus);
+    await click('Previous page'); s = await state(); check('Prev -> page 1', s.pageStatus === 'Page: 1 / 10', s.pageStatus);
     await goTo(10); s = await state();
-    check('jump to page 10, Next disabled', s.pageStatus === 'Page: 10 / 10' && s.disabled.Next && !s.disabled.Prev, s.pageStatus);
+    check('jump to page 10, Next disabled', s.pageStatus === 'Page: 10 / 10' && s.disabled['Next page'] && !s.disabled['Previous page'], s.pageStatus);
     await goTo(99); s = await state();
     check('invalid page number rejected', s.error.startsWith('Please enter a page number between 1 and 10') && s.pageStatus === 'Page: 10 / 10', s.error);
     await dismissError();
@@ -179,9 +187,9 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await open('corrupt.pdf'); s = await state();
     check('failed open shows error', !!s.error, s.error);
     await dismissError();
-    await click('Next'); s = await state();
+    await click('Next page'); s = await state();
     check('previous document still works after failed open', s.pageStatus === 'Page: 2 / 10' && s.canvasW === 595 && !s.error, [s.pageStatus, s.error]);
-    await click('Prev');
+    await click('Previous page');
 
     // ===== Zoom =====
     await click('Zoom in'); s = await state(); check('zoom in -> 125%', s.zoom === '125%' && near(s.canvasW, 743.75), [s.zoom, s.canvasW]);
@@ -222,15 +230,29 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await click('Fit Page'); [s, k] = await scaleNow();
     check('highlight follows Fit Page', near(s.highlights[0].w, pdfW * k), [s.highlights[0].w, pdfW * k]);
 
-    await click('Next'); s = await state();
+    await click('Next page'); s = await state();
     check('page 2 shows no page-1 highlights', s.highlights.length === 0 && s.pageStatus === 'Page: 2 / 10');
     await drag(60, 60, 200, 90); s = await state(); check('highlight on page 2', s.highlights.length === 1);
-    await click('Prev'); s = await state(); check('page 1 highlights restored', s.highlights.length === 2, s.highlights.length);
+    await click('Previous page'); s = await state(); check('page 1 highlights restored', s.highlights.length === 2, s.highlights.length);
+
+    // Markups list and thumbnails reflect the highlights
+    check('markups list shows all highlights, sorted by page', s.markups.length === 3 &&
+        s.markups[0].text.startsWith('Page 1') && s.markups[2].text.startsWith('Page 2'), s.markups);
+    check('thumbnail badges count highlights per page', s.thumbs.find(t => t.page === 1).marks === 2 && s.thumbs.find(t => t.page === 2).marks === 1, s.thumbs);
+    await page.click('.markup-row:nth-child(3) .markup-main'); await settle(); s = await state();
+    check('clicking a markup opens its page and selects it', s.pageStatus === 'Page: 2 / 10' && s.highlights.length === 1 && s.markups[2].selected, [s.pageStatus, s.markups]);
+    await page.click('.markup-row:nth-child(1) .markup-main'); await settle(); s = await state();
+    check('clicking a markup on another page goes back', s.pageStatus === 'Page: 1 / 10' && s.markups[0].selected && s.highlights.some(h => h.sel), s.pageStatus);
+    await page.keyboard.press('Escape'); await sleep(100);
 
     await page.setViewport({ width: 900, height: 650 }); await sleep(600); await settle(); [s, k] = await scaleNow();
     check('Fit Page recomputed on window resize', s.availH - s.canvasH < 3 && s.canvasH <= s.availH, [s.canvasH, s.availH]);
     check('highlight follows window resize', near(s.highlights[0].w, pdfW * k), [s.highlights[0].w, pdfW * k]);
+    const panelsAfterNarrow = await page.evaluate(() => getComputedStyle(document.querySelector('.thumbnails-panel')).display === 'none' &&
+        getComputedStyle(document.querySelector('.markups-panel')).display === 'none');
+    check('side panels close when the window becomes narrow', panelsAfterNarrow);
     await page.setViewport({ width: 1280, height: 800 }); await sleep(600); await settle();
+    await click('Thumbnails panel'); await click('Markups panel');
 
     await page.keyboard.press('Escape'); await sleep(150); s = await state();
     check('Esc leaves highlight mode', !s.status.startsWith('Highlight mode') && s.highlights.every(h => !h.sel), s.status);
@@ -246,7 +268,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('× button removes the highlight', s.highlights.length === 0);
     await drag(50, 50, 200, 80); await click('Clear Highlights'); s = await state();
     check('Clear Highlights removes all', s.highlights.length === 0 && s.disabled['Clear Highlights']);
-    await click('Next'); s = await state(); check('Clear Highlights also cleared other pages', s.highlights.length === 0);
+    await click('Next page'); s = await state(); check('Clear Highlights also cleared other pages', s.highlights.length === 0);
     await click('Highlight');
 
     // ===== Render failure =====
@@ -262,10 +284,10 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
             };
         });
     });
-    await click('Next'); s = await state();
+    await click('Next page'); s = await state();
     check('render failure shows friendly error', s.error === 'Unable to display this page.', s.error);
     await dismissError();
-    await click('Next'); s = await state();
+    await click('Next page'); s = await state();
     check('viewer recovers after render failure', !s.error && s.canvasW > 0 && s.pageStatus === 'Page: 4 / 10', [s.pageStatus, s.error]);
 
     // ===== Large page count =====
@@ -274,12 +296,28 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     let t0 = Date.now(); await goTo(150); s = await state();
     check(`jump to page 150 (${Date.now() - t0} ms)`, s.pageStatus === 'Page: 150 / 150');
     check('only one page canvas in the DOM', s.canvases === 1, s.canvases);
+    check(`thumbnails are virtualized (${s.thumbs.length} of 150 in the DOM)`, s.thumbs.length > 0 && s.thumbs.length < 20, s.thumbs.length);
+    check('current thumbnail follows page 150', s.thumbs.some(t => t.page === 150 && t.current));
+    await sleep(800); s = await state();
+    check('visible thumbnails are drawn', s.thumbs.filter(t => t.drawn).length >= 3, s.thumbs.filter(t => t.drawn).length);
+    await click('Thumbnails panel'); await click('First page'); await click('Thumbnails panel'); await sleep(400); s = await state();
+    check('reopened thumbnails panel shows the current page', s.thumbs.some(t => t.page === 1 && t.current), s.thumbs.map(t => t.page));
+    await click('Last page');
+    await page.click('.thumb[aria-label="Go to page 148"]'); await settle(); s = await state();
+    check('clicking a thumbnail opens that page', s.pageStatus === 'Page: 148 / 150', s.pageStatus);
+    await click('First page'); s = await state();
+    check('First page button', s.pageStatus === 'Page: 1 / 150' && s.disabled['First page'] && !s.disabled['Last page'], s.pageStatus);
+    await click('Last page'); s = await state();
+    check('Last page button', s.pageStatus === 'Page: 150 / 150' && s.disabled['Last page'], s.pageStatus);
+    await click('Close document'); s = await state();
+    check('closing the document tab returns to the start screen', s.empty && s.pageStatus === 'Page: – / –' && s.thumbs.length === 0, s.pageStatus);
+    await open('large-150.pdf');
 
     // ===== Large file =====
     t0 = Date.now(); await open('large-45mb.pdf', 60000); s = await state();
     check(`45 MB PDF opens (${Date.now() - t0} ms)`, s.pageStatus === 'Page: 1 / 2' && s.canvasW > 0 && !s.error, [s.pageStatus, s.error]);
-    await click('Next'); s = await state(); check('45 MB PDF page 2', s.pageStatus === 'Page: 2 / 2' && !s.error);
-    await click('Prev'); await click('Zoom in'); s = await state(); check('45 MB PDF zoom', s.canvasW > 595 && !s.error, s.canvasW);
+    await click('Next page'); s = await state(); check('45 MB PDF page 2', s.pageStatus === 'Page: 2 / 2' && !s.error);
+    await click('Previous page'); await click('Zoom in'); s = await state(); check('45 MB PDF zoom', s.canvasW > 595 && !s.error, s.canvasW);
     await shot('05-large');
 
     // ===== Page sizes and orientation =====
@@ -288,7 +326,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         s = await state();
         check(`mixed sizes: Fit Page on page ${p}`, s.canvasW <= s.availW + 1 && s.canvasH <= s.availH + 1 &&
             (s.availW - s.canvasW < 3 || s.availH - s.canvasH < 3) && !s.error, [s.canvasW, s.canvasH, s.availW, s.availH]);
-        if (p < 5) await click('Next');
+        if (p < 5) await click('Next page');
     }
     await click('Fit Width'); s = await state(); check('wide page Fit Width', s.availW - s.canvasW < 3 && !s.hScroll, [s.canvasW, s.availW]);
     await click('Zoom in'); await click('Zoom in'); s = await state(); check('zoomed wide page scrolls horizontally (not clipped)', s.hScroll);
@@ -303,7 +341,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await click('Zoom in'); s = await state();
     check('highlight on rotated page follows zoom', near(s.highlights[0].w, rotW * 1.25), [s.highlights[0].w, rotW * 1.25]);
     await click('Highlight');
-    await click('Next'); s = await state();
+    await click('Next page'); s = await state();
     check('page rotated 180° stays portrait', s.canvasH > s.canvasW && s.highlights.length === 0, [s.canvasW, s.canvasH]);
     await shot('06-rotated');
 
@@ -335,6 +373,15 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         await click('Highlight');
         await shot('07-real-world');
     } else skip('real-world PDF', 'fixture not downloaded');
+
+    // ===== Side panels =====
+    await click('Thumbnails panel'); await click('Markups panel'); s = await state();
+    const widePanelsClosed = await page.evaluate(() => getComputedStyle(document.querySelector('.thumbnails-panel')).display === 'none' &&
+        getComputedStyle(document.querySelector('.markups-panel')).display === 'none');
+    check('panel buttons hide both side panels', widePanelsClosed);
+    const widerW = s.availW;
+    await click('Thumbnails panel'); await click('Markups panel'); s = await state();
+    check('page area shrinks when panels are shown', s.availW < widerW, [s.availW, widerW]);
 
     // ===== Light / dark theme =====
     const theme = () => page.evaluate(() => ({
@@ -371,6 +418,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.setViewport({ width: 768, height: 1024, isMobile: BROWSER === 'chrome', hasTouch: BROWSER === 'chrome' });
     await sleep(800);
     await open('ten-pages.pdf'); await click('Fit Width'); s = await state();
+    const panelsHidden = await page.evaluate(() => getComputedStyle(document.querySelector('.thumbnails-panel')).display === 'none');
+    check('tablet: side panels closed by default', panelsHidden);
     check('tablet: Fit Width', s.availW - s.canvasW < 3 && !s.hScroll, [s.canvasW, s.availW]);
     if (BROWSER === 'chrome') {
         await click('Highlight');

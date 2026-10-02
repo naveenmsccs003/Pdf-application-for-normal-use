@@ -59,6 +59,19 @@ PDFium reads only the parts of a file it needs, so opening is fast regardless of
   (Adobe Acrobat's own documented maximum PDF size is 10 GB.)
 - Damaged PDFs without a page index can only be repaired up to 512 MB (repair means scanning the whole file).
 
+## Layout
+
+A desktop-style PDF workspace (layout inspired by professional PDF markup tools such as Bluebeam Revu):
+
+- **Title bar** with the open file name and the light/dark switch
+- **Tool bar**: Open PDF, Highlight, Remove, Clear Highlights, Fit Page, Fit Width, panel switches
+- **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
+  Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
+- **Document tab** with the file name and a close button
+- **Markups panel** (right): every highlight with page and time; click to jump to it, or delete it
+- **Status bar**: first / previous / page number / next / last, status text, zoom out / % / zoom in
+- On narrow windows and tablets the panels close and slide over the page when opened
+
 ## Features
 
 - Open a PDF (validated in the browser and on the server: `.pdf` only, non-empty, max 50 MB, real `%PDF-` header)
@@ -104,8 +117,9 @@ frontend/
   app/services/themeService.js    light / dark theme
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
+  app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
-  app/views/pdf-viewer.html       layout: toolbar, viewer, status bar
+  app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker
 desktop/

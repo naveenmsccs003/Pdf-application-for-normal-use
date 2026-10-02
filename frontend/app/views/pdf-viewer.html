@@ -1,64 +1,91 @@
-<header class="app-header">
+<!-- Icon set (stroke icons, 24x24) -->
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H7.5a2 2 0 0 0-1.9 1.4L3 19V7z"/><path d="M3 19l2.6-7.6A2 2 0 0 1 7.5 10H22l-2.7 8.1a1.5 1.5 0 0 1-1.4.9H3z"/></symbol>
+    <symbol id="i-highlight" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L10 18H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h16"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="i-clear" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 17l-3-3 9-9 6 6-6 6H7z"/><path d="M10 8l6 6"/></symbol>
+    <symbol id="i-fit-page" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M3 9V5M3 5h3M21 15v4M21 19h-3"/></symbol>
+    <symbol id="i-fit-width" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="1"/><path d="M2 12h5M17 12h5M4 10l-2 2 2 2M20 10l2 2-2 2"/></symbol>
+    <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5M8 11h6M11 8v6"/></symbol>
+    <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l5 5M8 11h6"/></symbol>
+    <symbol id="i-first" viewBox="0 0 24 24"><path d="M7 5v14M18 6l-6 6 6 6"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-last" viewBox="0 0 24 24"><path d="M17 5v14M6 6l6 6-6 6"/></symbol>
+    <symbol id="i-thumbs" viewBox="0 0 24 24"><rect x="4" y="3" width="7" height="8" rx="1"/><rect x="13" y="3" width="7" height="8" rx="1"/><rect x="4" y="13" width="7" height="8" rx="1"/><rect x="13" y="13" width="7" height="8" rx="1"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h1M4 12h1M4 18h1"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+</svg>
+
+<!-- Title bar -->
+<header class="titlebar">
+    <img class="app-icon" src="assets/favicon.svg" alt="">
     <h1 class="app-title">PDF Viewer</h1>
-    <span class="file-name" title="{{ vm.fileName }}">{{ vm.fileName }}</span>
-    <button type="button" class="btn theme-toggle" ng-click="vm.toggleTheme()"
+    <span class="titlebar-file" ng-if="vm.fileName">&mdash; {{ vm.fileName }}</span>
+    <button type="button" class="tool theme-toggle" ng-click="vm.toggleTheme()"
             title="{{ vm.isDarkTheme() ? 'Switch to light mode' : 'Switch to dark mode' }}"
             aria-label="{{ vm.isDarkTheme() ? 'Switch to light mode' : 'Switch to dark mode' }}">
-        <svg ng-if="!vm.isDarkTheme()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
-        </svg>
-        <svg ng-if="vm.isDarkTheme()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="4"/>
-            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
-        </svg>
+        <svg class="icon"><use href="#i-moon" ng-if="!vm.isDarkTheme()"></use><use href="#i-sun" ng-if="vm.isDarkTheme()"></use></svg>
     </button>
 </header>
 
+<!-- Tool bar -->
 <nav class="toolbar" aria-label="PDF tools">
-    <div class="toolbar-group">
-        <label class="btn btn-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}">
+    <div class="tool-group">
+        <label class="tool tool-labelled tool-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}" title="Open a PDF from your computer">
             <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
                    on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
-            Open PDF
+            <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
         </label>
-        <button type="button" class="btn btn-primary" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy">Open PDF</button>
+        <button type="button" class="tool tool-labelled tool-primary" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy"
+                aria-label="Open PDF" title="Open a PDF from your computer">
+            <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
+        </button>
     </div>
 
-    <div class="toolbar-group" role="group" aria-label="Page navigation">
-        <button type="button" class="btn" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()"
-                title="Previous page (←)" aria-label="Previous page">&lsaquo; Prev</button>
-        <form class="page-form" novalidate ng-submit="vm.submitPageInput()">
-            <input type="number" class="page-input" min="1" max="{{ vm.pageCount }}" aria-label="Page number"
-                   ng-model="vm.pageInput" ng-disabled="!vm.hasDocument() || vm.busy" ng-blur="vm.submitPageInput()">
-            <span class="page-total">/ {{ vm.pageCount || '–' }}</span>
-        </form>
-        <button type="button" class="btn" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()"
-                title="Next page (→)" aria-label="Next page">Next &rsaquo;</button>
+    <div class="tool-group" role="group" aria-label="Markup tools">
+        <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.toggleHighlightMode()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.highlightMode}" aria-pressed="{{ vm.highlightMode }}" aria-label="Highlight"
+                title="Highlight: drag over the page (Esc to exit)">
+            <svg class="icon"><use href="#i-highlight"></use></svg><span>Highlight</span>
+        </button>
+        <button type="button" class="tool" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
+                aria-label="Remove" title="Remove selected highlight (Delete)">
+            <svg class="icon"><use href="#i-trash"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
+                aria-label="Clear Highlights" title="Clear all highlights">
+            <svg class="icon"><use href="#i-clear"></use></svg>
+        </button>
     </div>
 
-    <div class="toolbar-group" role="group" aria-label="Zoom">
-        <button type="button" class="btn btn-icon" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()"
-                title="Zoom out" aria-label="Zoom out">&minus;</button>
-        <button type="button" class="btn zoom-value" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()"
-                title="Reset zoom to 100%" aria-label="Reset zoom">{{ vm.hasDocument() ? vm.zoomPercent() : '100%' }}</button>
-        <button type="button" class="btn btn-icon" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()"
-                title="Zoom in" aria-label="Zoom in">+</button>
+    <div class="tool-group" role="group" aria-label="Page fit">
+        <button type="button" class="tool" ng-click="vm.fitPage()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.fitMode === 'page'}" aria-pressed="{{ vm.fitMode === 'page' }}"
+                aria-label="Fit Page" title="Fit page">
+            <svg class="icon"><use href="#i-fit-page"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.fitWidth()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.fitMode === 'width'}" aria-pressed="{{ vm.fitMode === 'width' }}"
+                aria-label="Fit Width" title="Fit width">
+            <svg class="icon"><use href="#i-fit-width"></use></svg>
+        </button>
     </div>
 
-    <div class="toolbar-group" role="group" aria-label="Fit">
-        <button type="button" class="btn" ng-click="vm.fitPage()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.fitMode === 'page'}" aria-pressed="{{ vm.fitMode === 'page' }}">Fit Page</button>
-        <button type="button" class="btn" ng-click="vm.fitWidth()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.fitMode === 'width'}" aria-pressed="{{ vm.fitMode === 'width' }}">Fit Width</button>
-    </div>
-
-    <div class="toolbar-group" role="group" aria-label="Highlights">
-        <button type="button" class="btn btn-highlight" ng-click="vm.toggleHighlightMode()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.highlightMode}" aria-pressed="{{ vm.highlightMode }}"
-                title="Drag over the page to highlight (Esc to exit)">Highlight</button>
-        <button type="button" class="btn" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
-                title="Remove the selected highlight (Delete)">Remove</button>
-        <button type="button" class="btn" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length">Clear Highlights</button>
+    <div class="tool-group tool-group-end" role="group" aria-label="Panels">
+        <button type="button" class="tool" ng-click="vm.showThumbnails = !vm.showThumbnails"
+                ng-class="{'is-active': vm.showThumbnails}" aria-pressed="{{ vm.showThumbnails }}"
+                aria-label="Thumbnails panel" title="Thumbnails">
+            <svg class="icon"><use href="#i-thumbs"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.showMarkups = !vm.showMarkups"
+                ng-class="{'is-active': vm.showMarkups}" aria-pressed="{{ vm.showMarkups }}"
+                aria-label="Markups panel" title="Markups list">
+            <svg class="icon"><use href="#i-list"></use></svg>
+        </button>
     </div>
 </nav>
 
@@ -67,38 +94,141 @@
     <button type="button" class="alert-close" ng-click="vm.dismissError()" aria-label="Dismiss">&times;</button>
 </div>
 
-<main class="viewer" ng-class="{'is-highlighting': vm.highlightMode}">
-    <pdf-viewer doc-version="vm.docVersion"
-                page="vm.currentPage"
-                scale="vm.scale"
-                highlight-mode="vm.highlightMode"
-                highlights="vm.highlights"
-                selected-id="vm.selectedHighlightId"
-                api="vm.viewer"
-                on-create-highlight="vm.addHighlight(pageNumber, rect)"
-                on-select-highlight="vm.selectHighlight(id)"
-                on-remove-highlight="vm.removeHighlight(id)"
-                on-resize="vm.onViewerResize()"
-                on-rendered="vm.onPageRendered()"
-                on-render-error="vm.onRenderError()"></pdf-viewer>
+<div class="workspace" ng-class="{'has-thumbnails': vm.showThumbnails, 'has-markups': vm.showMarkups}">
+    <!-- Left panel: thumbnails -->
+    <aside class="side-panel thumbnails-panel" ng-show="vm.showThumbnails" aria-label="Thumbnails">
+        <div class="panel-header">
+            <span>Thumbnails</span>
+            <button type="button" class="panel-close" ng-click="vm.showThumbnails = false" aria-label="Close thumbnails panel">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <page-thumbnails ng-if="vm.hasDocument()"
+                         doc-version="vm.docVersion"
+                         page-count="vm.pageCount"
+                         current-page="vm.currentPage"
+                         highlights="vm.highlights"
+                         on-select="vm.goToPage(page)"></page-thumbnails>
+        <p class="panel-empty" ng-if="!vm.hasDocument()">No document open</p>
+    </aside>
 
-    <div class="empty-state" ng-if="!vm.hasDocument()">
-        <h2>PDF Viewer</h2>
-        <p>Select a PDF file from your computer to view it.</p>
-        <label class="btn btn-primary btn-large" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}">
-            <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
-                   on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
-            Open PDF
-        </label>
-        <button type="button" class="btn btn-primary btn-large" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy">Open PDF</button>
-        <p class="hint" ng-if="!vm.isDesktop">PDF files up to 50 MB</p>
-        <p class="hint" ng-if="vm.isDesktop">Opens PDFs directly from your computer, including very large files</p>
+    <!-- Document area -->
+    <section class="document-area">
+        <div class="doc-tabs" role="tablist" ng-if="vm.hasDocument()">
+            <div class="doc-tab is-active" role="tab" aria-selected="true" title="{{ vm.fileName }}">
+                <svg class="icon icon-sm"><use href="#i-file"></use></svg>
+                <span class="file-name">{{ vm.fileName }}</span>
+                <button type="button" class="doc-tab-close" ng-click="vm.closeDocument()" ng-disabled="vm.busy"
+                        aria-label="Close document" title="Close">
+                    <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+        </div>
+
+        <main class="viewer" ng-class="{'is-highlighting': vm.highlightMode}">
+            <pdf-viewer doc-version="vm.docVersion"
+                        page="vm.currentPage"
+                        scale="vm.scale"
+                        highlight-mode="vm.highlightMode"
+                        highlights="vm.highlights"
+                        selected-id="vm.selectedHighlightId"
+                        api="vm.viewer"
+                        on-create-highlight="vm.addHighlight(pageNumber, rect)"
+                        on-select-highlight="vm.selectHighlight(id)"
+                        on-remove-highlight="vm.removeHighlight(id)"
+                        on-resize="vm.onViewerResize()"
+                        on-rendered="vm.onPageRendered()"
+                        on-render-error="vm.onRenderError()"></pdf-viewer>
+
+            <div class="empty-state" ng-if="!vm.hasDocument()">
+                <svg class="empty-icon"><use href="#i-file"></use></svg>
+                <h2>No document open</h2>
+                <p>Select a PDF file from your computer to view it.</p>
+                <label class="tool tool-labelled tool-primary tool-large" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}">
+                    <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
+                           on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
+                    <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
+                </label>
+                <button type="button" class="tool tool-labelled tool-primary tool-large" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy">
+                    <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
+                </button>
+                <p class="hint" ng-if="!vm.isDesktop">PDF files up to 50 MB</p>
+                <p class="hint" ng-if="vm.isDesktop">Opens PDFs directly from your computer, including very large files</p>
+            </div>
+
+            <div class="loading" ng-if="vm.busy" aria-live="polite"><span class="spinner"></span></div>
+        </main>
+    </section>
+
+    <!-- Right panel: markups list -->
+    <aside class="side-panel markups-panel" ng-show="vm.showMarkups" aria-label="Markups">
+        <div class="panel-header">
+            <span>Markups <span class="panel-count" ng-if="vm.highlights.length">{{ vm.highlights.length }}</span></span>
+            <button type="button" class="panel-close" ng-click="vm.showMarkups = false" aria-label="Close markups panel">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <ul class="markup-list" ng-if="vm.highlights.length">
+            <li class="markup-row" ng-repeat="h in vm.highlights | orderBy:['pageNumber', 'id'] track by h.id"
+                ng-class="{'is-selected': h.id === vm.selectedHighlightId}">
+                <button type="button" class="markup-main" ng-click="vm.goToHighlight(h)"
+                        aria-label="Highlight on page {{ h.pageNumber }}">
+                    <span class="markup-swatch"></span>
+                    <span class="markup-text">
+                        <span class="markup-title">Highlight</span>
+                        <span class="markup-meta">Page {{ h.pageNumber }} &middot; {{ h.createdAt | date:'HH:mm:ss' }}</span>
+                    </span>
+                </button>
+                <button type="button" class="markup-delete" ng-click="vm.removeHighlight(h.id)"
+                        aria-label="Delete highlight on page {{ h.pageNumber }}" title="Delete">
+                    <svg class="icon icon-sm"><use href="#i-trash"></use></svg>
+                </button>
+            </li>
+        </ul>
+        <p class="panel-empty" ng-if="!vm.highlights.length">
+            No markups yet.<br>Use <strong>Highlight</strong> and drag over the page.
+        </p>
+    </aside>
+</div>
+
+<!-- Status bar: navigation, status, zoom -->
+<footer class="status-bar">
+    <div class="nav-group" role="group" aria-label="Page navigation">
+        <button type="button" class="tool tool-sm" ng-click="vm.firstPage()" ng-disabled="!vm.canGoPrevious()"
+                aria-label="First page" title="First page">
+            <svg class="icon"><use href="#i-first"></use></svg>
+        </button>
+        <button type="button" class="tool tool-sm" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()"
+                aria-label="Previous page" title="Previous page (←)">
+            <svg class="icon"><use href="#i-prev"></use></svg>
+        </button>
+        <form class="page-form" novalidate ng-submit="vm.submitPageInput()">
+            <input type="number" class="page-input" min="1" max="{{ vm.pageCount }}" aria-label="Page number"
+                   ng-model="vm.pageInput" ng-disabled="!vm.hasDocument() || vm.busy" ng-blur="vm.submitPageInput()">
+            <span class="page-total">of {{ vm.pageCount || '–' }}</span>
+        </form>
+        <button type="button" class="tool tool-sm" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()"
+                aria-label="Next page" title="Next page (→)">
+            <svg class="icon"><use href="#i-next"></use></svg>
+        </button>
+        <button type="button" class="tool tool-sm" ng-click="vm.lastPage()" ng-disabled="!vm.canGoNext()"
+                aria-label="Last page" title="Last page">
+            <svg class="icon"><use href="#i-last"></use></svg>
+        </button>
     </div>
 
-    <div class="loading" ng-if="vm.busy" aria-live="polite"><span class="spinner"></span></div>
-</main>
-
-<footer class="status-bar">
-    <span class="page-status">Page: {{ vm.hasDocument() ? vm.currentPage + ' / ' + vm.pageCount : '– / –' }}</span>
     <span class="status-text" ng-class="{'is-error': vm.error}" aria-live="polite">{{ vm.status }}</span>
+
+    <div class="zoom-group" role="group" aria-label="Zoom">
+        <button type="button" class="tool tool-sm" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()"
+                aria-label="Zoom out" title="Zoom out">
+            <svg class="icon"><use href="#i-zoom-out"></use></svg>
+        </button>
+        <button type="button" class="tool tool-sm zoom-value" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()"
+                aria-label="Reset zoom" title="Reset zoom to 100%">{{ vm.hasDocument() ? vm.zoomPercent() : '100%' }}</button>
+        <button type="button" class="tool tool-sm" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()"
+                aria-label="Zoom in" title="Zoom in">
+            <svg class="icon"><use href="#i-zoom-in"></use></svg>
+        </button>
+    </div>
 </footer>

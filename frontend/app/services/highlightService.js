@@ -16,7 +16,8 @@
                 x: rect.x,
                 y: rect.y,
                 width: rect.width,
-                height: rect.height
+                height: rect.height,
+                createdAt: new Date()
             };
             highlights.push(highlight);
             return highlight;

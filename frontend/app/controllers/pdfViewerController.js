@@ -3,8 +3,8 @@
 
     /** Toolbar and status bar state: open, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
-        '$scope', '$document', 'pdfService', 'highlightService', 'themeService', 'desktopService', 'VIEWER_CONFIG',
-        function ($scope, $document, pdfService, highlightService, themeService, desktopService, VIEWER_CONFIG) {
+        '$scope', '$document', '$window', 'pdfService', 'highlightService', 'themeService', 'desktopService', 'VIEWER_CONFIG',
+        function ($scope, $document, $window, pdfService, highlightService, themeService, desktopService, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -24,6 +24,21 @@
             vm.status = 'Open a PDF to get started.';
             vm.viewer = null;           // API exposed by the pdf-viewer directive
             vm.isDesktop = desktopService.isDesktop;
+
+            // Side panels start open on wide screens; on narrow screens they slide over the page when
+            // opened, so they close when the window becomes narrow (keep in sync with the CSS breakpoint).
+            var narrowQuery = $window.matchMedia('(max-width: 999px)');
+            vm.showThumbnails = !narrowQuery.matches;
+            vm.showMarkups = !narrowQuery.matches;
+            function onWidthChange(event) {
+                if (event.matches) {
+                    $scope.$applyAsync(function () {
+                        vm.showThumbnails = false;
+                        vm.showMarkups = false;
+                    });
+                }
+            }
+            narrowQuery.addEventListener('change', onWidthChange);
 
             vm.hasDocument = function () { return vm.pageCount > 0; };
 
@@ -87,6 +102,26 @@
                 });
             }
 
+            /** Closes the document tab and returns to the start screen. */
+            vm.closeDocument = function () {
+                if (!vm.hasDocument() || vm.busy) {
+                    return;
+                }
+                pdfService.close();
+                highlightService.clear();
+                vm.selectedHighlightId = null;
+                vm.highlightMode = false;
+                vm.fileName = '';
+                vm.pageCount = 0;
+                vm.currentPage = 0;
+                vm.pageInput = '';
+                vm.fitMode = null;
+                vm.scale = 1;
+                vm.error = '';
+                vm.docVersion++;
+                vm.status = 'Open a PDF to get started.';
+            };
+
             function showDocument(fileName, pageCount) {
                 highlightService.clear();
                 vm.selectedHighlightId = null;
@@ -121,6 +156,18 @@
             vm.canGoNext = function () { return vm.hasDocument() && vm.currentPage < vm.pageCount && !vm.busy; };
             vm.previousPage = function () { if (vm.canGoPrevious()) { goToPage(vm.currentPage - 1); } };
             vm.nextPage = function () { if (vm.canGoNext()) { goToPage(vm.currentPage + 1); } };
+            vm.firstPage = function () { if (vm.canGoPrevious()) { goToPage(1); } };
+            vm.lastPage = function () { if (vm.canGoNext()) { goToPage(vm.pageCount); } };
+
+            /** From the thumbnails panel. */
+            vm.goToPage = function (page) {
+                if (vm.hasDocument() && !vm.busy && page !== vm.currentPage) {
+                    goToPage(page);
+                }
+                if (narrowQuery.matches) {
+                    vm.showThumbnails = false;   // the panel covers the page on narrow screens
+                }
+            };
 
             vm.submitPageInput = function () {
                 if (!vm.hasDocument() || vm.busy) {
@@ -137,8 +184,8 @@
                 }
             };
 
-            function goToPage(page) {
-                vm.selectedHighlightId = null;
+            function goToPage(page, selectHighlightId) {
+                vm.selectedHighlightId = selectHighlightId || null;
                 vm.error = '';
                 if (vm.fitMode) {
                     // Pages can differ in size, so recompute the fit before showing the page.
@@ -227,6 +274,15 @@
                 vm.selectedHighlightId = id;
             };
 
+            /** From the markups list: shows the highlight's page and selects it. */
+            vm.goToHighlight = function (highlight) {
+                if (highlight.pageNumber === vm.currentPage) {
+                    vm.selectedHighlightId = highlight.id;
+                } else if (!vm.busy) {
+                    goToPage(highlight.pageNumber, highlight.id);
+                }
+            };
+
             vm.removeHighlight = function (id) {
                 highlightService.remove(id);
                 if (vm.selectedHighlightId === id) {
@@ -300,6 +356,7 @@
             $document.on('keydown', onKeyDown);
             $scope.$on('$destroy', function () {
                 $document.off('keydown', onKeyDown);
+                narrowQuery.removeEventListener('change', onWidthChange);
                 pdfService.close();
             });
         }]);

@@ -21,6 +21,7 @@
 
             var localDocument = null;   // desktop: { token, pageCount, sizes }
             var pendingImage = null;    // desktop: page image being loaded
+            var thumbnailTasks = [];    // pdf.js thumbnail renders in progress
 
             /** Returns a user-friendly error message, or null when the file looks fine. */
             function validateFile(file) {
@@ -106,13 +107,14 @@
                     return;
                 }
                 // Destroying while a cancelled render is still unwinding throws inside pdf.js,
-                // so wait for that render to finish first.
-                var destroy = function () { task.destroy(); };
+                // so wait for those renders to finish first.
+                var unwinding = thumbnailTasks.map(function (t) { t.cancel(); return t.promise; });
+                thumbnailTasks = [];
                 if (pendingRender) {
-                    pendingRender.promise.then(destroy, destroy);
-                } else {
-                    destroy();
+                    unwinding.push(pendingRender.promise);
                 }
+                var settled = unwinding.map(function (p) { return p.then(angular.noop, angular.noop); });
+                Promise.all(settled).then(function () { task.destroy(); });
             }
 
             function getPage(pageNumber) {
@@ -244,6 +246,53 @@
                 });
             }
 
+            /**
+             * Renders a small preview of a page that fits in maxWidth x maxHeight (CSS pixels).
+             * Independent of the main page render, so it never cancels it.
+             * Resolves with a canvas, or null if the document changed meanwhile.
+             */
+            function renderThumbnail(pageNumber, maxWidth, maxHeight) {
+                var docAtStart = localDocument || pdfDocument;
+
+                return getPageSize(pageNumber).then(function (size) {
+                    var scale = Math.min(maxWidth / size.width, maxHeight / size.height);
+                    var cssWidth = Math.max(1, Math.floor(size.width * scale));
+                    var cssHeight = Math.max(1, Math.floor(size.height * scale));
+                    var dpr = window.devicePixelRatio || 1;
+
+                    if (localDocument) {
+                        var deferred = $q.defer();
+                        var image = new Image();
+                        image.onload = function () {
+                            var canvas = createCanvas(image.naturalWidth, image.naturalHeight, cssWidth, cssHeight);
+                            canvas.getContext('2d').drawImage(image, 0, 0);
+                            deferred.resolve(canvas);
+                        };
+                        image.onerror = function () { deferred.reject(new Error('Thumbnail failed to load')); };
+                        image.src = localPageUrl(pageNumber) + '?scale=' + (scale * dpr).toFixed(4);
+                        return deferred.promise;
+                    }
+
+                    return getPage(pageNumber).then(function (page) {
+                        if (pdfDocument !== docAtStart) {
+                            return null;
+                        }
+                        var viewport = page.getViewport({ scale: scale * dpr });
+                        var canvas = createCanvas(Math.floor(viewport.width), Math.floor(viewport.height), cssWidth, cssHeight);
+                        var task = page.render({ canvasContext: canvas.getContext('2d'), viewport: viewport });
+                        thumbnailTasks.push(task);
+                        var done = function () { thumbnailTasks = thumbnailTasks.filter(function (t) { return t !== task; }); };
+                        return $q.when(task.promise).then(function () {
+                            done();
+                            return canvas;
+                        }, function (error) {
+                            done();
+                            return error && error.name === 'RenderingCancelledException' ? null : $q.reject(error);
+                        });
+                    });
+                });
+            }
+
             return {
                 validateFile: validateFile,
                 upload: upload,
@@ -251,7 +300,8 @@
                 loadLocal: loadLocal,
                 close: close,
                 getPageSize: getPageSize,
-                renderPage: renderPage
+                renderPage: renderPage,
+                renderThumbnail: renderThumbnail
             };
         }]);
 })();
