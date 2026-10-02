@@ -28,8 +28,6 @@ public class PdfService
         Directory.CreateDirectory(_storageDir);
     }
 
-    public long MaxFileSizeBytes => _options.MaxFileSizeBytes;
-
     public async Task<PdfFileModel> SaveAsync(IFormFile? file, CancellationToken ct)
     {
         if (file is null)

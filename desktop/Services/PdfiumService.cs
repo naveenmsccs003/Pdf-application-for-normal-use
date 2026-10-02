@@ -18,13 +18,11 @@ public sealed class PdfiumService : IDisposable
     private const int ReverseByteOrder = 0x10;   // gives RGBA instead of BGRA
 
     private readonly object _gate = new();
-    private readonly ILogger<PdfiumService> _logger;
     private FpdfDocumentT? _document;
     private Guid _token;
 
-    public PdfiumService(ILogger<PdfiumService> logger)
+    public PdfiumService()
     {
-        _logger = logger;
         fpdfview.FPDF_InitLibrary();
     }
 
@@ -181,6 +179,5 @@ public sealed class PdfiumService : IDisposable
             CloseCurrent();
             fpdfview.FPDF_DestroyLibrary();
         }
-        _logger.LogDebug("PDFium shut down");
     }
 }
