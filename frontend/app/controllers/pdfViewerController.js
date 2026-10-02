@@ -3,8 +3,8 @@
 
     /** Toolbar and status bar state: open, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
-        '$scope', '$document', 'pdfService', 'highlightService', 'themeService', 'VIEWER_CONFIG',
-        function ($scope, $document, pdfService, highlightService, themeService, VIEWER_CONFIG) {
+        '$scope', '$document', 'pdfService', 'highlightService', 'themeService', 'desktopService', 'VIEWER_CONFIG',
+        function ($scope, $document, pdfService, highlightService, themeService, desktopService, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -23,11 +23,20 @@
             vm.error = '';
             vm.status = 'Open a PDF to get started.';
             vm.viewer = null;           // API exposed by the pdf-viewer directive
+            vm.isDesktop = desktopService.isDesktop;
 
             vm.hasDocument = function () { return vm.pageCount > 0; };
 
             // ----- Open -----
+            /** Web: uploads the selected file. Desktop: asks the host to show the native open dialog. */
             vm.openFile = function (file) {
+                if (vm.isDesktop) {
+                    if (!vm.busy) {
+                        desktopService.send('open');
+                    }
+                    return;
+                }
+
                 var validationError = pdfService.validateFile(file);
                 if (validationError) {
                     showError(validationError);
@@ -41,21 +50,57 @@
                 pdfService.upload(file).then(function (uploaded) {
                     vm.status = 'Opening ' + uploaded.fileName + '…';
                     return pdfService.load(VIEWER_CONFIG.apiBase + '/' + uploaded.id).then(function (pageCount) {
-                        highlightService.clear();
-                        vm.selectedHighlightId = null;
-                        vm.highlightMode = false;
-                        vm.fileName = uploaded.fileName;
-                        vm.pageCount = pageCount;
-                        setPage(1);
-                        vm.docVersion++;
-                        return showInitialPage();
+                        return showDocument(uploaded.fileName, pageCount);
                     });
-                }).catch(function (message) {
-                    showError(typeof message === 'string' ? message : 'Unable to open this PDF.');
-                }).finally(function () {
+                }).catch(openFailed).finally(function () {
                     vm.busy = false;
                 });
             };
+
+            // Desktop host messages (the host opens the file from disk with PDFium).
+            if (vm.isDesktop) {
+                desktopService.on('opening', function (message) {
+                    vm.busy = true;
+                    vm.error = '';
+                    vm.status = 'Opening ' + message.fileName + '\u2026';
+                });
+                desktopService.on('opened', function (message) {
+                    pdfService.loadLocal(message).then(function (pageCount) {
+                        return showDocument(message.fileName, pageCount);
+                    }).catch(openFailed).finally(function () {
+                        vm.busy = false;
+                    });
+                });
+                desktopService.on('open-error', function (message) {
+                    vm.busy = false;
+                    showError(message.message);
+                });
+                desktopService.on('open-cancelled', function () {
+                    vm.busy = false;
+                });
+                // Tell the host once the viewer exists, so a file passed on the command line can be opened.
+                var stopWatching = $scope.$watch(function () { return vm.viewer; }, function (viewer) {
+                    if (viewer) {
+                        stopWatching();
+                        desktopService.send('ready');
+                    }
+                });
+            }
+
+            function showDocument(fileName, pageCount) {
+                highlightService.clear();
+                vm.selectedHighlightId = null;
+                vm.highlightMode = false;
+                vm.fileName = fileName;
+                vm.pageCount = pageCount;
+                setPage(1);
+                vm.docVersion++;
+                return showInitialPage();
+            }
+
+            function openFailed(message) {
+                showError(typeof message === 'string' ? message : 'Unable to open this PDF.');
+            }
 
             // Start at 100%, or fit the width if the page would not fit horizontally.
             function showInitialPage() {

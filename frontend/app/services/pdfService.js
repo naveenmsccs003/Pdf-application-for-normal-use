@@ -2,8 +2,13 @@
     'use strict';
 
     /**
-     * PDF rendering layer: file validation, upload, loading with pdf.js and page rendering.
+     * PDF rendering layer: file validation, upload, loading and page rendering.
      * Knows nothing about highlights.
+     *
+     * Two sources:
+     *   - web:     the PDF is uploaded and rendered in the browser with pdf.js
+     *   - desktop: the PDF is opened from disk by the desktop host and pages arrive as images
+     *              rendered by PDFium (works for files far larger than a browser can hold)
      */
     angular.module('pdfViewerApp').factory('pdfService', ['$http', '$q', 'VIEWER_CONFIG',
         function ($http, $q, VIEWER_CONFIG) {
@@ -13,6 +18,9 @@
             var loadingTask = null;
             var pdfDocument = null;
             var renderTask = null;
+
+            var localDocument = null;   // desktop: { token, pageCount, sizes }
+            var pendingImage = null;    // desktop: page image being loaded
 
             /** Returns a user-friendly error message, or null when the file looks fine. */
             function validateFile(file) {
@@ -80,7 +88,15 @@
                 });
             }
 
+            /** Desktop: switches to a PDF the host opened from disk; resolves with the page count. */
+            function loadLocal(info) {
+                close();
+                localDocument = { token: info.token, pageCount: info.pageCount, sizes: {} };
+                return $q.when(info.pageCount);
+            }
+
             function close() {
+                localDocument = null;
                 var task = loadingTask;
                 var pendingRender = renderTask;
                 cancelRender();
@@ -106,8 +122,25 @@
                 return $q.when(pdfDocument.getPage(pageNumber));
             }
 
+            function localPageUrl(pageNumber) {
+                return 'api/local/' + localDocument.token + '/pages/' + pageNumber;
+            }
+
             /** Page size in PDF units (scale 1), taking page rotation into account. */
             function getPageSize(pageNumber) {
+                if (localDocument) {
+                    if (pageNumber < 1 || pageNumber > localDocument.pageCount) {
+                        return $q.reject(new Error('Invalid page'));
+                    }
+                    var sizes = localDocument.sizes;
+                    if (sizes[pageNumber]) {
+                        return $q.when(sizes[pageNumber]);
+                    }
+                    return $http.get(localPageUrl(pageNumber) + '/size').then(function (response) {
+                        sizes[pageNumber] = { width: response.data.width, height: response.data.height };
+                        return sizes[pageNumber];
+                    });
+                }
                 return getPage(pageNumber).then(function (page) {
                     var viewport = page.getViewport({ scale: 1 });
                     return { width: viewport.width, height: viewport.height };
@@ -119,6 +152,57 @@
                     renderTask.cancel();
                     renderTask = null;
                 }
+                if (pendingImage) {
+                    pendingImage.image.onload = pendingImage.image.onerror = null;
+                    pendingImage.image.src = '';   // aborts the request
+                    pendingImage.deferred.resolve(null);
+                    pendingImage = null;
+                }
+            }
+
+            // Render sharply on high-DPI screens, but never exceed the canvas pixel limit.
+            function outputScaleFor(width, height) {
+                return Math.min(window.devicePixelRatio || 1, Math.sqrt(MAX_CANVAS_PIXELS / (width * height)));
+            }
+
+            function createCanvas(pixelWidth, pixelHeight, cssWidth, cssHeight) {
+                var canvas = document.createElement('canvas');
+                canvas.width = pixelWidth;
+                canvas.height = pixelHeight;
+                canvas.style.width = cssWidth + 'px';
+                canvas.style.height = cssHeight + 'px';
+                return canvas;
+            }
+
+            /** Desktop: fetches the page rendered by PDFium and draws it into a canvas. */
+            function renderLocalPage(pageNumber, scale) {
+                return getPageSize(pageNumber).then(function (size) {
+                    var cssWidth = Math.floor(size.width * scale);
+                    var cssHeight = Math.floor(size.height * scale);
+                    var outputScale = outputScaleFor(size.width * scale, size.height * scale);
+
+                    var deferred = $q.defer();
+                    var image = new Image();
+                    var request = { image: image, deferred: deferred };
+                    pendingImage = request;
+
+                    image.onload = function () {
+                        if (pendingImage === request) {
+                            pendingImage = null;
+                        }
+                        var canvas = createCanvas(image.naturalWidth, image.naturalHeight, cssWidth, cssHeight);
+                        canvas.getContext('2d').drawImage(image, 0, 0);
+                        deferred.resolve({ canvas: canvas, width: cssWidth, height: cssHeight });
+                    };
+                    image.onerror = function () {
+                        if (pendingImage === request) {
+                            pendingImage = null;
+                        }
+                        deferred.reject(new Error('Page image failed to load'));
+                    };
+                    image.src = localPageUrl(pageNumber) + '?scale=' + (scale * outputScale).toFixed(4);
+                    return deferred.promise;
+                });
             }
 
             /**
@@ -128,20 +212,16 @@
              */
             function renderPage(pageNumber, scale) {
                 cancelRender();
+                if (localDocument) {
+                    return renderLocalPage(pageNumber, scale);
+                }
 
                 return getPage(pageNumber).then(function (page) {
                     var viewport = page.getViewport({ scale: scale });
-
-                    // Render sharply on high-DPI screens, but never exceed the canvas pixel limit.
-                    var outputScale = Math.min(
-                        window.devicePixelRatio || 1,
-                        Math.sqrt(MAX_CANVAS_PIXELS / (viewport.width * viewport.height)));
-
-                    var canvas = document.createElement('canvas');
-                    canvas.width = Math.floor(viewport.width * outputScale);
-                    canvas.height = Math.floor(viewport.height * outputScale);
-                    canvas.style.width = Math.floor(viewport.width) + 'px';
-                    canvas.style.height = Math.floor(viewport.height) + 'px';
+                    var outputScale = outputScaleFor(viewport.width, viewport.height);
+                    var canvas = createCanvas(
+                        Math.floor(viewport.width * outputScale), Math.floor(viewport.height * outputScale),
+                        Math.floor(viewport.width), Math.floor(viewport.height));
 
                     var task = page.render({
                         canvasContext: canvas.getContext('2d'),
@@ -168,6 +248,7 @@
                 validateFile: validateFile,
                 upload: upload,
                 load: load,
+                loadLocal: loadLocal,
                 close: close,
                 getPageSize: getPageSize,
                 renderPage: renderPage

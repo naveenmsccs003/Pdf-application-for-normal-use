@@ -131,6 +131,54 @@ write('empty.pdf', Buffer.alloc(0));
 write('notes.txt', Buffer.from('hello\n'));
 write('too-large.pdf', Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(55 * 1024 * 1024)]));
 
+// Huge sparse PDFs for the desktop app (the gap in the middle takes no disk space).
+// Skipped on Windows, where the gap would be written out in full.
+function writeSparsePdf(name, sizeGB, classicIndex) {
+    const file = path.join(OUT, name);
+    const fd = fs.openSync(file, 'w');
+    let pos = 0;
+    const offsets = {};
+    const put = text => { const b = Buffer.from(text, 'latin1'); fs.writeSync(fd, b, 0, b.length, pos); pos += b.length; };
+    const obj = (n, body) => { offsets[n] = pos; put(`${n} 0 obj\n${body}\nendobj\n`); };
+    const content = label => { const c = `BT /F1 36 Tf 60 700 Td (${label}) Tj ET`; return `<< /Length ${c.length} >>\nstream\n${c}\nendstream`; };
+    const pageObj = contents => `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contents} 0 R >>`;
+    const gap = Math.floor(sizeGB * 1024 ** 3);
+
+    put('%PDF-1.7\n%\xe2\xe3\xcf\xd3\n');
+    obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
+    obj(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+    obj(4, content('Page 1 - start of file'));
+    obj(5, pageObj(4));
+    offsets[6] = pos; put(`6 0 obj\n<< /Length ${gap} >>\nstream\n`); pos += gap; put('\nendstream\nendobj\n');
+    obj(7, content(`Page 2 - ${sizeGB} GB into the file`));
+    obj(8, pageObj(7));
+    obj(2, '<< /Type /Pages /Kids [5 0 R 8 0 R] /Count 2 >>');
+
+    if (classicIndex) {
+        const xref = pos;
+        put('xref\n0 9\n0000000000 65535 f \n');
+        for (let n = 1; n <= 8; n++) put(String(offsets[n]).padStart(10, '0') + ' 00000 n \n');
+        put(`trailer\n<< /Size 9 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+    } else {
+        offsets[9] = pos;
+        const rows = Buffer.alloc(11 * 10);
+        rows.writeUInt16BE(0xffff, 9);
+        for (let n = 1; n <= 9; n++) { rows[n * 11] = 1; rows.writeBigUInt64BE(BigInt(offsets[n]), n * 11 + 1); }
+        put(`9 0 obj\n<< /Type /XRef /Size 10 /W [1 8 2] /Root 1 0 R /Length ${rows.length} >>\nstream\n`);
+        fs.writeSync(fd, rows, 0, rows.length, pos); pos += rows.length;
+        put(`\nendstream\nendobj\nstartxref\n${offsets[9]}\n%%EOF\n`);
+    }
+    fs.closeSync(fd);
+    console.log('  ' + name.padEnd(22) + `${sizeGB} GB (sparse)`.padStart(18));
+}
+
+if (process.platform === 'win32') {
+    console.log('  huge-*.pdf             skipped on Windows (sparse files)');
+} else {
+    writeSparsePdf('huge-8gb-classic.pdf', 8, true);
+    writeSparsePdf('huge-60gb-xrefstream.pdf', 60, false);
+}
+
 // Optional: password-protected (Ghostscript)
 try {
     execFileSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfwrite', '-sOwnerPassword=owner', '-sUserPassword=secret',

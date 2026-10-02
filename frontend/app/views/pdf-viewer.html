@@ -16,11 +16,12 @@
 
 <nav class="toolbar" aria-label="PDF tools">
     <div class="toolbar-group">
-        <label class="btn btn-primary" ng-class="{'is-disabled': vm.busy}">
+        <label class="btn btn-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}">
             <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
                    on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
             Open PDF
         </label>
+        <button type="button" class="btn btn-primary" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy">Open PDF</button>
     </div>
 
     <div class="toolbar-group" role="group" aria-label="Page navigation">
@@ -84,12 +85,14 @@
     <div class="empty-state" ng-if="!vm.hasDocument()">
         <h2>PDF Viewer</h2>
         <p>Select a PDF file from your computer to view it.</p>
-        <label class="btn btn-primary btn-large" ng-class="{'is-disabled': vm.busy}">
+        <label class="btn btn-primary btn-large" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}">
             <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
                    on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
             Open PDF
         </label>
-        <p class="hint">PDF files up to 50 MB</p>
+        <button type="button" class="btn btn-primary btn-large" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy">Open PDF</button>
+        <p class="hint" ng-if="!vm.isDesktop">PDF files up to 50 MB</p>
+        <p class="hint" ng-if="vm.isDesktop">Opens PDFs directly from your computer, including very large files</p>
     </div>
 
     <div class="loading" ng-if="vm.busy" aria-live="polite"><span class="spinner"></span></div>
