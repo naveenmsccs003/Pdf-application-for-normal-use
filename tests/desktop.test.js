@@ -29,11 +29,13 @@ function skip(name, reason) { skipped++; console.log('SKIP ' + name + ' (' + rea
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const fixture = f => path.join(FIXTURES, f);
 const near = (a, b, tol = 1.5) => Math.abs(a - b) <= tol;
+// The host's Recent Files list goes to a throwaway file, never the user's real list.
+const RECENT_FILE = path.join(require('os').tmpdir(), `pdfviewer-test-recent-${process.pid}.json`);
 
 async function startHost() {
     const project = path.join(__dirname, '..', 'desktop');
     const host = spawn(DOTNET, ['run', '--project', project], {
-        env: { ...process.env, PDFVIEWER_TEST_PORT: PORT, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' },
+        env: { ...process.env, PDFVIEWER_TEST_PORT: PORT, PDFVIEWER_RECENT_FILE: RECENT_FILE, DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1' },
         stdio: ['ignore', 'pipe', 'pipe']
     });
     let output = '';
@@ -105,7 +107,7 @@ async function startHost() {
                 error: q('.alert') ? q('.alert span').textContent.trim() : '',
                 fileName: q('.file-name') ? q('.file-name').textContent.trim() : '',
                 pageStatus: 'Page: ' + (q('.page-input').value || '–') + ' / ' + q('.page-total').textContent.replace('of', '').trim(),
-                zoom: q('.zoom-value').textContent.trim(),
+                zoom: q('.zoom-value').value.trim(),
                 canvasW: canvas ? parseFloat(canvas.style.width) : 0,
                 canvasH: canvas ? parseFloat(canvas.style.height) : 0,
                 inked,
@@ -181,7 +183,7 @@ async function startHost() {
         check('previous document still works after failed open', s.pageStatus === 'Page: 3 / 10' && s.inked > 1000 && !s.error, s.pageStatus);
 
         // ----- Orientation and real-world content -----
-        await open('rotated.pdf'); await click('Reset zoom'); s = await state();
+        await open('rotated.pdf'); await click('Actual size'); s = await state();
         check('rotated 90° page is landscape', s.canvasW === 842 && s.canvasH === 595 && s.inked > 1000, [s.canvasW, s.canvasH]);
         await open('mixed-sizes.pdf'); await click('Fit Page');
         let allFit = true;
@@ -279,7 +281,7 @@ async function startHost() {
             for (let i = 0; i < data.length; i += 4) if (data[i] > 200 && data[i + 1] > 170 && data[i + 2] < 120) yellow++;
             return yellow;
         });
-        await open('ten-pages.pdf'); await click('Reset zoom');
+        await open('ten-pages.pdf'); await click('Actual size');
         await click('Highlight'); await drag(60, 120, 360, 160); await click('Highlight');
         const saveHighlights = async dialog => {
             const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
@@ -296,12 +298,73 @@ async function startHost() {
         check('desktop: copy with highlights saved', /with-highlights\.pdf with 1 highlight/.test(status) && fs.existsSync(highlightedPath), status);
         check('desktop: original PDF unchanged', fs.statSync(fixture('ten-pages.pdf')).size === fs.readFileSync(fixture('ten-pages.pdf')).length &&
             !fs.readFileSync(fixture('ten-pages.pdf')).includes('/Highlight'));
-        await open(highlightedPath); await click('Reset zoom');
+        await open(highlightedPath); await click('Actual size');
         check('desktop: reopened copy shows the highlight (PDFium)', (await state()).highlights.length === 0 && await yellowCount() > 5000, await yellowCount());
 
         const leftovers = fs.readdirSync(outDir).filter(f => f.endsWith('.tmp'));
         check('no temporary files left behind', leftovers.length === 0, leftovers);
         fs.rmSync(outDir, { recursive: true, force: true });
+
+        // ----- Recent files (desktop: paths kept by the host, reopened from disk) -----
+        const recentDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'pdfviewer-recent-'));
+        const movable = path.join(recentDir, 'movable.pdf');
+        fs.copyFileSync(fixture('one-page.pdf'), movable);
+        // A real PDF that is never opened, so it is never on the recent list.
+        const neverOpened = path.join(recentDir, 'never-opened.pdf');
+        fs.copyFileSync(fixture('one-page.pdf'), neverOpened);
+        const sendAndWait = async (message) => {
+            const before = await page.evaluate(() => window.__replyCount || 0);
+            await page.evaluate(m => window.external.sendMessage(JSON.stringify(m)), message);
+            await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 30000 }, before);
+            await sleep(200);
+        };
+        const recentState = () => page.evaluate(() => ({
+            menu: [...document.querySelectorAll('#menu-file .menu-item-recent')].map(b => b.getAttribute('aria-label')),
+            start: [...document.querySelectorAll('.recent-start-item')].map(b => ({
+                name: b.querySelector('.recent-start-name').textContent.trim(),
+                detail: b.querySelector('.recent-start-detail').textContent.trim(),
+                missing: b.classList.contains('is-missing')
+            }))
+        }));
+        const reloadApp = async () => {
+            await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.toolbar');
+            await page.waitForFunction(() => (window.__replyCount || 0) > 0, { timeout: 30000 }); await sleep(300);
+        };
+
+        await open(movable);
+        let rs = await recentState();
+        check('desktop recent: opened file is first in File menu', rs.menu[0] === 'Open recent: movable.pdf', rs.menu);
+        const saved = JSON.parse(fs.readFileSync(RECENT_FILE, 'utf8'));
+        check('desktop recent: list saved with full paths', saved[0].path === movable && saved.some(e => e.path === fixture('ten-pages.pdf')), saved.map(e => e.path));
+        check('desktop recent: failed opens are not remembered', !saved.some(e => /corrupt|empty|notes/.test(e.path)), saved.map(e => e.path));
+
+        await reloadApp(); rs = await recentState();
+        check('desktop recent: host sends the list on ready (start screen)', rs.start[0] && rs.start[0].name === 'movable.pdf' && rs.start[0].detail === recentDir, rs.start);
+        await page.evaluate(() => [...document.querySelectorAll('.recent-start-item')].find(b => b.textContent.includes('ten-pages.pdf')).click());
+        await page.waitForFunction(() => document.querySelector('.file-name'), { timeout: 30000 }); await settle(); s = await state();
+        check('desktop recent: reopen from start screen (from disk)', s.fileName === 'ten-pages.pdf' && s.pageStatus === 'Page: 1 / 10' && s.inked > 1000, [s.fileName, s.pageStatus]);
+
+        fs.rmSync(movable);
+        await reloadApp(); rs = await recentState();
+        const gone = rs.start.find(f => f.name === 'movable.pdf');
+        check('desktop recent: a deleted file is shown as missing', gone && gone.missing && gone.detail.startsWith('Missing'), rs.start);
+        await page.evaluate(() => [...document.querySelectorAll('.recent-start-item')].find(b => b.textContent.includes('movable.pdf')).click());
+        await page.waitForFunction(() => document.querySelector('.alert'), { timeout: 30000 }); await sleep(200);
+        s = await state(); rs = await recentState();
+        check('desktop recent: opening it explains and removes it', /movable\.pdf was moved or deleted/.test(s.error) && !rs.start.some(f => f.name === 'movable.pdf'), [s.error, rs.start]);
+        await dismiss();
+
+        await sendAndWait({ type: 'open-recent', path: neverOpened });
+        s = await state();
+        check('desktop recent: host refuses paths that are not on the list', s.error === 'That file is not in the recent files list.' && s.empty, s.error);
+        await dismiss();
+
+        await page.click('#menu-file-button'); await sleep(100);
+        await page.evaluate(() => [...document.querySelectorAll('#menu-file .menu-item')].find(b => b.textContent.includes('Clear recent files')).click());
+        await sleep(600); rs = await recentState();
+        check('desktop recent: Clear empties the list and the saved file', rs.menu.length === 0 && rs.start.length === 0 &&
+            JSON.parse(fs.readFileSync(RECENT_FILE, 'utf8')).length === 0, rs);
+        fs.rmSync(recentDir, { recursive: true, force: true });
 
         // ----- Security: API only serves the opened file -----
         const probe = await page.evaluate(async () => {
@@ -323,6 +386,7 @@ async function startHost() {
     } finally {
         await browser.close();
         host.kill();
+        fs.rmSync(RECENT_FILE, { force: true });
     }
     console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
     process.exit(exitCode || (failed ? 1 : 0));

@@ -8,12 +8,14 @@ namespace PdfViewer.Desktop;
 /// <summary>
 /// Messages between the web UI and the desktop host (Photino web messaging).
 ///   UI -> host: { type: "ready" } | { type: "open" } | { type: "close" }
+///               | { type: "open-recent", path } | { type: "clear-recent" }
 ///               | { type: "pick-pdfs" } | { type: "run-tool", tool, inputs, options }
 ///   host -> UI: { type: "opening", fileName } | { type: "opened", token, fileName, size, pageCount }
 ///             | { type: "open-error", message } | { type: "open-cancelled" }
+///             | { type: "recent-files", files: [{ path, fileName, folder, exists }] }
 ///             | { type: "picked-pdfs", files } | { type: "tool-done" | "tool-error", message } | { type: "tool-cancelled" }
 /// </summary>
-public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, ILogger<DesktopBridge> logger)
+public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles recent, ILogger<DesktopBridge> logger)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly (string, string[])[] PdfFilter = [("PDF files", ["*.pdf"]), ("All files", ["*"])];
@@ -60,10 +62,23 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, ILogger<Des
 
         switch (type)
         {
-            case "ready" when _startupFile is not null:
-                var file = _startupFile;
-                _startupFile = null;
-                await OpenAsync(file);
+            case "ready":
+                SendRecent();
+                if (_startupFile is not null)
+                {
+                    var file = _startupFile;
+                    _startupFile = null;
+                    await OpenAsync(file);
+                }
+                break;
+
+            case "open-recent":
+                await OpenRecentAsync(root.TryGetProperty("path", out var p) ? p.GetString() : null);
+                break;
+
+            case "clear-recent":
+                recent.Clear();
+                SendRecent();
                 break;
 
             case "open":
@@ -96,6 +111,8 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, ILogger<Des
             // Large files can take a moment; keep the UI thread free.
             var info = await Task.Run(() => pdfium.Open(path));
             Send(new { type = "opened", info.Token, info.FileName, info.Size, info.PageCount });
+            recent.Add(path);
+            SendRecent();
         }
         catch (LocalPdfException ex)
         {
@@ -107,6 +124,26 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, ILogger<Des
             Send(new { type = "open-error", message = "Unable to open this PDF." });
         }
     }
+
+    /// <summary>Only paths already on the recent list are opened this way, never an arbitrary path from the page.</summary>
+    private async Task OpenRecentAsync(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !recent.Contains(path))
+        {
+            Send(new { type = "open-error", message = "That file is not in the recent files list." });
+            return;
+        }
+        if (!File.Exists(path))
+        {
+            recent.Remove(path);
+            SendRecent();
+            Send(new { type = "open-error", message = $"{Path.GetFileName(path)} was moved or deleted, so it was removed from Recent Files." });
+            return;
+        }
+        await OpenAsync(path);
+    }
+
+    private void SendRecent() => Send(new { type = "recent-files", files = recent.List() });
 
     private void Send(object message)
     {

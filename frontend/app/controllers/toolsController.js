@@ -142,6 +142,16 @@
                 });
             };
 
+            // Ctrl+S / File > Save copy with highlights. There is no plain "Save": the original PDF is never changed.
+            $scope.$on('save-copy', function () {
+                var view = vm();
+                if (tools.canSaveHighlights()) {
+                    tools.saveHighlights();
+                } else if (view.hasDocument() && !view.highlights.length && !tools.saving) {
+                    view.status = 'Nothing to save yet: add a highlight first. Saving always makes a copy; the original is not changed.';
+                }
+            });
+
             tools.formatSize = function (bytes) {
                 if (!bytes) { return ''; }
                 if (bytes >= 1073741824) { return (bytes / 1073741824).toFixed(1) + ' GB'; }

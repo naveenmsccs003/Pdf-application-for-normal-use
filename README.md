@@ -64,6 +64,9 @@ PDFium reads only the parts of a file it needs, so opening is fast regardless of
 A desktop-style PDF workspace (layout inspired by professional PDF markup tools such as Bluebeam Revu):
 
 - **Title bar** with the open file name and the light/dark switch
+- **Menu bar**: **File** (Open, Close PDF, Save copy with highlights, Recent files, Clear recent files) and
+  **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
+  through and between menus, Esc closes them
 - **Tool bar**: Open PDF, Highlight, Remove, Clear Highlights, Fit Page, Fit Width, panel switches
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
@@ -71,6 +74,7 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Markups panel** (right): every highlight with page and time; click to jump to it, delete it,
   or save a copy of the PDF with all highlights
 - **Status bar**: first / previous / page number / next / last, status text, zoom out / % / zoom in
+  (type a percentage such as `135` into the zoom box for a custom zoom)
 - On narrow windows and tablets the panels close and slide over the page when opened
 
 ## PDF tools
@@ -102,7 +106,16 @@ Notes:
 
 - Open a PDF (validated in the browser and on the server: `.pdf` only, non-empty, max 50 MB, real `%PDF-` header)
 - Page navigation: Prev / Next, type a page number, or ← / → keys
-- Zoom in / out (25%–300%), click the percentage to reset to 100%
+- Zoom in / out (25%–300%), or type any percentage in that range into the zoom box (values outside are clamped)
+- Shortcuts (Cmd on macOS): **Ctrl+O** open, **Ctrl+S** save a copy with highlights, **Ctrl+=** / **Ctrl+−**
+  zoom, **Ctrl+0** actual size. Close has no shortcut because browsers reserve Ctrl+W.
+- **Recent files** in the File menu and on the start screen:
+  - Desktop: the last 10 file paths, reopened from disk, stored in `~/.config/PdfViewer/recent-files.json`
+    (Windows: `%APPDATA%\PdfViewer`). Moved or deleted files are marked *Missing* and removed when clicked.
+    The host only reopens paths that are on that list.
+  - Web: a browser cannot reopen a file by its path and uploads expire after an hour, so the last 5 PDFs
+    are kept in the browser's own storage (IndexedDB) and never leave the computer. Empty in private windows.
+  - **Clear recent files** deletes the list (and, on the web, the stored copies).
 - Fit Page and Fit Width (kept when changing pages or resizing the window)
 - Highlight mode: drag over the page to add transparent highlights
   - Click a highlight to select it, then press **Remove**, the **×** button or **Delete**
@@ -153,11 +166,13 @@ frontend/
   app/services/highlightService.js  in-memory highlight store
   app/services/themeService.js    light / dark theme
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
+  app/services/recentFilesService.js  web Recent Files (copies kept in IndexedDB)
   app/services/toolsService.js    tools: web downloads or desktop host messages
   app/controllers/toolsController.js  tools dialog
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
+  app/directives/menuBarDirective.js    File / Zoom menu bar (WAI-ARIA menubar keyboard handling)
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker
@@ -170,13 +185,14 @@ shared/PdfViewer.Tools/          PDF tools used by both apps
   PngEncoder.cs                   small PNG writer
 desktop/
   Program.cs                      starts the local server (127.0.0.1, random port) and the native window
-  DesktopBridge.cs                messages between UI and host: open, close, tools
+  DesktopBridge.cs                messages between UI and host: open, close, recent files, tools
   DesktopTools.cs                 tools on disk with native save / folder dialogs
   FileDialogs.cs                  native dialogs (and preset answers for tests)
   LinuxEnvironment.cs             fixes snap environment leaks (e.g. VS Code snap terminal) for WebKit
   Controllers/LocalPdfController.cs  page sizes and rendered page images for the opened file
   Services/PdfiumService.cs       open with PDFium, render pages
   Services/PdfPreflight.cs        detects files PDFium cannot read before trying
+  Services/RecentFiles.cs         recent file paths (JSON in the user's app data folder)
   Services/PngEncoder.cs          small PNG writer for rendered pages
 tests/
   make-fixtures.js                generates test PDFs into tests/fixtures/
@@ -203,6 +219,7 @@ Covered: invalid / empty / oversized / corrupt / truncated / password-protected 
 a 45 MB PDF, landscape, rotated and mixed page sizes, image-based and form PDFs, a real-world PDF
 (pdf.js test corpus, downloaded by `npm run fixtures`), navigation, zoom limits, Fit Page / Fit Width,
 highlight create / select / remove / clear and their positions after zoom, fit, page change and window resize,
+menu bar, shortcuts, custom zoom, recent files (web and desktop, including moved files and Clear),
 render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).

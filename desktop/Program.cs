@@ -70,6 +70,7 @@ public static class Program
         builder.Services.AddSingleton<PdfiumService>();
         builder.Services.AddSingleton<DesktopBridge>();
         builder.Services.AddSingleton<DesktopTools>();
+        builder.Services.AddSingleton<RecentFiles>();
         builder.Services.AddControllers();
 
         var app = builder.Build();

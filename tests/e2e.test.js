@@ -103,7 +103,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
             fileName: q('.file-name') ? q('.file-name').textContent.trim() : '',
             pageStatus: 'Page: ' + (q('.page-input').value || '–') + ' / ' + q('.page-total').textContent.replace('of', '').trim(),
             status: q('.status-text').textContent.trim(),
-            zoom: q('.zoom-value').textContent.trim(),
+            zoom: q('.zoom-value').value.trim(),
             canvasW: canvas ? parseFloat(canvas.style.width) : 0,
             canvasH: canvas ? parseFloat(canvas.style.height) : 0,
             availW: scroll.clientWidth - pad, availH: scroll.clientHeight - pad,
@@ -166,6 +166,30 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     const dismissError = async () => { if (await page.$('.alert-close')) { await page.click('.alert-close'); await sleep(100); } };
     const shot = name => page.screenshot({ path: path.join(SCREENSHOTS, `${BROWSER}-${name}.png`) });
     const near = (a, b, tol = 1.5) => Math.abs(a - b) <= tol;
+    const typeZoom = async text => {
+        await page.focus('.zoom-value');
+        await page.$eval('.zoom-value', el => el.select());
+        await page.keyboard.type(text);
+        await page.keyboard.press('Enter');
+        await settle();
+    };
+    const menuState = () => page.evaluate(() => ({
+        file: !document.querySelector('#menu-file').hidden,
+        zoom: !document.querySelector('#menu-zoom').hidden,
+        focus: document.activeElement ? (document.activeElement.textContent || '').trim().replace(/\s+/g, ' ') : '',
+        recent: [...document.querySelectorAll('#menu-file .menu-item-recent')].map(b => b.getAttribute('aria-label')),
+        startRecent: [...document.querySelectorAll('.recent-start-name')].map(e => e.textContent.trim())
+    }));
+    const openMenu = async name => { await page.click(`#menu-${name}-button`); await sleep(100); };
+    const menuItem = async (menu, text) => {
+        await page.evaluate((m, t) => [...document.querySelectorAll(`#menu-${m} .menu-item`)]
+            .find(b => b.textContent.trim().startsWith(t)).click(), menu, text);
+        await settle();
+    };
+    const shortcut = async key => {
+        await page.keyboard.down('Control'); await page.keyboard.press(key); await page.keyboard.up('Control');
+        await settle();
+    };
     let s;
 
     // ===== Initial state =====
@@ -222,12 +246,12 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await click('Zoom in'); await click('Zoom in'); s = await state(); check('zoom in -> 200%', s.zoom === '200%' && s.canvasW === 1190, [s.zoom, s.canvasW]);
     for (let i = 0; i < 4; i++) await click('Zoom out');
     s = await state(); check('zoom out -> 75%', s.zoom === '75%' && near(s.canvasW, 446.25), [s.zoom, s.canvasW]);
-    await click('Reset zoom'); s = await state(); check('reset zoom -> 100%', s.zoom === '100%' && s.canvasW === 595, [s.zoom, s.canvasW]);
+    await click('Actual size'); s = await state(); check('reset zoom -> 100%', s.zoom === '100%' && s.canvasW === 595, [s.zoom, s.canvasW]);
     for (let i = 0; i < 10; i++) await click('Zoom out');
     s = await state(); check('zoom out stops at 25% and disables', s.zoom === '25%' && s.zoomOutDisabled, s.zoom);
     for (let i = 0; i < 12; i++) await click('Zoom in');
     s = await state(); check('zoom in stops at 300% and disables', s.zoom === '300%' && s.zoomInDisabled, s.zoom);
-    await click('Reset zoom');
+    await click('Actual size');
 
     // ===== Fit =====
     await click('Fit Page'); s = await state();
@@ -235,6 +259,65 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         [s.canvasW, s.canvasH, s.availW, s.availH]);
     await click('Fit Width'); s = await state();
     check('Fit Width matches viewer width', s.availW - s.canvasW < 3 && s.canvasW <= s.availW && !s.hScroll, [s.canvasW, s.availW]);
+
+    // ===== Custom zoom, Actual size, menus, shortcuts =====
+    await typeZoom('135'); s = await state();
+    check('custom zoom 135 -> 135%', s.zoom === '135%' && near(s.canvasW, 803.25), [s.zoom, s.canvasW]);
+    await typeZoom('80%'); s = await state();
+    check('custom zoom accepts "80%"', s.zoom === '80%' && near(s.canvasW, 476), [s.zoom, s.canvasW]);
+    await typeZoom('999'); s = await state();
+    check('custom zoom clamps to 300%', s.zoom === '300%' && s.zoomInDisabled, s.zoom);
+    await typeZoom('abc'); s = await state();
+    check('invalid custom zoom rejected, zoom kept', s.zoom === '300%' && s.error.startsWith('Enter a zoom between 25% and 300%'), [s.zoom, s.error]);
+    await dismissError();
+    await page.focus('.zoom-value'); await page.$eval('.zoom-value', el => el.select());
+    await page.keyboard.type('50'); await page.keyboard.press('Escape'); await sleep(100);
+    check('Escape reverts the typed zoom', (await page.$eval('.zoom-value', el => el.value)) === '300%');
+    await page.$eval('.zoom-value', el => el.blur()); await settle();
+    await click('Actual size'); s = await state();
+    check('Actual size button -> 100%', s.zoom === '100%' && s.canvasW === 595, [s.zoom, s.canvasW]);
+
+    await openMenu('file'); let m = await menuState();
+    check('File menu opens on click', m.file && !m.zoom, m);
+    await page.click('.app-title'); await sleep(100); m = await menuState();
+    check('click outside closes the menu', !m.file, m);
+
+    await page.focus('#menu-file-button'); await page.keyboard.press('ArrowDown'); await sleep(100); m = await menuState();
+    check('ArrowDown opens File menu, focus on first item', m.file && m.focus.startsWith('Open PDF'), m);
+    await page.keyboard.press('ArrowRight'); await sleep(100); m = await menuState(); s = await state();
+    check('ArrowRight switches to Zoom menu (page unchanged)', m.zoom && !m.file && m.focus.startsWith('Zoom in') && s.pageStatus === 'Page: 1 / 10', [m, s.pageStatus]);
+    await page.keyboard.press('End'); await sleep(50); m = await menuState();
+    check('End -> last Zoom item', m.focus.startsWith('Custom zoom'), m.focus);
+    await page.keyboard.press('ArrowUp'); await sleep(50); m = await menuState();
+    check('ArrowUp moves through items', m.focus.startsWith('Actual size'), m.focus);
+    await page.keyboard.press('Escape'); await sleep(100); m = await menuState();
+    check('Escape closes the menu and focuses its button', !m.zoom && m.focus === 'Zoom', m);
+
+    await openMenu('zoom'); await menuItem('zoom', 'Fit to page'); s = await state();
+    const fitPagePressed = await page.$eval('button[aria-label="Fit Page"]', b => b.getAttribute('aria-pressed'));
+    check('Zoom > Fit to page', fitPagePressed === 'true' && s.canvasH <= s.availH && !(await menuState()).zoom, [fitPagePressed, s.canvasH, s.availH]);
+    await openMenu('zoom'); await menuItem('zoom', 'Actual size'); s = await state();
+    check('Zoom > Actual size', s.zoom === '100%' && s.canvasW === 595, s.zoom);
+    await openMenu('zoom'); await menuItem('zoom', 'Custom zoom');
+    await sleep(100);
+    check('Zoom > Custom zoom focuses the zoom box', await page.evaluate(() => document.activeElement === document.querySelector('.zoom-value')));
+    await page.keyboard.type('150'); await page.keyboard.press('Enter'); await settle(); s = await state();
+    check('typed after Custom zoom -> 150%', s.zoom === '150%', s.zoom);
+
+    await page.$eval('.zoom-value', el => el.blur());
+    await shortcut('Digit0'); s = await state();
+    check(`Ctrl+0 -> 100%`, s.zoom === '100%', s.zoom);
+    await shortcut('Equal'); s = await state();
+    check('Ctrl+= zooms in', s.zoom === '125%', s.zoom);
+    await shortcut('Minus'); s = await state();
+    check('Ctrl+- zooms out', s.zoom === '100%', s.zoom);
+    await shortcut('KeyS'); s = await state();
+    check('Ctrl+S without highlights explains, no download', s.status.startsWith('Nothing to save yet'), s.status);
+    await openMenu('file');
+    const saveDisabled = await page.evaluate(() => [...document.querySelectorAll('#menu-file .menu-item')]
+        .find(b => b.textContent.includes('Save copy with highlights')).disabled);
+    check('File > Save copy disabled without highlights', saveDisabled);
+    await page.keyboard.press('Escape');
 
     // ===== Highlights =====
     await click('Fit Page'); await click('Highlight'); s = await state();
@@ -360,7 +443,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await open('landscape.pdf'); s = await state();
     check('landscape PDF', s.pageStatus === 'Page: 1 / 3' && s.canvasW > s.canvasH, [s.canvasW, s.canvasH]);
 
-    await open('rotated.pdf'); await click('Reset zoom'); s = await state();
+    await open('rotated.pdf'); await click('Actual size'); s = await state();
     check('page rotated 90° displays as landscape', s.canvasW === 842 && s.canvasH === 595, [s.canvasW, s.canvasH]);
     await click('Highlight'); await drag(100, 100, 400, 140); s = await state();
     const rotW = s.highlights[0].w;
@@ -504,7 +587,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         return yellow / (data.length / 4);
     }, rect);
 
-    await open('ten-pages.pdf'); await click('Reset zoom');
+    await open('ten-pages.pdf'); await click('Actual size');
     check('Save with highlights disabled without highlights', await page.$eval('button[aria-label="Save with highlights"]', b => b.disabled));
     await click('Highlight');
     await drag(60, 120, 360, 160); await drag(60, 300, 260, 330);
@@ -522,7 +605,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         if (saved) {
             const input = await page.$('.toolbar input[type=file]');
             await input.uploadFile(path.join(DOWNLOADS, 'ten-pages-highlighted.pdf')); await sleep(300); await settle();
-            await click('Reset zoom');
+            await click('Actual size');
             const inside = await yellowShare({ x: 70, y: 125, w: 280, h: 30 });
             const outside = await yellowShare({ x: 70, y: 200, w: 280, h: 30 });
             check(`saved highlights are part of the PDF (pdf.js shows them: ${Math.round(inside * 100)}% yellow inside, ${Math.round(outside * 100)}% outside)`,
@@ -538,6 +621,37 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     const widerW = s.availW;
     await click('Thumbnails panel'); await click('Markups panel'); s = await state();
     check('page area shrinks when panels are shown', s.availW < widerW, [s.availW, widerW]);
+
+    // ===== Recent files (web: kept in this browser) =====
+    await openMenu('file');
+    if ((await menuState()).recent.length) { await menuItem('file', 'Clear recent files'); } else { await page.keyboard.press('Escape'); }
+    await open('one-page.pdf'); await open('ten-pages.pdf');
+    await openMenu('file'); m = await menuState(); await page.keyboard.press('Escape');
+    check('File menu lists recent files, newest first', m.recent.length === 2 &&
+        m.recent[0] === 'Open recent: ten-pages.pdf' && m.recent[1] === 'Open recent: one-page.pdf', m.recent);
+    await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.toolbar'); await sleep(500);
+    m = await menuState();
+    check('recent files survive a reload, shown on the start screen', m.startRecent.join() === 'ten-pages.pdf,one-page.pdf', m.startRecent);
+    await page.evaluate(() => [...document.querySelectorAll('.recent-start-item')].find(b => b.textContent.includes('one-page.pdf')).click());
+    await settle(); s = await state();
+    check('start screen: reopen a recent file', s.fileName === 'one-page.pdf' && s.pageStatus === 'Page: 1 / 1' && s.canvasW > 0 && !s.error, [s.fileName, s.pageStatus, s.error]);
+    await openMenu('file'); m = await menuState();
+    check('reopened file moves to the top', m.recent[0] === 'Open recent: one-page.pdf', m.recent);
+    await page.evaluate(() => document.querySelector('#menu-file [aria-label="Open recent: ten-pages.pdf"]').click());
+    await settle(); s = await state();
+    check('File > Recent: reopen a file', s.fileName === 'ten-pages.pdf' && s.pageStatus === 'Page: 1 / 10', [s.fileName, s.pageStatus]);
+    await openMenu('file'); await menuItem('file', 'Close PDF'); s = await state();
+    check('File > Close PDF', s.empty && !s.fileName, s);
+    await openMenu('file'); await menuItem('file', 'Clear recent files'); await sleep(200);
+    await openMenu('file'); m = await menuState(); await page.keyboard.press('Escape');
+    const noRecentText = await page.$eval('#menu-file', el => el.textContent.includes('No recent files'));
+    check('Clear recent files empties the list and the start screen', m.recent.length === 0 && m.startRecent.length === 0 && noRecentText, m);
+    if (BROWSER === 'chrome') {
+        const [chooser] = await Promise.all([page.waitForFileChooser({ timeout: 3000 }), shortcut('KeyO')]);
+        await chooser.accept([path.join(FIXTURES, 'one-page.pdf')]); await sleep(300); await settle(); s = await state();
+        check('Ctrl+O opens the file picker', s.fileName === 'one-page.pdf', s.fileName);
+        await openMenu('file'); await menuItem('file', 'Clear recent files');
+    } else skip('Ctrl+O opens the file picker', 'file chooser interception is Chrome-only here');
 
     // ===== Light / dark theme =====
     const theme = () => page.evaluate(() => ({

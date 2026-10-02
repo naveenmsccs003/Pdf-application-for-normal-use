@@ -1,10 +1,12 @@
 (function () {
     'use strict';
 
-    /** Toolbar and status bar state: open, navigate, zoom, fit and highlight commands. */
+    /** Menu bar, toolbar and status bar state: open, recent files, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
-        '$scope', '$document', '$window', 'pdfService', 'highlightService', 'themeService', 'desktopService', 'VIEWER_CONFIG',
-        function ($scope, $document, $window, pdfService, highlightService, themeService, desktopService, VIEWER_CONFIG) {
+        '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
+        'recentFilesService', 'VIEWER_CONFIG',
+        function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
+                  recentFilesService, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -26,6 +28,10 @@
             vm.source = null;           // where the open document lives, for the PDF tools:
                                         // { kind: 'web', id } (upload id) or { kind: 'desktop' }
             vm.isDesktop = desktopService.isDesktop;
+            vm.recentFiles = [];        // [{ id, name, detail, missing }], newest first
+            vm.zoomInput = '100%';
+            // Shortcut labels shown in the menus.
+            vm.modKey = /Mac|iPhone|iPad/.test($window.navigator.platform || '') ? '\u2318' : 'Ctrl+';
 
             // Side panels start open on wide screens; on narrow screens they slide over the page when
             // opened, so they close when the window becomes narrow (keep in sync with the CSS breakpoint).
@@ -68,12 +74,68 @@
                     vm.status = 'Opening ' + uploaded.fileName + '…';
                     return pdfService.load(VIEWER_CONFIG.apiBase + '/' + uploaded.id).then(function (pageCount) {
                         vm.source = { kind: 'web', id: uploaded.id };
+                        recentFilesService.add(file).then(refreshWebRecent);
                         return showDocument(uploaded.fileName, pageCount);
                     });
                 }).catch(openFailed).finally(function () {
                     vm.busy = false;
                 });
             };
+
+            /** File > Open: the native dialog on desktop, the browser's file picker on the web. */
+            vm.chooseFile = function () {
+                if (vm.busy) { return; }
+                if (vm.isDesktop) {
+                    vm.openFile();
+                } else {
+                    var input = $document[0].getElementById('menu-open-input');
+                    if (input) { input.click(); }
+                }
+            };
+
+            // ----- Recent files -----
+            // Desktop: the host keeps file paths and reopens from disk. Web: the files themselves are kept in
+            // this browser's storage (recentFilesService), because a page cannot reopen a file by path.
+            function refreshWebRecent() {
+                return recentFilesService.list().then(function (rows) {
+                    vm.recentFiles = rows.map(function (r) {
+                        return { id: r.id, name: r.name, detail: formatSize(r.size) + ' \u00b7 ' + new Date(r.openedAt).toLocaleDateString(), missing: false };
+                    });
+                });
+            }
+
+            vm.openRecent = function (item) {
+                if (vm.busy || !item) { return; }
+                if (vm.isDesktop) {
+                    desktopService.send('open-recent', { path: item.id });
+                    return;
+                }
+                recentFilesService.get(item.id).then(function (file) {
+                    if (file) {
+                        vm.openFile(file);
+                    } else {
+                        showError(item.name + ' is no longer stored in this browser. Open it again from your computer.');
+                        refreshWebRecent();
+                    }
+                });
+            };
+
+            vm.clearRecent = function () {
+                if (vm.isDesktop) {
+                    desktopService.send('clear-recent');
+                } else {
+                    recentFilesService.clear().then(refreshWebRecent);
+                }
+            };
+
+            function formatSize(bytes) {
+                if (bytes < 1024 * 1024) { return Math.max(1, Math.round(bytes / 1024)) + ' KB'; }
+                return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+
+            if (!vm.isDesktop) {
+                refreshWebRecent();
+            }
 
             // Desktop host messages (the host opens the file from disk with PDFium).
             if (vm.isDesktop) {
@@ -96,6 +158,11 @@
                 });
                 desktopService.on('open-cancelled', function () {
                     vm.busy = false;
+                });
+                desktopService.on('recent-files', function (message) {
+                    vm.recentFiles = (message.files || []).map(function (f) {
+                        return { id: f.path, name: f.fileName, detail: f.folder, missing: !f.exists };
+                    });
                 });
                 // Tell the host once the viewer exists, so a file passed on the command line can be opened.
                 var stopWatching = $scope.$watch(function () { return vm.viewer; }, function (viewer) {
@@ -225,8 +292,44 @@
                 setManualZoom(smaller[smaller.length - 1]);
             };
 
+            /** Actual size: 100%. */
             vm.resetZoom = function () {
                 if (vm.hasDocument()) { setManualZoom(1); }
+            };
+
+            // Custom zoom: the percentage in the status bar is an input. Accepts "135" or "135%";
+            // values outside the zoom range are clamped to it.
+            var minZoom = zoomSteps[0];
+            var maxZoom = zoomSteps[zoomSteps.length - 1];
+            $scope.$watch(function () { return vm.scale; }, function () { vm.revertZoomInput(); });
+
+            vm.revertZoomInput = function () {
+                vm.zoomInput = vm.zoomPercent();
+            };
+
+            vm.applyZoomInput = function () {
+                if (!vm.hasDocument()) { vm.revertZoomInput(); return; }
+                var text = String(vm.zoomInput == null ? '' : vm.zoomInput).trim().replace(/%$/, '').trim();
+                var percent = Number(text);
+                if (text === '' || !isFinite(percent) || percent <= 0) {
+                    showError('Enter a zoom between ' + Math.round(minZoom * 100) + '% and ' + Math.round(maxZoom * 100) + '%.');
+                    vm.revertZoomInput();
+                    return;
+                }
+                var scale = Math.min(maxZoom, Math.max(minZoom, percent / 100));
+                if (Math.abs(scale - vm.scale) > EPSILON || vm.fitMode) {
+                    setManualZoom(scale);
+                }
+                vm.revertZoomInput();
+            };
+
+            /** Zoom > Custom zoom: puts the cursor in the zoom box with its value selected. */
+            vm.focusZoomInput = function () {
+                if (!vm.hasDocument()) { return; }
+                $timeout(function () {
+                    var input = $document[0].querySelector('.zoom-value');
+                    if (input) { input.focus(); input.select(); }
+                });
             };
 
             function setManualZoom(scale) {
@@ -339,7 +442,33 @@
             vm.toggleTheme = themeService.toggle;
 
             // ----- Keyboard shortcuts -----
+            // Ctrl/Cmd shortcuts (shown in the menus) work everywhere, also while typing in a box.
+            // Close has no shortcut: browsers reserve Ctrl+W for closing the tab.
+            function onShortcut(event) {
+                if (!(event.ctrlKey || event.metaKey) || event.altKey) { return false; }
+                var key = event.key.toLowerCase();
+                var command = null;
+                if (key === 'o') {
+                    command = vm.chooseFile;
+                } else if (key === 's') {
+                    command = function () { $scope.$broadcast('save-copy'); };
+                } else if (vm.hasDocument() && (key === '=' || key === '+')) {
+                    command = vm.zoomIn;
+                } else if (vm.hasDocument() && key === '-') {
+                    command = vm.zoomOut;
+                } else if (vm.hasDocument() && key === '0') {
+                    command = vm.resetZoom;
+                }
+                if (!command) { return false; }
+                event.preventDefault();   // instead of the browser's own open / save / page zoom
+                $scope.$apply(command);
+                return true;
+            }
+
             function onKeyDown(event) {
+                if (onShortcut(event)) {
+                    return;
+                }
                 var tag = event.target && event.target.tagName;
                 if (tag === 'INPUT' || tag === 'TEXTAREA' || !vm.hasDocument()) {
                     return;
