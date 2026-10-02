@@ -3,3 +3,6 @@ obj/
 .vs/
 .vscode/
 *.user
+node_modules/
+tests/fixtures/
+tests/screenshots/

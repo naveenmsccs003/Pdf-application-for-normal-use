@@ -155,7 +155,26 @@ html, body {
     min-height: 0;
 }
 
-pdf-viewer { display: block; height: 100%; }
+pdf-viewer { display: block; position: relative; height: 100%; }
+
+/* Shown only when a page takes a moment to render (large or complex pages). */
+.render-indicator {
+    position: absolute;
+    top: 24px;
+    left: 50%;
+    margin-left: -22px;
+    padding: 6px;
+    border-radius: 50%;
+    background: var(--surface);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+    opacity: 0;
+    animation: fade-in 0.2s ease 0.3s forwards;
+}
+
+.render-indicator .spinner { display: block; }
+
+@keyframes fade-in { to { opacity: 1; } }
 
 .viewer-scroll {
     height: 100%;

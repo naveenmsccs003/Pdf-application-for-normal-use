@@ -1,0 +1,13 @@
+{
+  "name": "pdf-viewer-tests",
+  "private": true,
+  "description": "End-to-end UI tests for the PDF viewer (requires the app running on http://localhost:5000)",
+  "scripts": {
+    "fixtures": "node make-fixtures.js",
+    "test": "node e2e.test.js",
+    "test:firefox": "node e2e.test.js firefox"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.11.1"
+  }
+}

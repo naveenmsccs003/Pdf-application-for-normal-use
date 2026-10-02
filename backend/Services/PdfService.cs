@@ -103,7 +103,7 @@ public class PdfService
         return string.IsNullOrEmpty(cleaned) ? "document.pdf" : cleaned;
     }
 
-    private void DeleteExpiredFiles()
+    public void DeleteExpiredFiles()
     {
         var cutoff = DateTime.UtcNow.AddMinutes(-_options.RetentionMinutes);
         foreach (var path in Directory.EnumerateFiles(_storageDir, "*.pdf"))
@@ -113,7 +113,7 @@ public class PdfService
                 if (File.GetLastWriteTimeUtc(path) < cutoff)
                     File.Delete(path);
             }
-            catch (IOException ex)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 _logger.LogWarning(ex, "Could not delete expired upload {Path}", path);
             }

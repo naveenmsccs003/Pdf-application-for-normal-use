@@ -30,7 +30,7 @@
                     onRenderError: '&'
                 },
                 template:
-                    '<div class="viewer-scroll">' +
+                    '<div class="viewer-scroll" ng-class="{\'is-rendering\': rendering}">' +
                     '  <div class="pdf-page" ng-show="rendered.page" ng-style="{width: rendered.width + \'px\', height: rendered.height + \'px\'}">' +
                     '    <div class="canvas-layer"></div>' +
                     '    <div class="interaction-layer" ng-class="{\'is-drawing\': highlightMode}"></div>' +
@@ -46,7 +46,8 @@
                     '      <div class="highlight is-draft ng-hide"></div>' +
                     '    </div>' +
                     '  </div>' +
-                    '</div>',
+                    '</div>' +
+                    '<div class="render-indicator" ng-show="rendering"><span class="spinner"></span></div>',
                 link: function (scope, element) {
                     var scrollEl = element[0].querySelector('.viewer-scroll');
                     var canvasLayer = element[0].querySelector('.canvas-layer');
@@ -67,11 +68,13 @@
                         var page = scope.page;
                         var scale = scope.scale;
                         var pageChanged = page !== scope.rendered.page;
+                        scope.rendering = true;
 
                         pdfService.renderPage(page, scale).then(function (result) {
                             if (!result || seq !== renderSeq) {
                                 return; // superseded by a newer render
                             }
+                            scope.rendering = false;
                             canvasLayer.innerHTML = '';
                             canvasLayer.appendChild(result.canvas);
                             scope.rendered = { page: page, scale: scale, width: result.width, height: result.height };
@@ -81,6 +84,7 @@
                             scope.onRendered({ page: page });
                         }, function () {
                             if (seq === renderSeq) {
+                                scope.rendering = false;
                                 scope.onRenderError();
                             }
                         });
@@ -90,6 +94,7 @@
                         if (newValues[0] !== oldValues[0]) {
                             // New document: forget the previous one's page.
                             scope.rendered = { page: 0, scale: 1, width: 0, height: 0 };
+                            scope.rendering = false;
                             canvasLayer.innerHTML = '';
                         }
                         render();

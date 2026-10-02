@@ -51,15 +51,21 @@
                 });
             }
 
-            /** Loads a PDF from a URL; resolves with the page count. Rejects with a message. */
+            /**
+             * Loads a PDF from a URL; resolves with the page count. Rejects with a message.
+             * The current document stays open until the new one has loaded, so a failed
+             * open leaves the viewer as it was.
+             */
             function load(url) {
-                close();
-                loadingTask = pdfjsLib.getDocument({ url: url, isEvalSupported: false });
+                var task = pdfjsLib.getDocument({ url: url, isEvalSupported: false });
 
-                return $q.when(loadingTask.promise).then(function (doc) {
+                return $q.when(task.promise).then(function (doc) {
+                    close();
+                    loadingTask = task;
                     pdfDocument = doc;
                     return doc.numPages;
                 }, function (error) {
+                    task.destroy();
                     var name = error && error.name;
                     if (name === 'PasswordException') {
                         return $q.reject('This PDF is password-protected and cannot be opened.');
@@ -75,12 +81,22 @@
             }
 
             function close() {
+                var task = loadingTask;
+                var pendingRender = renderTask;
                 cancelRender();
-                if (loadingTask) {
-                    loadingTask.destroy();
-                }
                 loadingTask = null;
                 pdfDocument = null;
+                if (!task) {
+                    return;
+                }
+                // Destroying while a cancelled render is still unwinding throws inside pdf.js,
+                // so wait for that render to finish first.
+                var destroy = function () { task.destroy(); };
+                if (pendingRender) {
+                    pendingRender.promise.then(destroy, destroy);
+                } else {
+                    destroy();
+                }
             }
 
             function getPage(pageNumber) {

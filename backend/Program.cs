@@ -14,6 +14,7 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
 
 builder.Services.Configure<PdfStorageOptions>(builder.Configuration.GetSection("PdfStorage"));
 builder.Services.AddSingleton<PdfService>();
+builder.Services.AddHostedService<PdfCleanupService>();
 builder.Services.AddControllers().ConfigureApiBehaviorOptions(o =>
 {
     // Replace the default validation response (which includes framework details) with a simple message.
