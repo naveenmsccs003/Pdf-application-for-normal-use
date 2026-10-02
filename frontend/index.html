@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="pdfViewerApp" ng-csp="no-unsafe-eval">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>PDF Viewer</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="css/pdf-viewer.css">
+</head>
+<body>
+    <div class="app" ng-controller="PdfViewerController as vm" ng-include="'app/views/pdf-viewer.html'"></div>
+
+    <script src="lib/angular.min.js"></script>
+    <script src="lib/pdf.min.js"></script>
+    <script src="app/app.js"></script>
+    <script src="app/services/pdfService.js"></script>
+    <script src="app/services/highlightService.js"></script>
+    <script src="app/directives/fileInputDirective.js"></script>
+    <script src="app/directives/pdfViewerDirective.js"></script>
+    <script src="app/controllers/pdfViewerController.js"></script>
+</body>
+</html>

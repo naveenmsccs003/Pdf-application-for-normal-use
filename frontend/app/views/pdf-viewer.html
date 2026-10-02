@@ -1,0 +1,90 @@
+<header class="app-header">
+    <h1 class="app-title">PDF Viewer</h1>
+    <span class="file-name" ng-if="vm.fileName" title="{{ vm.fileName }}">{{ vm.fileName }}</span>
+</header>
+
+<nav class="toolbar" aria-label="PDF tools">
+    <div class="toolbar-group">
+        <label class="btn btn-primary" ng-class="{'is-disabled': vm.busy}">
+            <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
+                   on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
+            Open PDF
+        </label>
+    </div>
+
+    <div class="toolbar-group" role="group" aria-label="Page navigation">
+        <button type="button" class="btn" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()"
+                title="Previous page (←)" aria-label="Previous page">&lsaquo; Prev</button>
+        <form class="page-form" novalidate ng-submit="vm.submitPageInput()">
+            <input type="number" class="page-input" min="1" max="{{ vm.pageCount }}" aria-label="Page number"
+                   ng-model="vm.pageInput" ng-disabled="!vm.hasDocument() || vm.busy" ng-blur="vm.submitPageInput()">
+            <span class="page-total">/ {{ vm.pageCount || '–' }}</span>
+        </form>
+        <button type="button" class="btn" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()"
+                title="Next page (→)" aria-label="Next page">Next &rsaquo;</button>
+    </div>
+
+    <div class="toolbar-group" role="group" aria-label="Zoom">
+        <button type="button" class="btn btn-icon" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()"
+                title="Zoom out" aria-label="Zoom out">&minus;</button>
+        <button type="button" class="btn zoom-value" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()"
+                title="Reset zoom to 100%" aria-label="Reset zoom">{{ vm.hasDocument() ? vm.zoomPercent() : '100%' }}</button>
+        <button type="button" class="btn btn-icon" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()"
+                title="Zoom in" aria-label="Zoom in">+</button>
+    </div>
+
+    <div class="toolbar-group" role="group" aria-label="Fit">
+        <button type="button" class="btn" ng-click="vm.fitPage()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.fitMode === 'page'}" aria-pressed="{{ vm.fitMode === 'page' }}">Fit Page</button>
+        <button type="button" class="btn" ng-click="vm.fitWidth()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.fitMode === 'width'}" aria-pressed="{{ vm.fitMode === 'width' }}">Fit Width</button>
+    </div>
+
+    <div class="toolbar-group" role="group" aria-label="Highlights">
+        <button type="button" class="btn btn-highlight" ng-click="vm.toggleHighlightMode()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.highlightMode}" aria-pressed="{{ vm.highlightMode }}"
+                title="Drag over the page to highlight (Esc to exit)">Highlight</button>
+        <button type="button" class="btn" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
+                title="Remove the selected highlight (Delete)">Remove</button>
+        <button type="button" class="btn" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length">Clear Highlights</button>
+    </div>
+</nav>
+
+<div class="alert" role="alert" ng-if="vm.error">
+    <span>{{ vm.error }}</span>
+    <button type="button" class="alert-close" ng-click="vm.dismissError()" aria-label="Dismiss">&times;</button>
+</div>
+
+<main class="viewer" ng-class="{'is-highlighting': vm.highlightMode}">
+    <pdf-viewer doc-version="vm.docVersion"
+                page="vm.currentPage"
+                scale="vm.scale"
+                highlight-mode="vm.highlightMode"
+                highlights="vm.highlights"
+                selected-id="vm.selectedHighlightId"
+                api="vm.viewer"
+                on-create-highlight="vm.addHighlight(pageNumber, rect)"
+                on-select-highlight="vm.selectHighlight(id)"
+                on-remove-highlight="vm.removeHighlight(id)"
+                on-resize="vm.onViewerResize()"
+                on-rendered="vm.onPageRendered()"
+                on-render-error="vm.onRenderError()"></pdf-viewer>
+
+    <div class="empty-state" ng-if="!vm.hasDocument()">
+        <h2>PDF Viewer</h2>
+        <p>Select a PDF file from your computer to view it.</p>
+        <label class="btn btn-primary btn-large" ng-class="{'is-disabled': vm.busy}">
+            <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
+                   on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
+            Open PDF
+        </label>
+        <p class="hint">PDF files up to 50 MB</p>
+    </div>
+
+    <div class="loading" ng-if="vm.busy" aria-live="polite"><span class="spinner"></span></div>
+</main>
+
+<footer class="status-bar">
+    <span class="page-status">Page: {{ vm.hasDocument() ? vm.currentPage + ' / ' + vm.pageCount : '– / –' }}</span>
+    <span class="status-text" ng-class="{'is-error': vm.error}" aria-live="polite">{{ vm.status }}</span>
+</footer>
