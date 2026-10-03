@@ -2,10 +2,11 @@
     'use strict';
 
     /**
-     * Displays one PDF page using three stacked layers:
+     * Displays one PDF page using stacked layers:
      *   1. canvas layer       - PDF rendering (pdfService), never modified
-     *   2. interaction layer  - mouse/touch input for drawing and selecting highlights
-     *   3. highlight layer    - transparent overlay, positioned from PDF-unit coordinates
+     *   2. search layer       - find matches (FindController), positioned from PDF-unit coordinates
+     *   3. interaction layer  - mouse/touch input for drawing and selecting highlights
+     *   4. highlight layer    - transparent overlay, positioned from PDF-unit coordinates
      */
     angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'VIEWER_CONFIG',
         function (pdfService, VIEWER_CONFIG) {
@@ -21,6 +22,8 @@
                     highlightMode: '<',
                     highlights: '<',
                     selectedId: '<',
+                    searchMatches: '<',
+                    activeMatch: '<',
                     api: '=',
                     onCreateHighlight: '&',
                     onSelectHighlight: '&',
@@ -33,6 +36,11 @@
                     '<div class="viewer-scroll" ng-class="{\'is-rendering\': rendering}">' +
                     '  <div class="pdf-page" ng-show="rendered.page" ng-style="{width: rendered.width + \'px\', height: rendered.height + \'px\'}">' +
                     '    <div class="canvas-layer"></div>' +
+                    '    <div class="search-layer">' +
+                    '      <div class="search-hit" ng-repeat="r in pageHits track by $index" ng-class="{\'is-current\': r.current}"' +
+                    '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
+                    '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}"></div>' +
+                    '    </div>' +
                     '    <div class="interaction-layer" ng-class="{\'is-drawing\': highlightMode}"></div>' +
                     '    <div class="highlight-layer">' +
                     '      <div class="highlight" ng-repeat="h in highlights | filter:{pageNumber: rendered.page}:true track by h.id"' +
@@ -98,6 +106,53 @@
                             canvasLayer.innerHTML = '';
                         }
                         render();
+                    });
+
+                    // ----- Find matches -----
+                    // The rectangles of the matches on the page on screen; the current match is scrolled into view.
+                    scope.pageHits = [];
+
+                    function updateHits() {
+                        var hits = [];
+                        (scope.searchMatches || []).forEach(function (match) {
+                            if (match.pageNumber !== scope.rendered.page) { return; }
+                            match.rects.forEach(function (r) {
+                                hits.push({ x: r.x, y: r.y, width: r.width, height: r.height, current: match === scope.activeMatch });
+                            });
+                        });
+                        scope.pageHits = hits;
+                    }
+
+                    function scrollToActiveMatch() {
+                        var match = scope.activeMatch;
+                        if (!match || match.pageNumber !== scope.rendered.page) { return; }
+                        // After the page's new size is in the DOM.
+                        setTimeout(function () {
+                            var pageEl = element[0].querySelector('.pdf-page');
+                            var s = scope.rendered.scale;
+                            var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+                            match.rects.forEach(function (r) {
+                                x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y);
+                                x2 = Math.max(x2, r.x + r.width); y2 = Math.max(y2, r.y + r.height);
+                            });
+                            var pageBox = pageEl.getBoundingClientRect();
+                            var scrollBox = scrollEl.getBoundingClientRect();
+                            var top = pageBox.top - scrollBox.top + scrollEl.scrollTop + y1 * s;
+                            var left = pageBox.left - scrollBox.left + scrollEl.scrollLeft + x1 * s;
+                            var margin = 40;
+                            if (top < scrollEl.scrollTop + margin || top + (y2 - y1) * s > scrollEl.scrollTop + scrollEl.clientHeight - margin) {
+                                scrollEl.scrollTop = top - scrollEl.clientHeight / 3;
+                            }
+                            if (left < scrollEl.scrollLeft + margin || left + (x2 - x1) * s > scrollEl.scrollLeft + scrollEl.clientWidth - margin) {
+                                scrollEl.scrollLeft = left - scrollEl.clientWidth / 3;
+                            }
+                        });
+                    }
+
+                    scope.$watchCollection('searchMatches', updateHits);
+                    scope.$watchGroup(['activeMatch', 'rendered.page'], function () {
+                        updateHits();
+                        scrollToActiveMatch();
                     });
 
                     // ----- API used by the controller for Fit Page / Fit Width -----

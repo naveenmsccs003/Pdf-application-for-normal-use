@@ -27,6 +27,7 @@
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-actual-size" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M8 9v6M16 9v6M12 10.2v.1M12 13.7v.1"/></symbol>
     <symbol id="i-recent" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
 </svg>
 
@@ -63,6 +64,19 @@
                 <div class="menu-empty" role="presentation" ng-if="!vm.recentFiles.length">No recent files</div>
                 <button type="button" class="menu-item" role="menuitem" ng-if="vm.recentFiles.length" ng-click="vm.clearRecent()">
                     <svg class="icon icon-sm"><use href="#i-clear"></use></svg><span>Clear recent files</span></button>
+            </div>
+        </div>
+
+        <div class="menu-root">
+            <button type="button" class="menu-button" role="menuitem" data-menu-button aria-haspopup="menu"
+                    aria-expanded="false" aria-controls="menu-edit" id="menu-edit-button">Edit</button>
+            <div class="menu" role="menu" id="menu-edit" aria-labelledby="menu-edit-button" hidden>
+                <button type="button" class="menu-item" role="menuitem" ng-click="find.show()" ng-disabled="!vm.hasDocument()">
+                    <svg class="icon icon-sm"><use href="#i-search"></use></svg><span>Find&hellip;</span><kbd>{{ vm.modKey }}F</kbd></button>
+                <button type="button" class="menu-item" role="menuitem" ng-click="find.next()" ng-disabled="!find.hasMatches()">
+                    <svg class="icon icon-sm"><use href="#i-down"></use></svg><span>Find next</span><kbd>F3</kbd></button>
+                <button type="button" class="menu-item" role="menuitem" ng-click="find.previous()" ng-disabled="!find.hasMatches()">
+                    <svg class="icon icon-sm"><use href="#i-up"></use></svg><span>Find previous</span><kbd>Shift+F3</kbd></button>
             </div>
         </div>
 
@@ -129,6 +143,14 @@
         <button type="button" class="tool" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
                 aria-label="Save with highlights" title="Save a copy of the PDF with the highlights (the original is not changed)">
             <svg class="icon"><use href="#i-save"></use></svg>
+        </button>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="Find">
+        <button type="button" class="tool" ng-click="find.isOpen ? find.close() : find.show()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': find.isOpen}" aria-pressed="{{ find.isOpen }}"
+                aria-label="Find" title="Find text ({{ vm.modKey }}F)">
+            <svg class="icon"><use href="#i-search"></use></svg>
         </button>
     </div>
 
@@ -225,6 +247,8 @@
                         highlight-mode="vm.highlightMode"
                         highlights="vm.highlights"
                         selected-id="vm.selectedHighlightId"
+                        search-matches="find.matches"
+                        active-match="find.current"
                         api="vm.viewer"
                         on-create-highlight="vm.addHighlight(pageNumber, rect)"
                         on-select-highlight="vm.selectHighlight(id)"
@@ -232,6 +256,33 @@
                         on-resize="vm.onViewerResize()"
                         on-rendered="vm.onPageRendered()"
                         on-render-error="vm.onRenderError()"></pdf-viewer>
+
+            <!-- Find bar (keyboard: findController.js) -->
+            <div class="find-bar" role="search" aria-label="Find in document" ng-if="find.isOpen">
+                <svg class="icon icon-sm find-icon"><use href="#i-search"></use></svg>
+                <input type="text" id="find-input" class="find-input" placeholder="Find in document" aria-label="Find in document"
+                       autocomplete="off" spellcheck="false" maxlength="{{ find.maxLength }}"
+                       ng-model="find.query" ng-change="find.onQueryChange()" ng-keydown="find.onInputKey($event)">
+                <span class="find-count" aria-live="polite">{{ find.countText() }}</span>
+                <button type="button" class="tool tool-sm find-option" ng-click="find.toggle('matchCase')"
+                        ng-class="{'is-active': find.matchCase}" aria-pressed="{{ find.matchCase }}"
+                        aria-label="Match case" title="Match case">Aa</button>
+                <button type="button" class="tool tool-sm find-option find-option-word" ng-click="find.toggle('wholeWord')"
+                        ng-class="{'is-active': find.wholeWord}" aria-pressed="{{ find.wholeWord }}"
+                        aria-label="Whole words" title="Whole words only"><span>ab</span></button>
+                <span class="find-separator" aria-hidden="true"></span>
+                <button type="button" class="tool tool-sm" ng-click="find.previous()" ng-disabled="!find.hasMatches()"
+                        aria-label="Previous match" title="Previous match (Shift+Enter)">
+                    <svg class="icon icon-sm"><use href="#i-up"></use></svg>
+                </button>
+                <button type="button" class="tool tool-sm" ng-click="find.next()" ng-disabled="!find.hasMatches()"
+                        aria-label="Next match" title="Next match (Enter)">
+                    <svg class="icon icon-sm"><use href="#i-down"></use></svg>
+                </button>
+                <button type="button" class="tool tool-sm" ng-click="find.close()" aria-label="Close find" title="Close (Esc)">
+                    <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+                </button>
+            </div>
 
             <div class="empty-state" ng-if="!vm.hasDocument()">
                 <svg class="empty-icon"><use href="#i-file"></use></svg>

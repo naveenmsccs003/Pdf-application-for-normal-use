@@ -19,6 +19,8 @@
     --page-shadow: 0 1px 3px rgba(0, 0, 0, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08);
     --highlight: rgba(255, 221, 0, 0.42);
     --highlight-selected: #e07b00;
+    --search-hit: rgba(30, 110, 230, 0.28);     /* on the white page in both themes */
+    --search-current: rgba(255, 120, 0, 0.5);
     --radius: 6px;
     --chrome: #e9ebee;
     --chrome-2: #f6f7f8;
@@ -544,7 +546,7 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     box-shadow: var(--page-shadow);
 }
 
-.canvas-layer, .interaction-layer, .highlight-layer {
+.canvas-layer, .search-layer, .interaction-layer, .highlight-layer {
     position: absolute;
     inset: 0;
 }
@@ -565,6 +567,15 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     mix-blend-mode: multiply;   /* keeps the text underneath readable */
     border-radius: 2px;
 }
+
+.search-layer { pointer-events: none; }
+.search-hit {
+    position: absolute;
+    background: var(--search-hit);
+    mix-blend-mode: multiply;
+    border-radius: 2px;
+}
+.search-hit.is-current { background: var(--search-current); outline: 2px solid #d35400; outline-offset: 0; }
 
 .highlight.is-selected { outline: 2px solid var(--highlight-selected); outline-offset: 1px; }
 .highlight.is-draft { outline: 1px dashed #c9a700; }
@@ -803,6 +814,47 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 .dialog-working { display: inline-flex; align-items: center; gap: 8px; margin-right: auto; color: var(--muted); }
 .spinner-sm { width: 16px; height: 16px; border-width: 2px; }
 
+/* ----- Find bar: floats over the top right of the page area ----- */
+.find-bar {
+    position: absolute;
+    top: 8px;
+    right: 24px;            /* clear of the vertical scrollbar */
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 4px 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+.find-icon { color: var(--muted); flex: none; }
+.find-input {
+    width: 190px;
+    min-width: 0;
+    height: 26px;
+    margin-left: 4px;
+    padding: 0 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+}
+.find-input:focus-visible { outline: 2px solid var(--primary); outline-offset: -1px; }
+.find-count {
+    min-width: 76px;
+    padding: 0 6px;
+    color: var(--muted);
+    white-space: nowrap;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+.find-option { font-weight: 600; font-size: 12px; }
+.find-option-word span { padding: 0 1px; border-bottom: 1.5px solid currentColor; line-height: 1.1; }
+.find-separator { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--border); }
+
 /* ----- Tablets / narrow windows: panels slide over the page ----- */
 @media (max-width: 999px) {
     .side-panel {
@@ -824,6 +876,9 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     .titlebar-file { display: none; }
     .app-title { display: none; }
     .menubar { margin-left: 0; }
+    .find-bar { left: 8px; right: 8px; }
+    .find-input { flex: 1; width: auto; }
+    .find-count { min-width: 0; }
 }
 
 @media (pointer: coarse) {

@@ -242,6 +242,13 @@
                 }
             };
 
+            /** Find: shows the page of a match (keeping Fit Page / Fit Width). */
+            vm.showPage = function (page) {
+                if (vm.hasDocument() && !vm.busy && page !== vm.currentPage) {
+                    goToPage(page);
+                }
+            };
+
             vm.submitPageInput = function () {
                 if (!vm.hasDocument() || vm.busy) {
                     return;

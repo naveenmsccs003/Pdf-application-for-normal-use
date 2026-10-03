@@ -175,6 +175,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     };
     const menuState = () => page.evaluate(() => ({
         file: !document.querySelector('#menu-file').hidden,
+        edit: !document.querySelector('#menu-edit').hidden,
         zoom: !document.querySelector('#menu-zoom').hidden,
         focus: document.activeElement ? (document.activeElement.textContent || '').trim().replace(/\s+/g, ' ') : '',
         recent: [...document.querySelectorAll('#menu-file .menu-item-recent')].map(b => b.getAttribute('aria-label')),
@@ -284,6 +285,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
 
     await page.focus('#menu-file-button'); await page.keyboard.press('ArrowDown'); await sleep(100); m = await menuState();
     check('ArrowDown opens File menu, focus on first item', m.file && m.focus.startsWith('Open PDF'), m);
+    await page.keyboard.press('ArrowRight'); await sleep(100); m = await menuState(); s = await state();
+    check('ArrowRight switches to Edit menu (page unchanged)', m.edit && !m.file && m.focus.startsWith('Find') && s.pageStatus === 'Page: 1 / 10', [m, s.pageStatus]);
     await page.keyboard.press('ArrowRight'); await sleep(100); m = await menuState(); s = await state();
     check('ArrowRight switches to Zoom menu (page unchanged)', m.zoom && !m.file && m.focus.startsWith('Zoom in') && s.pageStatus === 'Page: 1 / 10', [m, s.pageStatus]);
     await page.keyboard.press('End'); await sleep(50); m = await menuState();
@@ -652,6 +655,125 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         check('Ctrl+O opens the file picker', s.fileName === 'one-page.pdf', s.fileName);
         await openMenu('file'); await menuItem('file', 'Clear recent files');
     } else skip('Ctrl+O opens the file picker', 'file chooser interception is Chrome-only here');
+
+    // ===== Find text =====
+    const findState = () => page.evaluate(() => {
+        const q = s => document.querySelector(s);
+        const scroll = q('.viewer-scroll').getBoundingClientRect();
+        const cur = q('.search-hit.is-current');
+        const box = cur && cur.getBoundingClientRect();
+        return {
+            open: !!q('.find-bar'),
+            count: q('.find-count') ? q('.find-count').textContent.trim() : '',
+            query: q('#find-input') ? q('#find-input').value : '',
+            focus: document.activeElement ? document.activeElement.id : '',
+            page: Number(q('.page-input').value),
+            canvasW: q('.canvas-layer canvas') ? parseFloat(q('.canvas-layer canvas').style.width) : 0,
+            hits: [...document.querySelectorAll('.search-hit')].map(h => ({
+                l: parseFloat(h.style.left), t: parseFloat(h.style.top), w: parseFloat(h.style.width), h: parseFloat(h.style.height),
+                cur: h.classList.contains('is-current')
+            })),
+            curVisible: !!box && box.top >= scroll.top && box.bottom <= scroll.bottom && box.left >= scroll.left && box.right <= scroll.right
+        };
+    });
+    // Waits until the search has finished ("3 of 12", "No matches"; "…" while it runs).
+    const findDone = async () => {
+        await page.waitForFunction(() => {
+            const c = document.querySelector('.find-count');
+            return c && c.textContent.trim() && !c.textContent.includes('…');
+        }, { timeout: 30000 });
+        await settle();
+    };
+    const typeFind = async text => {
+        await page.focus('#find-input');
+        await page.$eval('#find-input', el => el.select());
+        await page.keyboard.type(text);
+        await sleep(400);
+        await findDone();
+    };
+    const pressFind = async (key, shift) => {
+        if (shift) await page.keyboard.down('Shift');
+        await page.keyboard.press(key);
+        if (shift) await page.keyboard.up('Shift');
+        await sleep(200); await settle();
+    };
+    const findButton = async label => { await page.click(`.find-bar button[aria-label="${label}"]`); await sleep(200); if (await page.$('.find-bar')) await findDone(); };
+    let f;
+
+    if (!(await state()).empty) { await openMenu('file'); await menuItem('file', 'Close PDF'); }
+    await shortcut('KeyF'); f = await findState();
+    check('find: Ctrl+F does nothing without a document', !f.open, f);
+
+    await open('ten-pages.pdf'); await goTo(7);
+    await shortcut('KeyF'); f = await findState();
+    check('find: Ctrl+F opens the find bar with the cursor in it', f.open && f.focus === 'find-input', f);
+    await typeFind('Page 7'); f = await findState();
+    check('find: searches as you type and shows the match', f.count === '1 of 1' && f.page === 7 && f.hits.length === 1 && f.hits[0].cur, f);
+    // "Page 7" is set in 26 pt Helvetica at x = 50, baseline 70 pt below the top of the page (at 100%).
+    const title = f.hits[0];
+    check('find: match box is on the text', near(title.l, 50, 2) && title.t < 70 && title.t + title.h > 70 && near(title.h, 26 * 1.2, 3) && title.w > 60 && title.w < 110, title);
+    await shortcut('Equal'); f = await findState();
+    check('find: match box follows zoom', near(f.hits[0].l / f.canvasW, title.l / 595, 0.002) && near(f.hits[0].h, title.h * 1.25, 1), [f.hits[0], f.canvasW]);
+    await shortcut('Digit0');
+
+    await typeFind('fox'); f = await findState();
+    check('find: starts at the current page (30 matches per page)', f.count === '181 of 300' && f.page === 7 && f.hits.length === 30 && f.hits[0].cur, f.count);
+    await pressFind('Enter'); f = await findState();
+    check('find: Enter goes to the next match', f.count === '182 of 300' && f.hits[1].cur && !f.hits[0].cur, f.count);
+    await pressFind('Enter', true); f = await findState();
+    check('find: Shift+Enter goes to the previous match', f.count === '181 of 300' && f.hits[0].cur, f.count);
+
+    await typeFind('Line 29 '); f = await findState();
+    check('find: a match below the visible area is scrolled into view', f.curVisible && (await page.$eval('.viewer-scroll', el => el.scrollTop)) > 0, f);
+
+    await typeFind('Page 1'); f = await findState();
+    check('find: "Page 1" also matches "Page 10"; first match from page 7 on is on page 10', f.count === '2 of 2' && f.page === 10, f);
+    await pressFind('Enter'); f = await findState();
+    check('find: next match wraps around to the start', f.count === '1 of 2' && f.page === 1, f);
+    await findButton('Whole words'); f = await findState();
+    check('find: Whole words', f.count === '1 of 1' && f.page === 1, f);
+    await findButton('Whole words');
+    await typeFind('page 1'); f = await findState();
+    check('find: ignores case by default', f.count.endsWith('of 2'), f.count);
+    await findButton('Match case'); f = await findState();
+    check('find: Match case', f.count === 'No matches' && f.hits.length === 0, f);
+    await findButton('Match case');
+    await typeFind('lazy   dog'); f = await findState();
+    check('find: several spaces in the search count as one', f.count.endsWith('of 300'), f.count);
+
+    await page.keyboard.press('Escape'); await sleep(200); f = await findState();
+    check('find: Esc closes the bar and removes the marks', !f.open && f.hits.length === 0, f);
+    const pageBeforeArrow = f.page;
+    await page.keyboard.press('ArrowRight'); await settle();
+    check('find: page keys work again after closing', (await findState()).page === pageBeforeArrow + 1);
+    await page.keyboard.press('F3'); await sleep(300); await findDone(); f = await findState();
+    check('find: F3 reopens the bar with the last search', f.open && f.query === 'lazy   dog' && f.count.endsWith('of 300'), f);
+    await page.keyboard.press('F3'); await sleep(300); await settle();
+    const afterF3 = await findState();
+    check('find: F3 goes to the next match', afterF3.count !== f.count && afterF3.count.endsWith('of 300'), [f.count, afterF3.count]);
+    await findButton('Close find');
+    check('find: close button closes the bar', !(await findState()).open);
+
+    await openMenu('edit'); await menuItem('edit', 'Find');
+    f = await findState();
+    check('find: Edit > Find opens the bar', f.open && f.focus === 'find-input', f);
+    await findDone();
+    await open('one-page.pdf'); await findDone(); f = await findState();
+    check('find: opening another PDF searches it for the same text', f.count === '1 of 30' && f.page === 1, f.count);
+
+    await open('rotated.pdf'); await typeFind('Page 1'); f = await findState();
+    check('find: rotated page: match box turns with the text', f.count === '1 of 1' && f.hits.length === 1 && f.hits[0].h > f.hits[0].w * 2, f.hits);
+    await open('image-based.pdf'); await typeFind('fox'); f = await findState();
+    check('find: no matches', f.count === 'No matches' && f.hits.length === 0, f.count);
+    await open('large-150.pdf'); await typeFind('the'); f = await findState();
+    check('find: stops at 1000 matches', f.count === '1 of 1000+', f.count);
+    if (hasFixture('tracemonkey.pdf')) {
+        await open('tracemonkey.pdf'); await typeFind('trace'); f = await findState();
+        const total = Number((f.count.match(/of (\d+)/) || [])[1]);
+        check('find: real-world PDF', total > 100 && f.hits.length > 0 && f.hits.every(h => h.w > 5 && h.h > 5 && h.h < 30), [f.count, f.hits.slice(0, 3)]);
+    } else skip('find: real-world PDF', 'tracemonkey.pdf missing');
+    await shot('find');
+    await page.keyboard.press('Escape'); await sleep(200);
 
     // ===== Light / dark theme =====
     const theme = () => page.evaluate(() => ({

@@ -3,7 +3,7 @@
 
     /**
      * PDF rendering layer: file validation, upload, loading and page rendering.
-     * Knows nothing about highlights.
+     * Knows nothing about highlights. Also gives access to page text for searching (searchService).
      *
      * Two sources:
      *   - web:     the PDF is uploaded and rendered in the browser with pdf.js
@@ -293,6 +293,37 @@
                 });
             }
 
+            /** The open document (either kind), so callers can tell whether it changed meanwhile. */
+            function currentDocument() {
+                return localDocument || pdfDocument;
+            }
+
+            /**
+             * Web: the page's text runs from pdf.js and a function that maps a point in PDF user space to
+             * the displayed page at scale 1 (top-left origin, after /Rotate), the units highlights use.
+             */
+            function getPageText(pageNumber) {
+                return getPage(pageNumber).then(function (page) {
+                    var viewport = page.getViewport({ scale: 1 });
+                    return $q.when(page.getTextContent()).then(function (content) {
+                        return {
+                            items: content.items.filter(function (item) { return typeof item.str === 'string'; }),
+                            toView: function (x, y) { return viewport.convertToViewportPoint(x, y); }
+                        };
+                    });
+                });
+            }
+
+            /**
+             * Desktop: finds text with PDFium on pages `from` to `to`; the host searches for a short time.
+             * Resolves with { matches: [{ page, rects: [{ x, y, width, height }] }], next } (next: null at the end).
+             */
+            function searchLocal(query, options, from, to) {
+                return $http.get('api/local/' + localDocument.token + '/search', {
+                    params: { q: query, from: from, to: to, matchCase: !!options.matchCase, wholeWord: !!options.wholeWord }
+                }).then(function (response) { return response.data; });
+            }
+
             return {
                 validateFile: validateFile,
                 upload: upload,
@@ -301,7 +332,11 @@
                 close: close,
                 getPageSize: getPageSize,
                 renderPage: renderPage,
-                renderThumbnail: renderThumbnail
+                renderThumbnail: renderThumbnail,
+                currentDocument: currentDocument,
+                isLocal: function () { return !!localDocument; },
+                getPageText: getPageText,
+                searchLocal: searchLocal
             };
         }]);
 })();

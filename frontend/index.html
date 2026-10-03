@@ -10,7 +10,9 @@
 </head>
 <body>
     <div class="app" ng-controller="PdfViewerController as vm">
-        <div class="app-body" ng-controller="ToolsController as tools" ng-include="'app/views/pdf-viewer.html'"></div>
+        <div class="app-body" ng-controller="ToolsController as tools">
+            <div class="app-body" ng-controller="FindController as find" ng-include="'app/views/pdf-viewer.html'"></div>
+        </div>
     </div>
 
     <script src="lib/angular.min.js"></script>
@@ -22,11 +24,13 @@
     <script src="app/services/desktopService.js"></script>
     <script src="app/services/toolsService.js"></script>
     <script src="app/services/recentFilesService.js"></script>
+    <script src="app/services/searchService.js"></script>
     <script src="app/directives/fileInputDirective.js"></script>
     <script src="app/directives/menuBarDirective.js"></script>
     <script src="app/directives/pdfViewerDirective.js"></script>
     <script src="app/directives/thumbnailsDirective.js"></script>
     <script src="app/controllers/pdfViewerController.js"></script>
     <script src="app/controllers/toolsController.js"></script>
+    <script src="app/controllers/findController.js"></script>
 </body>
 </html>

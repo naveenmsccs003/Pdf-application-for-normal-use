@@ -366,6 +366,76 @@ async function startHost() {
             JSON.parse(fs.readFileSync(RECENT_FILE, 'utf8')).length === 0, rs);
         fs.rmSync(recentDir, { recursive: true, force: true });
 
+        // ----- Find (PDFium search on the host) -----
+        const findState = () => page.evaluate(() => {
+            const q = s => document.querySelector(s);
+            return {
+                open: !!q('.find-bar'),
+                count: q('.find-count') ? q('.find-count').textContent.trim() : '',
+                page: Number(q('.page-input').value),
+                hits: [...document.querySelectorAll('.search-hit')].map(h => ({
+                    l: parseFloat(h.style.left), t: parseFloat(h.style.top), w: parseFloat(h.style.width), h: parseFloat(h.style.height),
+                    cur: h.classList.contains('is-current')
+                }))
+            };
+        });
+        const findDone = async () => {
+            await page.waitForFunction(() => {
+                const c = document.querySelector('.find-count');
+                return c && c.textContent.trim() && !c.textContent.includes('…');
+            }, { timeout: 30000 });
+            await settle();
+        };
+        const typeFind = async text => {
+            await page.focus('#find-input');
+            await page.$eval('#find-input', el => el.select());
+            await page.keyboard.type(text);
+            await sleep(400);
+            await findDone();
+        };
+        let f;
+
+        await open('ten-pages.pdf'); await click('Actual size');
+        await page.keyboard.down('Control'); await page.keyboard.press('KeyF'); await page.keyboard.up('Control');
+        await sleep(200); f = await findState();
+        check('desktop find: Ctrl+F opens the find bar', f.open, f);
+        await typeFind('Page 7'); f = await findState();
+        check('desktop find: finds text with PDFium', f.count === '1 of 1' && f.page === 7 && f.hits.length === 1 && f.hits[0].cur, f);
+        // "Page 7" is set in 26 pt Helvetica at x = 50, baseline 70 pt below the top of the page.
+        const title = f.hits[0] || {};
+        check('desktop find: match box is on the text', near(title.l, 50, 3) && title.t < 70 && title.t + title.h > 60 && title.w > 60 && title.w < 110, title);
+        await typeFind('fox'); f = await findState();
+        check('desktop find: all pages searched (30 matches per page)', f.count.endsWith('of 300') && f.page === 7, f.count);
+        await page.keyboard.press('Enter'); await sleep(200); await settle(); f = await findState();
+        check('desktop find: Enter goes to the next match', /^\d+ of 300$/.test(f.count) && f.hits.some(h => h.cur), f.count);
+        await typeFind('Page 1'); await page.click('.find-bar button[aria-label="Whole words"]'); await sleep(200); await findDone(); f = await findState();
+        check('desktop find: Whole words', f.count === '1 of 1' && f.page === 1, f.count);
+        await page.click('.find-bar button[aria-label="Whole words"]'); await sleep(200); await findDone();
+        await typeFind('page 1'); await page.click('.find-bar button[aria-label="Match case"]'); await sleep(200); await findDone(); f = await findState();
+        check('desktop find: Match case', f.count === 'No matches' && f.hits.length === 0, f.count);
+        await page.click('.find-bar button[aria-label="Match case"]'); await sleep(200); await findDone();
+
+        await open('rotated.pdf'); await typeFind('Page 1'); f = await findState();
+        check('desktop find: rotated page: match box turns with the text', f.count === '1 of 1' && f.hits.length === 1 && f.hits[0].h > f.hits[0].w * 2, f.hits);
+        await open('image-based.pdf'); await typeFind('fox'); f = await findState();
+        check('desktop find: no matches', f.count === 'No matches' && f.hits.length === 0, f.count);
+        await open('large-150.pdf'); await typeFind('the'); f = await findState();
+        check('desktop find: stops at 1000 matches', f.count === '1 of 1000+', f.count);
+        await page.keyboard.press('Escape'); await sleep(200);
+        check('desktop find: Esc closes the bar', !(await findState()).open);
+
+        const searchProbe = await page.evaluate(async () => {
+            const base = '/api/local/00000000-0000-0000-0000-000000000000/search';
+            return {
+                unknown: await fetch(base + '?q=fox').then(r => r.status),
+                empty: await fetch(base + '?q=').then(r => r.status),
+                tooLong: await fetch(base + '?q=' + 'x'.repeat(201)).then(r => r.status),
+                badPage: await fetch(base + '?q=fox&from=0').then(r => r.status)
+            };
+        });
+        check('desktop find: unknown token -> 404, bad input -> 400', searchProbe.unknown === 404 && searchProbe.empty === 400 &&
+            searchProbe.tooLong === 400 && searchProbe.badPage === 400, searchProbe);
+
         // ----- Security: API only serves the opened file -----
         const probe = await page.evaluate(async () => {
             const bad = await fetch('/api/local/00000000-0000-0000-0000-000000000000/pages/1').then(r => r.status);

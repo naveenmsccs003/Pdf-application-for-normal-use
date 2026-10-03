@@ -64,8 +64,8 @@ PDFium reads only the parts of a file it needs, so opening is fast regardless of
 A desktop-style PDF workspace (layout inspired by professional PDF markup tools such as Bluebeam Revu):
 
 - **Title bar** with the open file name and the light/dark switch
-- **Menu bar**: **File** (Open, Close PDF, Save copy with highlights, Recent files, Clear recent files) and
-  **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
+- **Menu bar**: **File** (Open, Close PDF, Save copy with highlights, Recent files, Clear recent files),
+  **Edit** (Find, Find next, Find previous) and **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
   through and between menus, Esc closes them
 - **Tool bar**: Open PDF, Highlight, Remove, Clear Highlights, Fit Page, Fit Width, panel switches
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
@@ -116,6 +116,13 @@ Notes:
   - Web: a browser cannot reopen a file by its path and uploads expire after an hour, so the last 5 PDFs
     are kept in the browser's own storage (IndexedDB) and never leave the computer. Empty in private windows.
   - **Clear recent files** deletes the list (and, on the web, the stored copies).
+- **Find** (**Ctrl+F** or Edit > Find): searches the whole document as you type and shows "3 of 12".
+  **Enter** / **Shift+Enter** (also **F3** / **Shift+F3**, **Ctrl+G** / **Ctrl+Shift+G**) step through the matches,
+  wrapping around; **Esc** closes the bar. Options: **Match case** and **Whole words**. Matches are marked on the page
+  and follow zoom and rotation; spaces and line breaks count as one space, so a phrase is found across lines.
+  The search starts at the current page and stops at 1,000 matches. Web: pdf.js text in the browser.
+  Desktop: PDFium searches on the host in short steps, so very large files stay responsive.
+  Scanned pages contain no text and find nothing.
 - Fit Page and Fit Width (kept when changing pages or resizing the window)
 - Highlight mode: drag over the page to add transparent highlights
   - Click a highlight to select it, then press **Remove**, the **×** button or **Delete**
@@ -164,6 +171,8 @@ frontend/
   app/controllers/pdfViewerController.js   toolbar/status state and commands
   app/services/pdfService.js      validate, upload, load and render pages (pdf.js)
   app/services/highlightService.js  in-memory highlight store
+  app/services/searchService.js   text search (pdf.js on the web, PDFium host on desktop)
+  app/controllers/findController.js  find bar and its keyboard shortcuts
   app/services/themeService.js    light / dark theme
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
   app/services/recentFilesService.js  web Recent Files (copies kept in IndexedDB)
@@ -172,7 +181,7 @@ frontend/
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
-  app/directives/menuBarDirective.js    File / Zoom menu bar (WAI-ARIA menubar keyboard handling)
+  app/directives/menuBarDirective.js    File / Edit / Zoom menu bar (WAI-ARIA menubar keyboard handling)
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker
@@ -190,7 +199,8 @@ desktop/
   FileDialogs.cs                  native dialogs (and preset answers for tests)
   LinuxEnvironment.cs             fixes snap environment leaks (e.g. VS Code snap terminal) for WebKit
   Controllers/LocalPdfController.cs  page sizes and rendered page images for the opened file
-  Services/PdfiumService.cs       open with PDFium, render pages
+  Controllers/LocalSearchController.cs  text search in the opened file, in steps
+  Services/PdfiumService.cs       open with PDFium, render pages, find text
   Services/PdfPreflight.cs        detects files PDFium cannot read before trying
   Services/RecentFiles.cs         recent file paths (JSON in the user's app data folder)
   Services/PngEncoder.cs          small PNG writer for rendered pages
@@ -219,7 +229,8 @@ Covered: invalid / empty / oversized / corrupt / truncated / password-protected 
 a 45 MB PDF, landscape, rotated and mixed page sizes, image-based and form PDFs, a real-world PDF
 (pdf.js test corpus, downloaded by `npm run fixtures`), navigation, zoom limits, Fit Page / Fit Width,
 highlight create / select / remove / clear and their positions after zoom, fit, page change and window resize,
-menu bar, shortcuts, custom zoom, recent files (web and desktop, including moved files and Clear),
+menu bar, shortcuts, custom zoom, find (as you type, next / previous, match case, whole words, rotated pages,
+1,000-match limit; web and desktop), recent files (web and desktop, including moved files and Clear),
 render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).

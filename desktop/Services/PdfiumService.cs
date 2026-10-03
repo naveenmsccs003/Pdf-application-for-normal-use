@@ -6,7 +6,7 @@ using PdfViewer.Tools;
 namespace PdfViewer.Desktop.Services;
 
 /// <summary>
-/// Opens PDFs from disk with PDFium and renders single pages to PNG.
+/// Opens PDFs from disk with PDFium, renders single pages to PNG and finds text.
 /// PDFium reads only the parts of the file it needs, so very large files open quickly.
 /// PDFium is not thread-safe: every call goes through the process-wide <see cref="Pdfium.Lock"/>,
 /// shared with the merge/split/convert tools.
@@ -159,6 +159,98 @@ public sealed class PdfiumService : IDisposable
 
         // Encoding happens outside the lock so it does not block other PDFium calls.
         return PngEncoder.Encode(pixels, width, height, stride);
+    }
+
+    /// <summary>
+    /// Finds <paramref name="query"/> on pages <paramref name="fromPage"/> to <paramref name="toPage"/>
+    /// (null: the last page), stopping after
+    /// <paramref name="budget"/> or <paramref name="maxMatches"/> so a request never holds PDFium for long;
+    /// the caller continues from <see cref="SearchResult.Next"/>. The lock is taken per page, so page
+    /// renders are not held up by a long search. Returns null if the token is not the open document.
+    /// </summary>
+    public SearchResult? Search(Guid token, string query, int fromPage, int? toPage, bool matchCase, bool wholeWord,
+                                int maxMatches, TimeSpan budget)
+    {
+        // PDFium expects a null-terminated UTF-16 string.
+        var text = new ushort[query.Length + 1];
+        for (var i = 0; i < query.Length; i++) text[i] = query[i];
+        var flags = (matchCase ? FindMatchCase : 0) | (wholeWord ? FindWholeWord : 0);
+
+        var matches = new List<SearchMatch>();
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var pageNumber = Math.Max(1, fromPage);
+        while (true)
+        {
+            lock (_gate)
+            {
+                if (_document == null || token != _token) return null;
+                var lastPage = Math.Min(toPage ?? int.MaxValue, fpdfview.FPDF_GetPageCount(_document));
+                if (pageNumber > lastPage) return new SearchResult(matches, null);
+                SearchPage(pageNumber, text, flags, matches, maxMatches);
+            }
+            pageNumber++;
+            if (matches.Count >= maxMatches || started.Elapsed >= budget)
+                return new SearchResult(matches, pageNumber);
+        }
+    }
+
+    private const int FindMatchCase = 0x1;
+    private const int FindWholeWord = 0x2;
+
+    /// <summary>Adds the matches on one page; caller holds the lock.</summary>
+    private void SearchPage(int pageNumber, ushort[] text, int flags, List<SearchMatch> matches, int maxMatches)
+    {
+        var page = fpdfview.FPDF_LoadPage(_document!, pageNumber - 1);
+        if (page == null) return;   // a damaged page is skipped, like a page without text
+        var textPage = fpdf_text.FPDFTextLoadPage(page);
+        try
+        {
+            if (textPage == null) return;
+            var find = fpdf_text.FPDFTextFindStart(textPage, ref text[0], (ulong)flags, 0);
+            if (find == null) return;
+            try
+            {
+                // Device coordinates are integers; map at 1/100 point for precision.
+                const double precision = 100;
+                double pageWidth = fpdfview.FPDF_GetPageWidthF(page), pageHeight = fpdfview.FPDF_GetPageHeightF(page);
+                int sizeX = (int)Math.Round(pageWidth * precision), sizeY = (int)Math.Round(pageHeight * precision);
+                (double X, double Y) ToView(double x, double y)
+                {
+                    int dx = 0, dy = 0;
+                    fpdfview.FPDF_PageToDevice(page, 0, 0, sizeX, sizeY, 0, x, y, ref dx, ref dy);
+                    return (dx / precision, dy / precision);
+                }
+
+                // Stops at the limit even within a page (e.g. a one-letter search on a dense page).
+                while (matches.Count < maxMatches && fpdf_text.FPDFTextFindNext(find) != 0)
+                {
+                    var start = fpdf_text.FPDFTextGetSchResultIndex(find);
+                    var count = fpdf_text.FPDFTextGetSchCount(find);
+                    var rects = new List<TextRect>();
+                    var rectCount = fpdf_text.FPDFTextCountRects(textPage, start, count);
+                    for (var i = 0; i < rectCount; i++)
+                    {
+                        double left = 0, top = 0, right = 0, bottom = 0;
+                        if (fpdf_text.FPDFTextGetRect(textPage, i, ref left, ref top, ref right, ref bottom) == 0) continue;
+                        // Page space has its origin at the bottom left and ignores /Rotate; the viewer
+                        // uses the displayed page with the origin at the top left, so map both corners.
+                        var a = ToView(left, top);
+                        var b = ToView(right, bottom);
+                        rects.Add(new TextRect(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y)));
+                    }
+                    if (rects.Count > 0) matches.Add(new SearchMatch(pageNumber, rects));
+                }
+            }
+            finally
+            {
+                fpdf_text.FPDFTextFindClose(find);
+            }
+        }
+        finally
+        {
+            if (textPage != null) fpdf_text.FPDFTextClosePage(textPage);
+            fpdfview.FPDF_ClosePage(page);
+        }
     }
 
     private FpdfPageT? LoadPage(Guid token, int pageNumber)
