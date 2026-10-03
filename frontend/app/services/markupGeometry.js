@@ -12,12 +12,18 @@
      *   pen                               points [x0, y0, x1, y1, ...]
      *   text                              x, y, width, height, text, fontSize
      *   callout                           as text, plus tipX, tipY (the point the leader arrow points at)
+     *   distance, hdistance, vdistance    points [x0, y0, x1, y1], fontSize (value label)
+     *   area, perimeter                   points [x0, y0, ...] of the closed outline, fontSize
+     * Measurement values come from the page's scale (scaleService), so they follow a new calibration.
      */
-    angular.module('pdfViewerApp').factory('markupGeometry', function () {
+    angular.module('pdfViewerApp').factory('markupGeometry', ['scaleService', function (scaleService) {
         var LABELS = {
             highlight: 'Highlight', rect: 'Rectangle', ellipse: 'Ellipse', cloud: 'Cloud', line: 'Line',
-            arrow: 'Arrow', pen: 'Freehand', text: 'Text note', callout: 'Callout'
+            arrow: 'Arrow', pen: 'Freehand', text: 'Text note', callout: 'Callout',
+            distance: 'Distance', hdistance: 'Horizontal distance', vdistance: 'Vertical distance',
+            area: 'Area', perimeter: 'Perimeter'
         };
+        var MEASURES = { distance: true, hdistance: true, vdistance: true, area: true, perimeter: true };
         var LINE_HEIGHT = 1.25;     // times the font size
         var PADDING = 0.4;          // text box padding, times the font size
         var ASCENT = 0.8;           // first baseline below the padding, times the font size
@@ -103,8 +109,99 @@
             return Math.hypot(m.tipX - s[0], m.tipY - s[1]) > 1;
         }
 
+        // ----- Measurements -----
+        function isMeasure(m) { return MEASURES[m.type] === true; }
+
+        function closedOutline(p) { return p.concat([p[0], p[1]]); }
+
+        // Short tick across a dimension line's end, perpendicular to (dx, dy).
+        function tick(x, y, dx, dy, size) {
+            var len = Math.hypot(dx, dy) || 1;
+            var nx = -dy / len * size, ny = dx / len * size;
+            return [x - nx, y - ny, x + nx, y + ny];
+        }
+
+        function measureStrokes(m) {
+            var p = m.points, t = m.fontSize * 0.35;
+            var x0 = p[0], y0 = p[1], x1 = p[2], y1 = p[3];
+            switch (m.type) {
+                case 'distance':
+                    return [[x0, y0, x1, y1], tick(x0, y0, x1 - x0, y1 - y0, t), tick(x1, y1, x1 - x0, y1 - y0, t)];
+                case 'hdistance':
+                    // Dimension line level with the first point; a witness line drops to the second point.
+                    var h = [[x0, y0, x1, y0], tick(x0, y0, 1, 0, t), tick(x1, y0, 1, 0, t)];
+                    return Math.abs(y1 - y0) > 0.5 ? h.concat([[x1, y0, x1, y1]]) : h;
+                case 'vdistance':
+                    var v = [[x0, y0, x0, y1], tick(x0, y0, 0, 1, t), tick(x0, y1, 0, 1, t)];
+                    return Math.abs(x1 - x0) > 0.5 ? v.concat([[x0, y1, x1, y1]]) : v;
+                default:
+                    return [closedOutline(p)];
+            }
+        }
+
+        function polygonArea(p) {
+            var sum = 0;
+            for (var i = 0; i < p.length; i += 2) {
+                var j = (i + 2) % p.length;
+                sum += p[i] * p[j + 1] - p[j] * p[i + 1];
+            }
+            return Math.abs(sum) / 2;
+        }
+
+        function outlineLength(p) {
+            var sum = 0;
+            for (var i = 0; i < p.length; i += 2) {
+                var j = (i + 2) % p.length;
+                sum += Math.hypot(p[j] - p[i], p[j + 1] - p[i + 1]);
+            }
+            return sum;
+        }
+
+        /** The measured value as shown, e.g. "3.25 m" or "12.40 m²". */
+        function measureText(m) {
+            var p = m.points;
+            switch (m.type) {
+                case 'distance': return scaleService.formatLength(Math.hypot(p[2] - p[0], p[3] - p[1]), m.pageNumber);
+                case 'hdistance': return scaleService.formatLength(Math.abs(p[2] - p[0]), m.pageNumber);
+                case 'vdistance': return scaleService.formatLength(Math.abs(p[3] - p[1]), m.pageNumber);
+                case 'area': return scaleService.formatArea(polygonArea(p), m.pageNumber);
+                default: return scaleService.formatLength(outlineLength(p), m.pageNumber);
+            }
+        }
+
+        // Where the value label sits: the middle of the dimension line, or the middle of the outline.
+        function labelAnchor(m) {
+            var p = m.points;
+            if (m.type === 'distance') { return [(p[0] + p[2]) / 2, (p[1] + p[3]) / 2]; }
+            if (m.type === 'hdistance') { return [(p[0] + p[2]) / 2, p[1]]; }
+            if (m.type === 'vdistance') { return [p[0], (p[1] + p[3]) / 2]; }
+            // Centroid of the polygon; the average of the corners if it has no area.
+            var a = 0, cx = 0, cy = 0, n = p.length / 2;
+            for (var i = 0; i < p.length; i += 2) {
+                var j = (i + 2) % p.length, f = p[i] * p[j + 1] - p[j] * p[i + 1];
+                a += f; cx += (p[i] + p[j]) * f; cy += (p[i + 1] + p[j + 1]) * f;
+            }
+            if (Math.abs(a) < 1e-6) {
+                for (var k = 0; k < p.length; k += 2) { cx += p[k]; cy += p[k + 1]; }
+                return [cx / n, cy / n];
+            }
+            return [cx / (3 * a), cy / (3 * a)];
+        }
+
+        /** The value label: a box centred on the anchor, with its text laid out like a note. */
+        function measureLabel(m) {
+            var text = measureText(m);
+            var box = textBox(text, m.fontSize);
+            var anchor = labelAnchor(m);
+            var label = { text: text, fontSize: m.fontSize, width: box.width, height: box.height,
+                          x: anchor[0] - box.width / 2, y: anchor[1] - box.height / 2 };
+            label.lines = textLayout(label);
+            return label;
+        }
+
         /** The lines of stroke the shape is drawn with, as polylines [x0, y0, x1, y1, ...]. */
         function strokes(m) {
+            if (isMeasure(m)) { return measureStrokes(m); }
             switch (m.type) {
                 case 'line': return [[m.x1, m.y1, m.x2, m.y2]];
                 case 'arrow': return [[m.x1, m.y1, m.x2, m.y2], arrowHead(m.x1, m.y1, m.x2, m.y2, m.strokeWidth)];
@@ -136,6 +233,11 @@
         }
 
         function bounds(m) {
+            if (isMeasure(m)) {
+                var l = measureLabel(m);
+                var all = strokes(m).concat([[l.x, l.y, l.x + l.width, l.y + l.height]]);
+                return boundsOf(all);
+            }
             if (m.x !== undefined && m.width !== undefined) {
                 var b = { x: m.x, y: m.y, width: m.width, height: m.height };
                 if (m.type === 'callout') {
@@ -144,8 +246,12 @@
                 }
                 return b;
             }
+            return boundsOf(strokes(m));
+        }
+
+        function boundsOf(polylines) {
             var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            strokes(m).forEach(function (p) {
+            polylines.forEach(function (p) {
                 for (var i = 0; i < p.length; i += 2) {
                     minX = Math.min(minX, p[i]); maxX = Math.max(maxX, p[i]);
                     minY = Math.min(minY, p[i + 1]); maxY = Math.max(maxY, p[i + 1]);
@@ -169,8 +275,24 @@
                 }
                 return false;
             });
-            if (near || m.width === undefined) { return near; }
+            if (near) { return true; }
+            if (isMeasure(m)) {
+                var l = measureLabel(m);
+                return (x >= l.x && x <= l.x + l.width && y >= l.y && y <= l.y + l.height) ||
+                       (m.type === 'area' && insidePolygon(m.points, x, y));
+            }
+            if (m.width === undefined) { return false; }
             return x >= m.x - tolerance && x <= m.x + m.width + tolerance && y >= m.y - tolerance && y <= m.y + m.height + tolerance;
+        }
+
+        function insidePolygon(p, x, y) {
+            var inside = false;
+            for (var i = 0, j = p.length - 2; i < p.length; j = i, i += 2) {
+                if ((p[i + 1] > y) !== (p[j + 1] > y) && x < (p[j] - p[i]) * (y - p[i + 1]) / (p[j + 1] - p[i + 1]) + p[i]) {
+                    inside = !inside;
+                }
+            }
+            return inside;
         }
 
         // ----- Text boxes -----
@@ -206,6 +328,19 @@
         /** What the host needs to write the markup into a PDF copy. */
         function toSaved(m) {
             var saved = { type: m.type, pageNumber: m.pageNumber };
+            if (isMeasure(m)) {
+                // Saved like a note: the value label is the box and text, the dimension lines are the strokes.
+                var l = measureLabel(m);
+                saved.x = round(l.x); saved.y = round(l.y); saved.width = round(l.width); saved.height = round(l.height);
+                saved.color = m.color;
+                saved.strokeWidth = m.strokeWidth;
+                saved.strokes = strokes(m).map(function (p) { return p.map(round); });
+                saved.text = l.text;
+                saved.fontSize = m.fontSize;
+                saved.lines = l.lines.map(function (line) { return { text: line.text, x: round(line.x), y: round(line.y) }; });
+                if (m.type === 'area') { saved.fill = m.points.map(round); }
+                return saved;
+            }
             if (m.type === 'highlight') {
                 saved.x = m.x; saved.y = m.y; saved.width = m.width; saved.height = m.height;
                 return saved;
@@ -241,7 +376,10 @@
             textBox: textBox,
             textLayout: textLayout,
             toSaved: toSaved,
-            label: label
+            label: label,
+            isMeasure: isMeasure,
+            measureText: measureText,
+            measureLabel: measureLabel
         };
-    });
+    }]);
 })();

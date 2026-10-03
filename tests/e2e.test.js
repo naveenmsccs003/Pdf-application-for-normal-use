@@ -794,7 +794,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }));
     await open('ten-pages.pdf'); await click('Actual size');
     await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
-    check('ribbon: File, Zoom, Navigation, Markup tabs; one panel shown', rb.tabs.join('|') === 'File|Zoom|Navigation|Markup' &&
+    check('ribbon: File, Zoom, Navigation, Markup, Measure tabs; one panel shown', rb.tabs.join('|') === 'File|Zoom|Navigation|Markup|Measure' &&
         rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
     await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
     check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
@@ -807,7 +807,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.keyboard.press('ArrowRight'); await settle(); rb = await ribbon(); s = await state();
     check('ribbon: arrow keys on the tabs move to the next tab, not the next page',
         rb.selected === 'Markup' && rb.focused === 'ribbon-tab-markup' && rb.visible.join() === 'ribbon-markup' && rb.page === 'Page 2 of 10', rb);
-    await page.keyboard.press('ArrowRight'); await sleep(100); rb = await ribbon();
+    await page.keyboard.press('ArrowRight'); await sleep(100); await page.keyboard.press('ArrowRight'); await sleep(100); rb = await ribbon();
     check('ribbon: arrow keys wrap around', rb.selected === 'File' && rb.focused === 'ribbon-tab-file', rb);
     await page.click('#ribbon-tab-markup'); await sleep(100);
     await page.click('#ribbon-markup button[aria-label="Rectangle"]'); await sleep(100);
@@ -859,6 +859,107 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     s = await state();
     check('More colours: custom colours save into the PDF copy', /with 2 markups/.test(s.status), s.status);
     await click('Clear Markups'); await page.keyboard.press('Escape'); await sleep(100); await click('Fit Page');
+
+    // ===== Measure: distances, areas, perimeter, scale =====
+    const measureLabels = () => page.$$eval('.markup-row .markup-title', els => els.map(e => e.textContent.trim()));
+    const scaleButton = () => page.$eval('.ribbon-scale', b => ({ text: b.textContent.trim(), unset: b.classList.contains('is-unset') }));
+    const scaleDialog = () => page.evaluate(() => {
+        const d = document.querySelector('[aria-labelledby="scale-dialog-title"]');
+        const e = d && d.querySelector('.dialog-message');
+        return { open: !!d, focused: document.activeElement && document.activeElement.id, error: e ? e.textContent.trim() : '' };
+    });
+    const pressed = label => page.$eval(`button[aria-label="${label}"]`, b => b.getAttribute('aria-pressed') === 'true');
+    const corners = async (points, finish) => {
+        for (const [x, y] of points) await clickAt(x, y);
+        if (finish === 'enter') { await page.keyboard.press('Enter'); await sleep(150); }
+    };
+    await open('one-page.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-measure'); await sleep(100);
+    let sb = await scaleButton();
+    check('measure: no scale set at first (shown in red)', sb.text === '1:1 (not set)' && sb.unset, sb);
+    await page.click('button[aria-label="Distance"]'); await drag(100, 300, 300, 300); s = await state();
+    check('measure: without a scale a distance is the paper size, with a hint', /^Distance: 71 mm \(paper size/.test(s.status), s.status);
+    await page.click('.ribbon-scale'); await sleep(200); let sd = await scaleDialog();
+    check('measure: Scale opens the dialog with the cursor in the ratio box', sd.open && sd.focused === 'scale-ratio-input', sd);
+    await page.click('#scale-ratio-input', { clickCount: 3 }); await page.keyboard.type('abc'); await page.keyboard.press('Enter'); await sleep(100);
+    check('measure: an invalid scale is refused', (await scaleDialog()).error.startsWith('Enter the scale as a number'), await scaleDialog());
+    await page.click('#scale-ratio-input', { clickCount: 3 }); await page.keyboard.type('1:100'); await page.keyboard.press('Enter'); await sleep(150);
+    sb = await scaleButton(); let ml = await measureLabels();
+    check('measure: 1:100 set; existing distance updates (200 pt = 7,056 mm)', sb.text === '1:100 \u00b7 mm' && !sb.unset && ml[0] === 'Distance: 7,056 mm', [sb, ml]);
+    await page.click('button[aria-label="Horizontal distance"]'); await drag(100, 400, 300, 450);
+    await page.click('button[aria-label="Vertical distance"]'); await drag(400, 400, 450, 600);
+    ml = await measureLabels();
+    check('measure: horizontal and vertical distances measure only their direction',
+        ml[1] === 'Horizontal distance: 7,056 mm' && ml[2] === 'Vertical distance: 7,056 mm', ml);
+    await page.click('button[aria-label="Area"]');
+    await corners([[100, 100], [300, 100], [300, 200], [100, 200]], 'enter'); ml = await measureLabels();
+    check('measure: area of 4 clicked corners, Enter finishes (24.89 m\u00b2)', ml[3] === 'Area: 24.89 m\u00b2', ml);
+    await page.click('button[aria-label="Perimeter"]');
+    await corners([[350, 100], [550, 100], [550, 200], [350, 200], [350, 100]]); ml = await measureLabels();
+    check('measure: perimeter closes by clicking the first corner (21,167 mm)', ml[4] === 'Perimeter: 21,167 mm', ml);
+    await page.click('button[aria-label="Area"]');
+    // (The page runs under the status bar below y = 590 in this window.)
+    await corners([[100, 480], [200, 480]]); await page.keyboard.press('Escape'); await sleep(100);
+    check('measure: Esc cancels the unfinished area and keeps the tool', (await measureLabels()).length === 5 && await pressed('Area'));
+    await corners([[100, 480], [200, 480], [200, 560]]); await page.keyboard.press('Backspace'); await page.keyboard.press('Enter'); await sleep(150);
+    check('measure: Backspace removes the last corner; fewer than 3 corners adds nothing', (await measureLabels()).length === 5);
+    const lbm = await layerBox();
+    await corners([[100, 480], [200, 480]]); await page.mouse.click(lbm.x + 200, lbm.y + 560, { clickCount: 1 });
+    await page.mouse.click(lbm.x + 200, lbm.y + 560, { clickCount: 2 }); await sleep(200); ml = await measureLabels();
+    check('measure: double-click finishes an area (triangle, 4.98 m\u00b2)', ml[5] === 'Area: 4.98 m\u00b2', ml);
+    await page.click('button[aria-label="Calibrate"]'); await drag(100, 580, 300, 580); await sleep(200); sd = await scaleDialog();
+    check('measure: Calibrate opens the dialog with the cursor in the length box', sd.open && sd.focused === 'scale-length-input', sd);
+    await page.keyboard.press('Enter'); await sleep(100);
+    check('measure: calibration needs a length', (await scaleDialog()).error.startsWith('Enter the real length'), await scaleDialog());
+    await page.keyboard.type('5000'); await page.keyboard.press('Enter'); await sleep(150);
+    sb = await scaleButton(); ml = await measureLabels(); s = await state();
+    check('measure: calibration (200 pt = 5000 mm) updates every measurement and returns to Pan',
+        sb.text === 'Calibrated \u00b7 mm' && ml.join('|') === 'Distance: 5,000 mm|Horizontal distance: 5,000 mm|Vertical distance: 5,000 mm|' +
+        'Area: 12.50 m\u00b2|Perimeter: 15,000 mm|Area: 2.50 m\u00b2' && await pressed('Pan') && /calibrated/.test(s.status), [sb, ml, s.status]);
+    await page.click('.ribbon-scale'); await sleep(200);
+    await page.click('#scale-ratio-input', { clickCount: 3 }); await page.keyboard.type('50');
+    await page.select('[aria-labelledby="scale-dialog-title"] select', 'string:m'); await page.keyboard.press('Escape'); await sleep(100);
+    check('measure: Esc closes the scale dialog without changing the scale', !(await scaleDialog()).open && (await scaleButton()).text === 'Calibrated \u00b7 mm');
+    await page.click('.ribbon-scale'); await sleep(200);
+    await page.click('#scale-ratio-input', { clickCount: 3 }); await page.keyboard.type('50');
+    await page.select('[aria-labelledby="scale-dialog-title"] select', 'string:m');
+    await page.click('[aria-labelledby="scale-dialog-title"] .tool-primary'); await sleep(150); ml = await measureLabels();
+    check('measure: 1:50 in metres', (await scaleButton()).text === '1:50 \u00b7 m' && ml[0] === 'Distance: 3.53 m' && ml[3] === 'Area: 6.22 m\u00b2', ml);
+    await clickAt(130, 180); let mbox = await selectionBox();
+    check('measure: Pan click inside an area selects it', !!mbox && near(mbox.w, 208, 3), mbox);
+    await clickAt(450, 101); mbox = await selectionBox();
+    check('measure: Pan click on a perimeter line selects it', !!mbox && near(mbox.w, 208, 3) && near(mbox.h, 108, 3), mbox);
+    await page.keyboard.press('Delete'); await sleep(150); ml = await measureLabels();
+    check('measure: Delete removes the selected measurement', ml.length === 5 && !ml.some(l => l.startsWith('Perimeter')), ml);
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('measure: measurements save into the PDF copy', /one-page-highlighted.*with 5 markups/.test(s.status), s.status);
+    if (canCheckDownloads) {
+        await sleep(500);
+        const saved = fs.readdirSync(DOWNLOADS).filter(f => /^one-page-highlighted.*\.pdf$/.test(f))
+            .map(f => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+        const raw = saved ? fs.readFileSync(saved).toString('latin1') : '';
+        check('measure: saved copy has the values as stamp text', raw.includes('/Contents(Distance: 3.53 m)') &&
+            raw.includes('/Contents(Horizontal distance: 3.53 m)') && (raw.match(/\/Subtype\s*\/Stamp/g) || []).length === 5, saved);
+        if (saved) {
+            await (await page.$('.toolbar input[type=file]')).uploadFile(saved);
+            await sleep(300); await settle(); await click('Actual size');
+            const line = await redShare({ x: 150, y: 296, w: 100, h: 8 });
+            // Share of light red (the 12 % area fill) inside the area, between the text lines.
+            const fill = await page.evaluate(() => {
+                const c = document.querySelector('.canvas-layer canvas'), k = c.width / parseFloat(c.style.width);
+                const d = c.getContext('2d').getImageData(Math.round(105 * k), Math.round(105 * k), Math.round(190 * k), Math.round(90 * k)).data;
+                let n = 0;
+                for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 200 && d[i + 1] < 245 && d[i + 2] > 200 && d[i + 2] < 245) n++;
+                return n / (d.length / 4);
+            });
+            check(`measure: saved copy draws the lines and the light area fill (line ${Math.round(line * 100)}%, fill ${Math.round(fill * 100)}%)`,
+                line > 0.1 && fill > 0.3);
+        }
+    }
+    await click('Fit Page');
 
     // ===== Side panels =====
     await click('Thumbnails panel'); await click('Markups panel'); s = await state();

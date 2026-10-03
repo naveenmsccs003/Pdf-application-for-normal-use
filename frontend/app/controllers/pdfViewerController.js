@@ -4,9 +4,9 @@
     /** Menu bar, toolbar and status bar state: open, recent files, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
-        'recentFilesService', 'markupGeometry', 'VIEWER_CONFIG',
+        'recentFilesService', 'markupGeometry', 'scaleService', 'VIEWER_CONFIG',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
-                  recentFilesService, markupGeometry, VIEWER_CONFIG) {
+                  recentFilesService, markupGeometry, scaleService, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -189,6 +189,8 @@
                 vm.selectedHighlightId = null;
                 vm.tool = 'pan';
                 vm.noteDialog = null;
+                vm.scaleDialog = null;
+                scaleService.clear();
                 vm.source = null;
                 vm.fileName = '';
                 vm.pageCount = 0;
@@ -206,6 +208,8 @@
                 vm.selectedHighlightId = null;
                 vm.tool = 'pan';
                 vm.noteDialog = null;
+                vm.scaleDialog = null;
+                scaleService.clear();
                 vm.fileName = fileName;
                 vm.pageCount = pageCount;
                 setPage(1);
@@ -378,10 +382,10 @@
             // While a dialog (custom zoom, note text) is open, keys belong to it: Esc closes it, and the
             // viewer's and find shortcuts must not act on the page behind it. Capture phase, so this runs first.
             function onCustomZoomKey(event) {
-                if (!vm.customZoom && !vm.noteDialog) { return; }
+                if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog) { return; }
                 event.stopImmediatePropagation();
                 if (event.key === 'Escape') {
-                    $scope.$apply(function () { vm.closeCustomZoom(); vm.closeNoteDialog(); });
+                    $scope.$apply(function () { vm.closeCustomZoom(); vm.closeNoteDialog(); vm.closeScaleDialog(); });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && vm.noteDialog) {
                     event.preventDefault();
                     $scope.$apply(vm.applyNoteDialog);
@@ -427,7 +431,8 @@
             // ----- Ribbon: tool categories in the toolbar -----
             vm.ribbonTabs = [
                 { id: 'file', label: 'File' }, { id: 'zoom', label: 'Zoom' },
-                { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' }
+                { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' },
+                { id: 'measure', label: 'Measure' }
             ];
             vm.ribbonTab = 'file';
 
@@ -459,7 +464,13 @@
                 arrow: 'Arrow: drag from the tail to the point. Shift snaps to 45\u00b0.',
                 pen: 'Freehand: draw on the page.',
                 text: 'Text note: click where the note goes.',
-                callout: 'Callout: drag from the point to where the note goes.'
+                callout: 'Callout: drag from the point to where the note goes.',
+                distance: 'Distance: drag from one point to the other. Shift snaps to 45\u00b0.',
+                hdistance: 'Horizontal distance: drag between the two points; only the horizontal part is measured.',
+                vdistance: 'Vertical distance: drag between the two points; only the vertical part is measured.',
+                area: 'Area: click each corner; double-click, Enter or click the first corner to finish. Backspace removes the last corner, Esc cancels.',
+                perimeter: 'Perimeter: click each corner of the boundary; double-click, Enter or click the first corner to finish.',
+                calibrate: 'Calibrate: drag along a dimension you know (e.g. a grid line distance), then enter its real length.'
             };
 
             /** Picks a tool; picking the active markup tool again goes back to Pan. Esc also returns to Pan. */
@@ -487,6 +498,10 @@
             vm.addMarkup = function (pageNumber, markup) {
                 var added = highlightService.add(pageNumber, markup);
                 vm.selectedHighlightId = added.id;
+                if (markupGeometry.isMeasure(added)) {
+                    vm.status = vm.markupLabel(added) + (scaleService.forPage(pageNumber).isDefault
+                        ? ' (paper size: no scale set; use Calibrate or Scale on the Measure tab)' : '');
+                }
                 return added;
             };
 
@@ -550,8 +565,72 @@
                 });
             };
 
+            // ----- Measurement scale -----
+            vm.scaleUnits = scaleService.UNITS;
+            vm.scaleRatios = scaleService.PRESET_RATIOS;
+            vm.scaleDialog = null;  // { pageNumber, measured, mode, length, ratio, unit, allPages, error } while open
+
+            /** Scale of the current page, as shown on the Measure tab. */
+            vm.scaleLabel = function () {
+                var scale = scaleService.forPage(vm.currentPage);
+                return scale.label + (scale.isDefault ? '' : ' \u00b7 ' + scale.unit);
+            };
+            vm.isScaleSet = function () { return !scaleService.forPage(vm.currentPage).isDefault; };
+
+            /** Opens the scale dialog: with `measured` (PDF points) from a calibration line, else to pick a ratio. */
+            vm.openScaleDialog = function (pageNumber, measured) {
+                if (!vm.hasDocument()) { return; }
+                var current = scaleService.forPage(pageNumber || vm.currentPage);
+                vm.scaleDialog = {
+                    pageNumber: pageNumber || vm.currentPage,
+                    measured: measured || null,
+                    mode: measured ? 'known' : 'ratio',
+                    length: '',
+                    ratio: current.label.indexOf('1:') === 0 && !current.isDefault ? current.label.slice(2) : '100',
+                    unit: current.isDefault ? 'mm' : current.unit,
+                    allPages: true,
+                    error: ''
+                };
+                $timeout(function () {
+                    var input = $document[0].getElementById(measured ? 'scale-length-input' : 'scale-ratio-input');
+                    if (input) { input.focus(); input.select(); }
+                });
+            };
+
+            vm.closeScaleDialog = function () { vm.scaleDialog = null; };
+
+            function parseNumber(text) {
+                var value = parseFloat(String(text || '').replace(/,/g, '').trim());
+                return isFinite(value) && value > 0 ? value : null;
+            }
+
+            vm.applyScaleDialog = function () {
+                var d = vm.scaleDialog;
+                if (!d) { return; }
+                var scale;
+                if (d.mode === 'known') {
+                    var length = parseNumber(d.length);
+                    if (!length || length > 1e7) { d.error = 'Enter the real length of the line you drew, e.g. 6000 (mm) or 6 (m).'; return; }
+                    scale = scaleService.fromCalibration(d.measured, length, d.unit);
+                } else {
+                    var ratio = parseNumber(String(d.ratio || '').replace(/^\s*1\s*:/, ''));
+                    if (!ratio || ratio > 100000) { d.error = 'Enter the scale as a number, e.g. 100 for 1:100.'; return; }
+                    scale = scaleService.fromRatio(ratio, d.unit);
+                }
+                scaleService.set(d.allPages ? null : d.pageNumber, scale);
+                vm.scaleDialog = null;
+                if (vm.tool === 'calibrate') { vm.tool = 'pan'; }
+                var where = d.allPages ? 'all pages' : 'page ' + d.pageNumber;
+                vm.status = (d.mode === 'known'
+                    ? 'Scale calibrated (the line is ' + d.length + ' ' + d.unit + ') for ' + where
+                    : 'Scale ' + scale.label + ' (' + scale.unit + ') set for ' + where) + '. Measurements use it now.';
+            };
+
+            vm.onCalibrate = function (pageNumber, length) { vm.openScaleDialog(pageNumber, length); };
+
             vm.markupLabel = function (m) {
                 var label = markupGeometry.label(m);
+                if (markupGeometry.isMeasure(m)) { return label + ': ' + markupGeometry.measureText(m); }
                 if (m.text) {
                     var first = m.text.split('\n')[0];
                     label += ': ' + (first.length > 40 ? first.slice(0, 40) + '\u2026' : first);

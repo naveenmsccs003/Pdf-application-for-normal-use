@@ -7,14 +7,19 @@
      *   2. search layer       - find matches (FindController), positioned from PDF-unit coordinates
      *   3. interaction layer  - mouse/touch input: pan (drag the page), draw and select markups
      *   4. highlight layer    - transparent highlight overlay, positioned from PDF-unit coordinates
-     *   5. markup layer       - SVG shapes, lines and notes (markupGeometry), drawn in PDF units
+     *   5. markup layer       - SVG shapes, lines, notes and measurements (markupGeometry), drawn in PDF units
      */
-    angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'markupGeometry', 'VIEWER_CONFIG',
-        function (pdfService, markupGeometry, VIEWER_CONFIG) {
+    angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'markupGeometry', 'scaleService', 'VIEWER_CONFIG',
+        function (pdfService, markupGeometry, scaleService, VIEWER_CONFIG) {
             var MIN_HIGHLIGHT_PX = 4;       // smaller drags count as a click
             var MIN_PEN_STEP_PX = 1.5;      // freehand: points closer than this are skipped
             var MAX_PEN_POINTS = 5000;
             var SELECT_TOLERANCE_PX = 6;    // how close a click must be to a line to select it
+            var CLOSE_POLYGON_PX = 8;       // area / perimeter: a click this close to the first corner finishes
+            var MIN_CORNER_STEP_PX = 3;     // area / perimeter: clicks closer than this to the last corner are ignored
+            var MAX_CORNERS = 500;
+            var LINE_TOOLS = { line: true, arrow: true, distance: true, hdistance: true, vdistance: true, calibrate: true };
+            var POLYGON_TOOLS = { area: true, perimeter: true };
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var RESIZE_DEBOUNCE_MS = 150;
 
@@ -33,6 +38,7 @@
                     api: '=',
                     onCreateMarkup: '&',
                     onRequestText: '&',     // text note / callout: the host asks for the text
+                    onCalibrate: '&',       // scale calibration: a line of known length was drawn
                     onSelectHighlight: '&',
                     onRemoveHighlight: '&',
                     onResize: '&',
@@ -64,13 +70,17 @@
                     '         ng-attr-view_box="0 0 {{ rendered.width / rendered.scale }} {{ rendered.height / rendered.scale }}">' +
                     '      <g class="markup" ng-repeat="m in highlights | filter:isShapeOnPage track by m.id" data-type="{{ m.type }}"' +
                     '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' +
+                    '        <path ng-if="shape(m).area" class="markup-area" ng-attr-d="{{ shape(m).area }}" ng-attr-fill="{{ m.color }}" stroke="none"></path>' +
                     '        <path ng-attr-d="{{ shape(m).outline }}" ng-attr-fill="{{ shape(m).fill }}"></path>' +
                     '        <path ng-if="shape(m).leader" ng-attr-d="{{ shape(m).leader }}" fill="none"></path>' +
+                    '        <rect ng-if="shape(m).label" class="markup-label" ng-attr-x="{{ shape(m).label.x }}" ng-attr-y="{{ shape(m).label.y }}"' +
+                    '              ng-attr-width="{{ shape(m).label.width }}" ng-attr-height="{{ shape(m).label.height }}" stroke="none"></rect>' +
                     '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none">' +
                     '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}">{{ l.text }}</tspan>' +
                     '        </text>' +
                     '      </g>' +
                     '      <path class="markup-draft" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>' +
+                    '      <g class="markup-draft-label" display="none"><rect class="markup-label" stroke="none"></rect><text stroke="none"></text></g>' +
                     '    </svg>' +
                     '    <div class="markup-selection" ng-if="selectedBox()" ng-style="selectedBox()">' +
                     '      <button type="button" class="highlight-remove" title="Remove markup" aria-label="Remove markup"' +
@@ -214,14 +224,30 @@
                         return m.pageNumber === scope.rendered.page && m.type !== 'highlight';
                     };
 
-                    // Markups do not change once drawn, so their SVG is computed once.
+                    // Markups do not change once drawn, so their SVG is computed once (measurements again
+                    // when a scale changes, as their values do).
                     var shapes = {};
                     scope.shape = function (m) {
                         var cached = shapes[m.id];
-                        if (cached && cached.markup === m) { return cached; }
+                        if (cached && cached.markup === m && cached.scaleVersion === scaleService.version) { return cached; }
+                        if (markupGeometry.isMeasure(m)) {
+                            var label = markupGeometry.measureLabel(m);
+                            cached = {
+                                markup: m,
+                                scaleVersion: scaleService.version,
+                                outline: markupGeometry.path(m),
+                                fill: 'none',
+                                area: m.type === 'area' ? polylinePath(m.points) + 'Z' : null,
+                                label: label,
+                                lines: label.lines
+                            };
+                            shapes[m.id] = cached;
+                            return cached;
+                        }
                         var isNote = m.type === 'text' || m.type === 'callout';
                         cached = {
                             markup: m,
+                            scaleVersion: scaleService.version,
                             outline: isNote ? markupGeometry.path({ type: 'rect', x: m.x, y: m.y, width: m.width, height: m.height }) : markupGeometry.path(m),
                             fill: isNote ? '#ffffff' : 'none',
                             leader: m.type === 'callout' ? markupGeometry.strokes(m).map(function (p) {
@@ -249,6 +275,10 @@
                         return lastBox;
                     };
 
+                    function polylinePath(p) {
+                        return p.reduce(function (d, v, k) { return d + (k % 2 ? ' ' + v : (k ? 'L' : 'M') + v); }, '');
+                    }
+
                     function selectedMarkup() {
                         var list = scope.highlights || [];
                         for (var i = 0; i < list.length; i++) {
@@ -274,9 +304,16 @@
                         };
                     }
 
+                    var draftLabel = element[0].querySelector('.markup-draft-label');
                     function hideDraft() {
                         draftEl.classList.add('ng-hide');
                         svgDraft.removeAttribute('d');
+                        draftLabel.setAttribute('display', 'none');
+                    }
+
+                    function pageSizes() {
+                        var s = scope.rendered.scale;
+                        return markupGeometry.sizesFor(scope.rendered.width / s, scope.rendered.height / s);
                     }
 
                     // Returns the topmost markup under a screen point on the current page.
@@ -382,14 +419,29 @@
                                 return angular.extend(m, r);
                             case 'line':
                             case 'arrow':
-                                if (event && event.shiftKey) {
+                            case 'distance':
+                            case 'hdistance':
+                            case 'vdistance':
+                            case 'calibrate':
+                                if (event && event.shiftKey && scope.tool !== 'hdistance' && scope.tool !== 'vdistance') {
                                     // Shift: snap to 45° steps (horizontal / vertical dimension lines).
                                     var angle = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) * (Math.PI / 4);
                                     var length = Math.hypot(b.x - a.x, b.y - a.y);
                                     b = { x: a.x + length * Math.cos(angle), y: a.y + length * Math.sin(angle) };
                                 }
                                 if (Math.hypot(b.x - a.x, b.y - a.y) < minSize) { return null; }
-                                return angular.extend(m, { x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+                                if (scope.tool === 'line' || scope.tool === 'arrow') {
+                                    return angular.extend(m, { x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+                                }
+                                // Measurements (the calibration line is drawn as a distance).
+                                if (scope.tool === 'hdistance' && Math.abs(b.x - a.x) < minSize) { return null; }
+                                if (scope.tool === 'vdistance' && Math.abs(b.y - a.y) < minSize) { return null; }
+                                return angular.extend(m, {
+                                    type: scope.tool === 'calibrate' ? 'distance' : scope.tool,
+                                    pageNumber: scope.rendered.page,
+                                    fontSize: measureFontSize(sizes),
+                                    points: [a.x, a.y, b.x, b.y].map(round2)
+                                });
                             case 'callout':
                                 // Drawn from the point to the place for the note; the leader is the draft.
                                 if (Math.hypot(b.x - a.x, b.y - a.y) < minSize) { return null; }
@@ -398,6 +450,10 @@
                                 return null;
                         }
                     }
+
+                    function round2(v) { return Math.round(v * 100) / 100; }
+
+                    function measureFontSize(sizes) { return Math.max(8, Math.round(sizes.fontSize * 0.8)); }
 
                     function showDraft(m) {
                         if (!m) { hideDraft(); return; }
@@ -413,7 +469,85 @@
                         svgDraft.setAttribute('d', markupGeometry.path(m));
                         svgDraft.setAttribute('stroke', m.color);
                         svgDraft.setAttribute('stroke-width', m.strokeWidth);
+                        if (!markupGeometry.isMeasure(m)) {
+                            draftLabel.setAttribute('display', 'none');
+                            return;
+                        }
+                        // The value while drawing, e.g. "3.25 m".
+                        var label = markupGeometry.measureLabel(m);
+                        var rect = draftLabel.firstChild, text = draftLabel.lastChild;
+                        rect.setAttribute('x', label.x); rect.setAttribute('y', label.y);
+                        rect.setAttribute('width', label.width); rect.setAttribute('height', label.height);
+                        text.setAttribute('x', label.lines[0].x); text.setAttribute('y', label.lines[0].y);
+                        text.setAttribute('font-size', m.fontSize);
+                        text.setAttribute('fill', m.color);
+                        text.textContent = label.text;
+                        draftLabel.removeAttribute('display');
                     }
+
+                    // ----- Area / perimeter: click the corners; double-click, Enter or the first corner finishes -----
+                    var polygon = null;     // { page, points: [x0, y0, ...] in PDF units } while placing corners
+
+                    function polygonDraft(hover) {
+                        var sizes = pageSizes();
+                        var points = polygon.points.slice();
+                        if (hover) { points.push(hover.x, hover.y); }
+                        return { type: scope.tool, pageNumber: polygon.page, color: scope.markupColor, strokeWidth: sizes.strokeWidth,
+                                 fontSize: measureFontSize(sizes), points: points };
+                    }
+
+                    function addCorner(point) {
+                        var s = scope.rendered.scale;
+                        var x = round2(point.x / s), y = round2(point.y / s);
+                        if (!polygon) {
+                            polygon = { page: scope.rendered.page, points: [x, y] };
+                        } else {
+                            var p = polygon.points, n = p.length;
+                            if (n >= 6 && Math.hypot(x - p[0], y - p[1]) * s <= CLOSE_POLYGON_PX) { finishPolygon(); return; }
+                            if (Math.hypot(x - p[n - 2], y - p[n - 1]) * s < MIN_CORNER_STEP_PX) { return; }
+                            if (n / 2 < MAX_CORNERS) { p.push(x, y); }
+                        }
+                        showDraft(polygonDraft(null));
+                    }
+
+                    /** Adds the area / perimeter if it has at least three corners. */
+                    function finishPolygon() {
+                        if (!polygon) { return; }
+                        var page = polygon.page;
+                        var markup = polygon.points.length >= 6 ? polygonDraft(null) : null;
+                        cancelPolygon();
+                        if (!markup) { return; }
+                        delete markup.pageNumber;
+                        scope.$evalAsync(function () { scope.onCreateMarkup({ pageNumber: page, markup: markup }); });
+                    }
+
+                    function cancelPolygon() {
+                        polygon = null;
+                        hideDraft();
+                    }
+
+                    function onPolygonKey(event) {
+                        if (!polygon) { return; }
+                        var tag = event.target && event.target.tagName;
+                        if (tag === 'INPUT' || tag === 'TEXTAREA') { return; }
+                        if (event.key === 'Enter') {
+                            finishPolygon();
+                        } else if (event.key === 'Escape') {
+                            cancelPolygon();
+                        } else if (event.key === 'Backspace' || event.key === 'Delete') {
+                            polygon.points.splice(-2, 2);
+                            if (polygon.points.length) { showDraft(polygonDraft(null)); } else { cancelPolygon(); }
+                        } else {
+                            return;
+                        }
+                        // These keys belong to the polygon: Esc must not leave the tool, Delete must not remove a markup.
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                    }
+                    document.addEventListener('keydown', onPolygonKey, true);
+                    interactionLayer.addEventListener('dblclick', function () { if (polygon) { finishPolygon(); } });
+                    scope.$watch('tool', function () { if (polygon) { cancelPolygon(); } });
+                    scope.$watch('rendered.page', function () { if (polygon) { cancelPolygon(); } });
 
                     interactionLayer.addEventListener('pointerdown', function (event) {
                         if (event.button !== 0 || !scope.rendered.page) {
@@ -431,7 +565,12 @@
                     });
 
                     interactionLayer.addEventListener('pointermove', function (event) {
-                        if (!start || !scope.drawing()) {
+                        if (polygon && !start && POLYGON_TOOLS[scope.tool]) {
+                            var hover = pointFromEvent(event), hs = scope.rendered.scale;
+                            showDraft(polygonDraft({ x: round2(hover.x / hs), y: round2(hover.y / hs) }));
+                            return;
+                        }
+                        if (!start || !scope.drawing() || POLYGON_TOOLS[scope.tool]) {
                             return;
                         }
                         var point = pointFromEvent(event);
@@ -457,6 +596,10 @@
                         var begin = start;
                         var end = pointFromEvent(event);
                         start = null;
+                        if (POLYGON_TOOLS[scope.tool] && !scope.spacePan) {
+                            addCorner(end);
+                            return;
+                        }
                         hideDraft();
                         var s = scope.rendered.scale;
                         var page = scope.rendered.page;
@@ -473,6 +616,14 @@
                                 });
                                 return;
                             }
+                            if (tool === 'calibrate') {
+                                var line = draftMarkup(begin.point, end, event);
+                                if (line) {
+                                    var p0 = line.points;
+                                    scope.onCalibrate({ pageNumber: page, length: Math.hypot(p0[2] - p0[0], p0[3] - p0[1]) });
+                                }
+                                return;
+                            }
                             var markup = null;
                             if (tool === 'pen') {
                                 var p = begin.pen;
@@ -485,6 +636,7 @@
                                 markup = draftMarkup(begin.point, end, event);
                             }
                             if (markup) {
+                                delete markup.pageNumber;
                                 if (markup.type === 'highlight') {
                                     // Highlights keep their own colour.
                                     delete markup.color;
@@ -507,6 +659,7 @@
                         resizeObserver.disconnect();
                         clearTimeout(resizeTimer);
                         document.removeEventListener('keydown', onSpace);
+                        document.removeEventListener('keydown', onPolygonKey, true);
                         document.removeEventListener('keyup', onSpace);
                         window.removeEventListener('blur', onBlur);
                     });

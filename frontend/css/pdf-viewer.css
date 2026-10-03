@@ -788,6 +788,13 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 }
 .markup-selection .highlight-remove { pointer-events: auto; }
 .interaction-layer.is-text { cursor: text; }
+/* Measurements: value labels on a white box (the page stays white in dark mode too), area fill */
+.markup-label { fill: #ffffff; fill-opacity: 0.9; }
+.markup-area { fill-opacity: 0.12; }
+.ribbon-scale { min-width: 92px; font-variant-numeric: tabular-nums; }
+.ribbon-scale.is-unset { color: var(--error-text); }
+.scale-form .scale-number { width: 90px; }
+.scale-form .choice { align-items: center; }
 
 
 .highlight-remove {

@@ -77,6 +77,7 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
   - **Colour**: four quick colours, or **More colours** for any colour (16.7 million): a saturation/brightness
     square, hue slider and hex code box (`#f80` or `#ff8800`), 72 presets, and the last 10 custom colours
     (remembered in this browser / app). Saved copies keep the exact colour.
+  - **Measure**: Distance, Horizontal, Vertical; Area, Perimeter; Calibrate and the page's scale (see below)
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
 - **Document tab** with the file name and a close button
@@ -85,6 +86,26 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Status bar**: first / previous / page number / next / last, status text, zoom out / % / zoom in
   (type a percentage such as `135` into the zoom box for a custom zoom)
 - On narrow windows and tablets the panels close and slide over the page when opened
+
+## Measurement
+
+On the **Measure** tab (web and desktop):
+
+| Tool | How | Shows |
+| --- | --- | --- |
+| **Distance** | drag between two points (Shift: 45° steps) | straight-line length |
+| **Horizontal** / **Vertical** | drag between two points | only the horizontal / vertical part, drawn as a dimension line |
+| **Area** | click each corner; double-click, **Enter** or click the first corner to finish | area in m² (mm, cm, m) or ft² (in, ft) |
+| **Perimeter** | click each corner of the boundary, finish the same way | length of the closed boundary |
+| **Calibrate** | drag along a dimension you know (e.g. between two grid lines), enter its real length | sets the scale |
+
+- **Backspace** removes the last corner, **Esc** cancels the unfinished area. Measurements use the colour chosen on the
+  Markup tab and are listed (with their values) in the Markups panel.
+- The **scale** button shows the current page's scale; click it to pick a ratio such as 1:100 and the unit (mm, cm, m,
+  in, ft). A scale applies to all pages or to one page (drawing sets often mix scales). Until a scale is set (shown in
+  red), values are paper sizes at 1:1. Changing the scale updates every measurement on those pages.
+- Scales are kept for the open document only. **Save copy with markups** writes each measurement as a Stamp annotation
+  with its lines, area fill and value, so it looks the same in other PDF viewers.
 
 ## PDF tools
 

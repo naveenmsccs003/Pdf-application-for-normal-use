@@ -10,6 +10,12 @@
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M3 17c3-6 5-6 7-2s4 4 6-1 3-6 5-4"/></symbol>
     <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
     <symbol id="i-callout" viewBox="0 0 24 24"><rect x="9" y="3" width="12" height="9" rx="1"/><path d="M12 7h6M9 12l-6 8M3 20l1-4M3 20l4-1"/></symbol>
+    <symbol id="i-distance" viewBox="0 0 24 24"><path d="M4 18L20 6M2.8 16.4l2.4 3.2M18.8 4.4l2.4 3.2"/></symbol>
+    <symbol id="i-hdistance" viewBox="0 0 24 24"><path d="M3 12h18M3 8v8M21 8v8M6 10l-2 2 2 2M18 10l2 2-2 2"/></symbol>
+    <symbol id="i-vdistance" viewBox="0 0 24 24"><path d="M12 3v18M8 3h8M8 21h8M10 6l2-2 2 2M10 18l2 2 2-2"/></symbol>
+    <symbol id="i-area" viewBox="0 0 24 24"><path d="M4 6l10-2 6 7-4 9H5z"/><path d="M7 15l5-5M8 19l8-8M11 7l-4 4" stroke-width="1.2"/></symbol>
+    <symbol id="i-perimeter" viewBox="0 0 24 24"><path d="M4 6l10-2 6 7-4 9H5z" stroke-dasharray="3 2"/><circle cx="4" cy="6" r="1.4"/><circle cx="14" cy="4" r="1.4"/><circle cx="20" cy="11" r="1.4"/><circle cx="16" cy="20" r="1.4"/><circle cx="5" cy="20" r="1.4"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 16L16 3l5 5L8 21z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2M5.5 14.5l1 1M8.5 11.5l1 1M11.5 8.5l1 1"/></symbol>
     <symbol id="i-highlight" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L10 18H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h16"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
     <symbol id="i-clear" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 17l-3-3 9-9 6 6-6 6H7z"/><path d="M10 8l6 6"/></symbol>
@@ -363,6 +369,60 @@
             <span class="ribbon-caption">Edit</span>
         </div>
     </div>
+
+    <!-- Measure -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-measure" aria-labelledby="ribbon-tab-measure" ng-show="vm.ribbonTab === 'measure'">
+        <div class="ribbon-group" role="group" aria-label="Length">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('distance')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('distance')}" aria-pressed="{{ vm.isTool('distance') }}"
+                        aria-label="Distance" title="Distance: check a distance on the drawing (Shift: 45° steps)">
+                    <svg class="icon"><use href="#i-distance"></use></svg><span>Distance</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('hdistance')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('hdistance')}" aria-pressed="{{ vm.isTool('hdistance') }}"
+                        aria-label="Horizontal distance" title="Horizontal distance: check a horizontal dimension">
+                    <svg class="icon"><use href="#i-hdistance"></use></svg><span>Horizontal</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('vdistance')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('vdistance')}" aria-pressed="{{ vm.isTool('vdistance') }}"
+                        aria-label="Vertical distance" title="Vertical distance: check a vertical dimension">
+                    <svg class="icon"><use href="#i-vdistance"></use></svg><span>Vertical</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Length</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Area">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('area')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('area')}" aria-pressed="{{ vm.isTool('area') }}"
+                        aria-label="Area" title="Area: measure a slab or structural area (click the corners)">
+                    <svg class="icon"><use href="#i-area"></use></svg><span>Area</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('perimeter')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('perimeter')}" aria-pressed="{{ vm.isTool('perimeter') }}"
+                        aria-label="Perimeter" title="Perimeter: measure a boundary (click the corners)">
+                    <svg class="icon"><use href="#i-perimeter"></use></svg><span>Perimeter</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Area</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Scale">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('calibrate')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('calibrate')}" aria-pressed="{{ vm.isTool('calibrate') }}"
+                        aria-label="Calibrate" title="Scale calibration: drag along a dimension you know, then enter its length">
+                    <svg class="icon"><use href="#i-ruler"></use></svg><span>Calibrate</span>
+                </button>
+                <button type="button" class="tool tool-labelled ribbon-scale" ng-click="vm.openScaleDialog()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-unset': vm.hasDocument() && !vm.isScaleSet()}"
+                        aria-label="Drawing scale" title="Drawing scale of this page: click to set a scale such as 1:100">
+                    <span>{{ vm.hasDocument() ? vm.scaleLabel() : 'Scale' }}</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Scale</span>
+        </div>
+    </div>
 </nav>
 
 <div class="alert" role="alert" ng-if="vm.error">
@@ -414,6 +474,7 @@
                         api="vm.viewer"
                         on-create-markup="vm.addMarkup(pageNumber, markup)"
                         on-request-text="vm.requestNoteText(pageNumber, at, tip)"
+                        on-calibrate="vm.onCalibrate(pageNumber, length)"
                         on-select-highlight="vm.selectHighlight(id)"
                         on-remove-highlight="vm.removeHighlight(id)"
                         on-resize="vm.onViewerResize()"
@@ -586,6 +647,45 @@
         <div class="dialog-footer">
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeNoteDialog()">Cancel</button>
             <button type="submit" form="note-form" class="tool tool-labelled tool-primary">Add note</button>
+        </div>
+    </div>
+</div>
+
+<!-- Drawing scale dialog (Measure > Calibrate / Scale) -->
+<div class="dialog-backdrop" ng-if="vm.scaleDialog" ng-click="vm.closeScaleDialog()">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="scale-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="scale-dialog-title">Drawing scale</h2>
+            <button type="button" class="panel-close" ng-click="vm.closeScaleDialog()" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body scale-form" novalidate ng-submit="vm.applyScaleDialog()" id="scale-form">
+            <label class="choice" ng-if="vm.scaleDialog.measured">
+                <input type="radio" name="scale-mode" value="known" ng-model="vm.scaleDialog.mode"> The line I drew is
+                <input type="text" id="scale-length-input" class="inline-text scale-number" inputmode="decimal" autocomplete="off"
+                       ng-model="vm.scaleDialog.length" ng-focus="vm.scaleDialog.mode = 'known'" ng-change="vm.scaleDialog.error = ''"
+                       aria-label="Real length of the line" placeholder="e.g. 6000">
+            </label>
+            <label class="choice">
+                <input type="radio" name="scale-mode" value="ratio" ng-model="vm.scaleDialog.mode"> Drawing scale 1 :
+                <input type="text" id="scale-ratio-input" class="inline-text scale-number" inputmode="decimal" autocomplete="off" list="scale-ratios"
+                       ng-model="vm.scaleDialog.ratio" ng-focus="vm.scaleDialog.mode = 'ratio'" ng-change="vm.scaleDialog.error = ''"
+                       aria-label="Drawing scale ratio">
+                <datalist id="scale-ratios"><option ng-repeat="r in vm.scaleRatios" value="{{ r }}"></option></datalist>
+            </label>
+            <label class="choice-indent">Unit
+                <select ng-model="vm.scaleDialog.unit" ng-options="u for u in vm.scaleUnits" aria-label="Unit"></select>
+            </label>
+            <label class="choice"><input type="checkbox" ng-model="vm.scaleDialog.allPages"> Use for all pages
+                (otherwise page {{ vm.scaleDialog.pageNumber }} only)</label>
+            <p class="dialog-note">Calibrate with a long dimension you trust, such as the distance between two grid lines.
+                Areas are shown in m&sup2; (mm, cm, m) or ft&sup2; (in, ft).</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.scaleDialog.error">{{ vm.scaleDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeScaleDialog()">Cancel</button>
+            <button type="submit" form="scale-form" class="tool tool-labelled tool-primary">Set scale</button>
         </div>
     </div>
 </div>

@@ -11,17 +11,19 @@ public sealed record MarkupLine(string Text, double X, double Y);
 /// A markup as the viewer sends it: page-relative, in points at scale 1, origin top-left, in the page's
 /// displayed orientation (after /Rotate). <c>X, Y, Width, Height</c> is the highlight / shape / note box;
 /// <c>Strokes</c> are the lines it is drawn with as polylines [x0, y0, x1, y1, ...] (curves already flattened).
+/// Measurements send their value label as the note box and text, and an area its outline as <c>Fill</c>.
 /// A markup without a type is a highlight.
 /// </summary>
 public sealed record Markup(int PageNumber, string? Type, double X, double Y, double Width, double Height,
                             string? Color = null, double StrokeWidth = 0, double[][]? Strokes = null,
-                            string? Text = null, double FontSize = 0, MarkupLine[]? Lines = null);
+                            string? Text = null, double FontSize = 0, MarkupLine[]? Lines = null, double[]? Fill = null);
 
 /// <summary>
 /// Writes markups as standard PDF annotations that other viewers show, print and can edit:
 /// highlight → Highlight, rectangle → Square, ellipse → Circle, line / arrow / freehand / cloud → Ink,
-/// text note / callout → Stamp whose appearance holds the box, text and leader line (so it looks the
-/// same in every viewer). Caller holds <see cref="Pdfium.Lock"/>.
+/// text note / callout → Stamp whose appearance holds the box, text and leader line, measurements → Stamp
+/// with the dimension lines (and area fill) and the value label (so they look the same in every viewer).
+/// Caller holds <see cref="Pdfium.Lock"/>.
 /// </summary>
 internal static partial class MarkupWriter
 {
@@ -31,7 +33,10 @@ internal static partial class MarkupWriter
     private const int LineCapRound = 1, LineJoinRound = 1;
     private const int MaxStrokes = 50, MaxStrokeCoordinates = 20_000, MaxTextLength = 1000, MaxLines = 200;
 
+    private const uint AreaFillAlpha = 31;          // 12 %, as on screen
+
     private static readonly HashSet<string> InkTypes = ["line", "arrow", "pen", "cloud"];
+    private static readonly HashSet<string> MeasureTypes = ["distance", "hdistance", "vdistance", "area", "perimeter"];
 
     // PDFiumCore passes a single point here; the native call takes an array.
     [StructLayout(LayoutKind.Sequential)]
@@ -57,6 +62,9 @@ internal static partial class MarkupWriter
                 case "ellipse": AddShape(page, map, markup, AnnotCircle); break;
                 case "text":
                 case "callout": notes.Add((AddNote(document, page, map, markup), markup.Text!)); break;
+                case var type when MeasureTypes.Contains(type):
+                    notes.Add((AddNote(document, page, map, markup), $"{Label(type)}: {markup.Text}"));
+                    break;
                 case var type when InkTypes.Contains(type): AddInk(page, map, markup); break;
                 default: throw new ToolException("Unknown markup type.");
             }
@@ -180,8 +188,20 @@ internal static partial class MarkupWriter
         }
     }
 
-    // ----- Text note / callout: Stamp with a white box, the text and the leader line -----
-    /// <summary>Adds the note and returns its annotation index on the page.</summary>
+    private static string Label(string type) => type switch
+    {
+        "distance" => "Distance",
+        "hdistance" => "Horizontal distance",
+        "vdistance" => "Vertical distance",
+        "area" => "Area",
+        _ => "Perimeter"
+    };
+
+    // ----- Text note / callout / measurement: Stamp with a white box, the text and the lines -----
+    /// <summary>
+    /// Adds the note and returns its annotation index on the page. Notes have a framed box; a measurement's
+    /// value label is a plain white box over its dimension lines, and an area is filled lightly.
+    /// </summary>
     private static int AddNote(FpdfDocumentT document, FpdfPageT page, PageMap map, Markup m)
     {
         CheckBox(m, "A note has an invalid size.");
@@ -196,6 +216,10 @@ internal static partial class MarkupWriter
         var strokes = CheckStrokes(m.Strokes, required: false);
         var (r, g, b) = ParseColor(m.Color);
         var width = CheckStrokeWidth(m.StrokeWidth);
+        var isMeasure = MeasureTypes.Contains(m.Type!);
+        var fill = m.Fill is null ? null : CheckStrokes([m.Fill], required: true)[0];
+        if (fill is not null && (!isMeasure || fill.Length < 6))
+            throw new ToolException("A markup has an invalid area.");
 
         var box = Corners(map, m.X, m.Y, m.Width, m.Height);
         var annot = Create(page, AnnotStamp);
@@ -204,23 +228,30 @@ internal static partial class MarkupWriter
             // /Rect first: the appearance created for the first object uses it as its bounding box.
             SetRect(annot, box.Concat(strokes.SelectMany(s => Points(map, s))), width);
 
-            var frame = fpdf_edit.FPDFPageObjCreateNewPath((float)box[0].X, (float)box[0].Y);
-            foreach (var corner in box.Skip(1))
-                fpdf_edit.FPDFPathLineTo(frame, (float)corner.X, (float)corner.Y);
-            fpdf_edit.FPDFPathClose(frame);
-            fpdf_edit.FPDFPageObjSetFillColor(frame, 255, 255, 255, 255);
-            Stroke(frame, r, g, b, width, FillModeAlternate);
-            Append(annot, frame);
+            if (fill is not null)
+            {
+                var area = NewPath(Points(map, fill).ToList());
+                fpdf_edit.FPDFPathClose(area);
+                fpdf_edit.FPDFPageObjSetFillColor(area, r, g, b, AreaFillAlpha);
+                fpdf_edit.FPDFPathSetDrawMode(area, FillModeAlternate, 0);
+                Append(annot, area);
+            }
 
             foreach (var stroke in strokes)
             {
-                var points = Points(map, stroke).ToList();
-                var path = fpdf_edit.FPDFPageObjCreateNewPath((float)points[0].X, (float)points[0].Y);
-                foreach (var p in points.Skip(1))
-                    fpdf_edit.FPDFPathLineTo(path, (float)p.X, (float)p.Y);
+                var path = NewPath(Points(map, stroke).ToList());
                 Stroke(path, r, g, b, width, FillModeNone);
                 Append(annot, path);
             }
+
+            var frame = NewPath(box);
+            fpdf_edit.FPDFPathClose(frame);
+            fpdf_edit.FPDFPageObjSetFillColor(frame, 255, 255, 255, isMeasure ? 230u : 255u);
+            if (isMeasure)
+                fpdf_edit.FPDFPathSetDrawMode(frame, FillModeAlternate, 0);
+            else
+                Stroke(frame, r, g, b, width, FillModeAlternate);
+            Append(annot, frame);
 
             foreach (var line in lines.Where(l => l.Text.Length > 0))
             {
@@ -260,6 +291,14 @@ internal static partial class MarkupWriter
             fpdf_edit.FPDFPageObjDestroy(obj);
             throw new ToolException("Could not add a note to the PDF.");
         }
+    }
+
+    private static FpdfPageobjectT NewPath(List<(double X, double Y)> points)
+    {
+        var path = fpdf_edit.FPDFPageObjCreateNewPath((float)points[0].X, (float)points[0].Y);
+        foreach (var p in points.Skip(1))
+            fpdf_edit.FPDFPathLineTo(path, (float)p.X, (float)p.Y);
+        return path;
     }
 
     private static void Stroke(FpdfPageobjectT path, uint r, uint g, uint b, double width, int fillMode)
