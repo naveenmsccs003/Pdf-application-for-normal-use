@@ -98,7 +98,7 @@
                 <button type="button" class="menu-item" role="menuitem" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()">
                     <svg class="icon icon-sm"><use href="#i-actual-size"></use></svg><span>Actual size (100%)</span><kbd>{{ vm.modKey }}0</kbd></button>
                 <div class="menu-separator" role="separator"></div>
-                <button type="button" class="menu-item" role="menuitem" ng-click="vm.focusZoomInput()" ng-disabled="!vm.hasDocument()">
+                <button type="button" class="menu-item" role="menuitem" ng-click="vm.openCustomZoom()" ng-disabled="!vm.hasDocument()">
                     <svg class="icon icon-sm"><use href="#i-zoom-in"></use></svg><span>Custom zoom&hellip;</span></button>
             </div>
         </div>
@@ -402,6 +402,32 @@
         </button>
     </div>
 </footer>
+
+<!-- Custom zoom dialog (Zoom > Custom zoom) -->
+<div class="dialog-backdrop" ng-if="vm.customZoom" ng-click="vm.closeCustomZoom()">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="custom-zoom-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="custom-zoom-title">Custom zoom</h2>
+            <button type="button" class="panel-close" ng-click="vm.closeCustomZoom()" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applyCustomZoom()" id="custom-zoom-form">
+            <label for="custom-zoom-input">Zoom</label>
+            <span class="custom-zoom-field">
+                <input type="text" id="custom-zoom-input" class="inline-number" inputmode="decimal" maxlength="6" autocomplete="off"
+                       ng-model="vm.customZoom.value" ng-change="vm.customZoom.error = ''"
+                       aria-describedby="custom-zoom-hint" aria-invalid="{{ !!vm.customZoom.error }}"> %
+            </span>
+            <p class="dialog-note" id="custom-zoom-hint">Between {{ vm.zoomRangeText }}.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.customZoom.error">{{ vm.customZoom.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeCustomZoom()">Cancel</button>
+            <button type="submit" form="custom-zoom-form" class="tool tool-labelled tool-primary">Zoom</button>
+        </div>
+    </div>
+</div>
 
 <!-- PDF tools dialog -->
 <div class="dialog-backdrop" ng-if="tools.active" ng-click="tools.close()">

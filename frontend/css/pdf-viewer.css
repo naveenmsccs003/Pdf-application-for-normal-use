@@ -745,6 +745,9 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
 }
 
+.dialog-sm { max-width: 320px; }
+.custom-zoom-field { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
+
 .dialog-header {
     display: flex;
     align-items: center;

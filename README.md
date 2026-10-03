@@ -106,7 +106,8 @@ Notes:
 
 - Open a PDF (validated in the browser and on the server: `.pdf` only, non-empty, max 50 MB, real `%PDF-` header)
 - Page navigation: Prev / Next, type a page number, or ← / → keys
-- Zoom in / out (25%–300%), or type any percentage in that range into the zoom box (values outside are clamped)
+- Zoom in / out (25%–300%), or set any percentage in that range with **Zoom > Custom zoom…** (a small dialog) or by
+  typing it into the zoom box in the status bar (values outside are clamped)
 - Shortcuts (Cmd on macOS): **Ctrl+O** open, **Ctrl+S** save a copy with highlights, **Ctrl+=** / **Ctrl+−**
   zoom, **Ctrl+0** actual size. Close has no shortcut because browsers reserve Ctrl+W.
 - **Recent files** in the File menu and on the start screen:

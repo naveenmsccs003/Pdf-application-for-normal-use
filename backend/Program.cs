@@ -63,7 +63,12 @@ app.Use(async (context, next) =>
 });
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// The browser checks each file again on every load (cheap: ETag, 304), so after an update
+// it never mixes new HTML with old cached scripts.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context => context.Context.Response.Headers.CacheControl = "no-cache"
+});
 app.MapControllers();
 
 app.Run();

@@ -301,13 +301,30 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('Zoom > Fit to page', fitPagePressed === 'true' && s.canvasH <= s.availH && !(await menuState()).zoom, [fitPagePressed, s.canvasH, s.availH]);
     await openMenu('zoom'); await menuItem('zoom', 'Actual size'); s = await state();
     check('Zoom > Actual size', s.zoom === '100%' && s.canvasW === 595, s.zoom);
-    await openMenu('zoom'); await menuItem('zoom', 'Custom zoom');
-    await sleep(100);
-    check('Zoom > Custom zoom focuses the zoom box', await page.evaluate(() => document.activeElement === document.querySelector('.zoom-value')));
-    await page.keyboard.type('150'); await page.keyboard.press('Enter'); await settle(); s = await state();
-    check('typed after Custom zoom -> 150%', s.zoom === '150%', s.zoom);
+    const customZoomDialog = () => page.evaluate(() => {
+        const input = document.getElementById('custom-zoom-input');
+        const error = document.querySelector('[aria-labelledby="custom-zoom-title"] .dialog-message');
+        return { open: !!input, value: input ? input.value : '', focused: !!input && document.activeElement === input,
+            selected: !!input && input.selectionStart === 0 && input.selectionEnd === input.value.length,
+            error: error ? error.textContent.trim() : '' };
+    });
+    await openMenu('zoom'); await menuItem('zoom', 'Custom zoom'); await sleep(100);
+    let cz = await customZoomDialog();
+    check('Zoom > Custom zoom opens a dialog with the current zoom selected', cz.open && cz.value === '100' && cz.focused && cz.selected, cz);
+    await page.keyboard.type('abc'); await page.keyboard.press('Enter'); await sleep(100); cz = await customZoomDialog();
+    check('Custom zoom dialog: invalid value shows an error and stays open', cz.open && cz.error.startsWith('Enter a number between 25 and 300'), cz);
+    await page.keyboard.press('ArrowRight'); await sleep(100); s = await state();
+    check('Custom zoom dialog: page keys do not act behind it', s.pageStatus.startsWith('Page: 1'), s.pageStatus);
+    await page.$eval('#custom-zoom-input', el => el.select()); await page.keyboard.type('150'); await page.keyboard.press('Enter'); await settle();
+    s = await state(); cz = await customZoomDialog();
+    check('Custom zoom dialog: 150 -> 150%, dialog closes', s.zoom === '150%' && !cz.open, [s.zoom, cz]);
+    await openMenu('zoom'); await menuItem('zoom', 'Custom zoom'); await sleep(100);
+    await page.keyboard.type('60'); await page.keyboard.press('Escape'); await sleep(100); s = await state(); cz = await customZoomDialog();
+    check('Custom zoom dialog: Esc cancels', s.zoom === '150%' && !cz.open, [s.zoom, cz]);
+    await openMenu('zoom'); await menuItem('zoom', 'Custom zoom'); await sleep(100);
+    await page.click('.dialog-footer .tool-outline'); await sleep(100);
+    check('Custom zoom dialog: Cancel closes it', !(await customZoomDialog()).open);
 
-    await page.$eval('.zoom-value', el => el.blur());
     await shortcut('Digit0'); s = await state();
     check(`Ctrl+0 -> 100%`, s.zoom === '100%', s.zoom);
     await shortcut('Equal'); s = await state();

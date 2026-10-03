@@ -314,30 +314,70 @@
                 vm.zoomInput = vm.zoomPercent();
             };
 
-            vm.applyZoomInput = function () {
-                if (!vm.hasDocument()) { vm.revertZoomInput(); return; }
-                var text = String(vm.zoomInput == null ? '' : vm.zoomInput).trim().replace(/%$/, '').trim();
+            vm.zoomRangeText = Math.round(minZoom * 100) + '% and ' + Math.round(maxZoom * 100) + '%';
+
+            /** "135" or "135%" -> scale clamped to the zoom range; null if it is not a positive number. */
+            function parseZoom(value) {
+                var text = String(value == null ? '' : value).trim().replace(/%$/, '').trim();
                 var percent = Number(text);
-                if (text === '' || !isFinite(percent) || percent <= 0) {
-                    showError('Enter a zoom between ' + Math.round(minZoom * 100) + '% and ' + Math.round(maxZoom * 100) + '%.');
-                    vm.revertZoomInput();
-                    return;
-                }
-                var scale = Math.min(maxZoom, Math.max(minZoom, percent / 100));
+                if (text === '' || !isFinite(percent) || percent <= 0) { return null; }
+                return Math.min(maxZoom, Math.max(minZoom, percent / 100));
+            }
+
+            function applyZoom(scale) {
                 if (Math.abs(scale - vm.scale) > EPSILON || vm.fitMode) {
                     setManualZoom(scale);
+                }
+            }
+
+            vm.applyZoomInput = function () {
+                if (!vm.hasDocument()) { vm.revertZoomInput(); return; }
+                var scale = parseZoom(vm.zoomInput);
+                if (scale === null) {
+                    showError('Enter a zoom between ' + vm.zoomRangeText + '.');
+                } else {
+                    applyZoom(scale);
                 }
                 vm.revertZoomInput();
             };
 
-            /** Zoom > Custom zoom: puts the cursor in the zoom box with its value selected. */
-            vm.focusZoomInput = function () {
+            // Zoom > Custom zoom: a small dialog asking for a percentage.
+            vm.customZoom = null;   // { value, error } while the dialog is open
+
+            vm.openCustomZoom = function () {
                 if (!vm.hasDocument()) { return; }
+                vm.customZoom = { value: String(Math.round(vm.scale * 100)), error: '' };
                 $timeout(function () {
-                    var input = $document[0].querySelector('.zoom-value');
+                    var input = $document[0].getElementById('custom-zoom-input');
                     if (input) { input.focus(); input.select(); }
                 });
             };
+
+            vm.closeCustomZoom = function () {
+                vm.customZoom = null;
+            };
+
+            vm.applyCustomZoom = function () {
+                if (!vm.customZoom) { return; }
+                var scale = parseZoom(vm.customZoom.value);
+                if (scale === null) {
+                    vm.customZoom.error = 'Enter a number between ' + vm.zoomRangeText.replace(/%/g, '') + '.';
+                    return;
+                }
+                applyZoom(scale);
+                vm.closeCustomZoom();
+            };
+
+            // While the dialog is open, keys belong to it: Esc closes it, and the viewer's and find
+            // shortcuts must not act on the page behind it. Capture phase, so this runs before them.
+            function onCustomZoomKey(event) {
+                if (!vm.customZoom) { return; }
+                event.stopImmediatePropagation();
+                if (event.key === 'Escape') {
+                    $scope.$apply(vm.closeCustomZoom);
+                }
+            }
+            $document[0].addEventListener('keydown', onCustomZoomKey, true);
 
             function setManualZoom(scale) {
                 vm.fitMode = null;
@@ -498,6 +538,7 @@
             $document.on('keydown', onKeyDown);
             $scope.$on('$destroy', function () {
                 $document.off('keydown', onKeyDown);
+                $document[0].removeEventListener('keydown', onCustomZoomKey, true);
                 narrowQuery.removeEventListener('change', onWidthChange);
                 pdfService.close();
             });
