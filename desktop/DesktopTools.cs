@@ -98,20 +98,16 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                 case "save-highlights":
                 {
                     var (path, name) = Single(inputs);
-                    var highlights = options.GetProperty("highlights").EnumerateArray()
-                        .Select(h => new HighlightRect(
-                            h.GetProperty("pageNumber").GetInt32(),
-                            h.GetProperty("x").GetDouble(), h.GetProperty("y").GetDouble(),
-                            h.GetProperty("width").GetDouble(), h.GetProperty("height").GetDouble()))
-                        .ToList();
+                    var highlights = options.GetProperty("highlights").Deserialize<List<Markup?>>(JsonSerializerOptions.Web)
+                        ?.OfType<Markup>().ToList() ?? [];
                     if (highlights.Count == 0)
-                        throw new ToolException("There are no highlights to save.");
+                        throw new ToolException("There are no markups to save.");
 
                     // A copy: the open document is never overwritten (enforced in AskSaveFile).
-                    var output = AskSaveFile(dialogs, "Save a copy with highlights", path, ".pdf", inputs, $"{BaseName(name)}-highlighted");
+                    var output = AskSaveFile(dialogs, "Save a copy with markups", path, ".pdf", inputs, $"{BaseName(name)}-highlighted");
                     if (output is null) return Cancelled;
                     var count = await WriteFileAsync(output, stream => PdfTools.SaveWithHighlights(path, highlights, stream));
-                    return Done($"Saved {Path.GetFileName(output)} with {count} highlight{(count == 1 ? "" : "s")}.");
+                    return Done($"Saved {Path.GetFileName(output)} with {count} markup{(count == 1 ? "" : "s")}.");
                 }
                 default:
                     throw new ToolException("Unknown tool.");

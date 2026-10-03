@@ -2,25 +2,23 @@
     'use strict';
 
     /**
-     * Highlight manager. Highlights live in memory only and never modify the PDF.
-     * Coordinates are in PDF units (page at scale 1), so they stay correct at any zoom level.
+     * Markup store (highlights, shapes, lines, notes). Markups live in memory only and never modify the PDF.
+     * Coordinates are in PDF units (page at scale 1), so they stay correct at any zoom level;
+     * the fields of each type are listed in markupGeometry.
      */
     angular.module('pdfViewerApp').factory('highlightService', function () {
         var highlights = [];
         var nextId = 1;
 
-        function add(pageNumber, rect) {
-            var highlight = {
+        /** Adds a markup; `fields` holds its shape (a plain rectangle is a highlight). */
+        function add(pageNumber, fields) {
+            var markup = angular.extend({ type: 'highlight' }, fields, {
                 id: nextId++,
                 pageNumber: pageNumber,
-                x: rect.x,
-                y: rect.y,
-                width: rect.width,
-                height: rect.height,
                 createdAt: new Date()
-            };
-            highlights.push(highlight);
-            return highlight;
+            });
+            highlights.push(markup);
+            return markup;
         }
 
         function remove(id) {

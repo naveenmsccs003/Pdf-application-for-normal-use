@@ -8,8 +8,8 @@
      * Every operation resolves with a message for the user, or null if the user cancelled.
      * Rejections carry a user-friendly message.
      */
-    angular.module('pdfViewerApp').factory('toolsService', ['$http', '$q', 'desktopService', 'pdfService',
-        function ($http, $q, desktopService, pdfService) {
+    angular.module('pdfViewerApp').factory('toolsService', ['$http', '$q', 'desktopService', 'pdfService', 'markupGeometry',
+        function ($http, $q, desktopService, pdfService, markupGeometry) {
             var pendingTool = null;      // desktop: deferred waiting for the host's answer
             var pendingPick = null;
 
@@ -186,17 +186,15 @@
                 });
             }
 
-            /** Saves a copy of the open document with the highlights as PDF annotations. */
+            /** Saves a copy of the open document with the markups as PDF annotations. */
             function saveHighlights(source, fileName, highlights) {
-                var payload = highlights.map(function (h) {
-                    return { pageNumber: h.pageNumber, x: h.x, y: h.y, width: h.width, height: h.height };
-                });
+                var payload = highlights.map(markupGeometry.toSaved);
                 if (desktopService.isDesktop) {
                     return runDesktop('save-highlights', ['current'], { highlights: payload });
                 }
                 return post('save-highlights', { id: source.id, name: fileName, highlights: payload }).then(function (result) {
                     var count = result.headers('X-Highlight-Count');
-                    return 'Downloaded ' + result.name + ' with ' + count + ' highlight' + (count === '1' ? '' : 's') + '.';
+                    return 'Downloaded ' + result.name + ' with ' + count + ' markup' + (count === '1' ? '' : 's') + '.';
                 });
             }
 

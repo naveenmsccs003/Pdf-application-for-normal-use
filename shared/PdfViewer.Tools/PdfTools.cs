@@ -3,17 +3,9 @@ using PDFiumCore;
 
 namespace PdfViewer.Tools;
 
-/// <summary>
-/// A highlight as the viewer stores it: page-relative, in points at scale 1, origin top-left,
-/// in the page's displayed orientation (after /Rotate).
-/// </summary>
-public readonly record struct HighlightRect(int PageNumber, double X, double Y, double Width, double Height);
-
-/// <summary>Merge, split, page export and highlight saving with PDFium. Inputs are read from disk.</summary>
+/// <summary>Merge, split, page export and markup saving with PDFium. Inputs are read from disk.</summary>
 public static class PdfTools
 {
-    private const int AnnotHighlight = 9;           // FPDF_ANNOT_HIGHLIGHT
-    private const int AnnotFlagPrint = 4;           // FPDF_ANNOT_FLAG_PRINT
     public const int MaxHighlights = 10_000;
     private const long MaxImagePixels = 40_000_000;   // ~300 dpi for A3
 
@@ -171,16 +163,16 @@ public static class PdfTools
     }
 
     /// <summary>
-    /// Writes a copy of the PDF with the highlights added as standard Highlight annotations
-    /// (yellow, printable), which other PDF viewers show and can edit. The source file is not changed.
-    /// Returns the number of highlights written.
+    /// Writes a copy of the PDF with the markups added as standard annotations (see <see cref="MarkupWriter"/>),
+    /// which other PDF viewers show, print and can edit. The source file is not changed.
+    /// Returns the number of markups written.
     /// </summary>
-    public static int SaveWithHighlights(string path, IReadOnlyList<HighlightRect> highlights, Stream output)
+    public static int SaveWithHighlights(string path, IReadOnlyList<Markup> markups, Stream output)
     {
-        if (highlights.Count == 0)
-            throw new ToolException("There are no highlights to save.");
-        if (highlights.Count > MaxHighlights)
-            throw new ToolException($"Too many highlights (maximum {MaxHighlights}).");
+        if (markups.Count == 0)
+            throw new ToolException("There are no markups to save.");
+        if (markups.Count > MaxHighlights)
+            throw new ToolException($"Too many markups (maximum {MaxHighlights}).");
 
         Pdfium.EnsureInitialized();
         lock (Pdfium.Lock)
@@ -189,19 +181,19 @@ public static class PdfTools
             try
             {
                 var pageCount = fpdfview.FPDF_GetPageCount(document);
-                foreach (var pageHighlights in highlights.GroupBy(h => h.PageNumber))
+                foreach (var pageMarkups in markups.GroupBy(m => m.PageNumber))
                 {
-                    if (pageHighlights.Key < 1 || pageHighlights.Key > pageCount)
-                        throw new ToolException("A highlight refers to a page that does not exist.");
+                    if (pageMarkups.Key < 1 || pageMarkups.Key > pageCount)
+                        throw new ToolException("A markup refers to a page that does not exist.");
 
-                    var page = fpdfview.FPDF_LoadPage(document, pageHighlights.Key - 1);
+                    var page = fpdfview.FPDF_LoadPage(document, pageMarkups.Key - 1);
                     try
                     {
-                        foreach (var highlight in pageHighlights)
-                            AddHighlight(page, highlight);
+                        foreach (var markup in pageMarkups)
+                            MarkupWriter.Add(document, page, markup);
 
-                        // Rendering with annotations makes PDFium generate their appearance streams
-                        // (yellow, multiply blend), so viewers that need them show the highlights too.
+                        // Rendering with annotations makes PDFium generate the appearance streams of
+                        // highlights, shapes and ink, so viewers that need them show the markups too.
                         var bitmap = fpdfview.FPDFBitmapCreateEx(1, 1, (int)FPDFBitmapFormat.BGRA, IntPtr.Zero, 0);
                         fpdfview.FPDF_RenderPageBitmap(bitmap, page, 0, 0, 1, 1, 0, 0x01);
                         fpdfview.FPDFBitmapDestroy(bitmap);
@@ -213,78 +205,13 @@ public static class PdfTools
                 }
 
                 Pdfium.Save(document, output);
-                return highlights.Count;
+                return markups.Count;
             }
             finally
             {
                 fpdfview.FPDF_CloseDocument(document);
             }
         }
-    }
-
-    private static void AddHighlight(FpdfPageT page, HighlightRect highlight)
-    {
-        double pageWidth = fpdfview.FPDF_GetPageWidthF(page), pageHeight = fpdfview.FPDF_GetPageHeightF(page);
-        if (!double.IsFinite(highlight.X) || !double.IsFinite(highlight.Y) ||
-            !double.IsFinite(highlight.Width) || !double.IsFinite(highlight.Height) ||
-            highlight.Width <= 0 || highlight.Height <= 0)
-            throw new ToolException("A highlight has an invalid size.");
-
-        // Clamp to the page, as the viewer does.
-        var left = Math.Clamp(highlight.X, 0, pageWidth);
-        var top = Math.Clamp(highlight.Y, 0, pageHeight);
-        var right = Math.Clamp(highlight.X + highlight.Width, 0, pageWidth);
-        var bottom = Math.Clamp(highlight.Y + highlight.Height, 0, pageHeight);
-        if (right - left < 0.5 || bottom - top < 0.5)
-            return;
-
-        // Device coordinates are integers; work at 1/100 point for precision.
-        const double precision = 100;
-        int sizeX = (int)Math.Round(pageWidth * precision), sizeY = (int)Math.Round(pageHeight * precision);
-        (double X, double Y) ToPage(double x, double y)
-        {
-            double px = 0, py = 0;
-            fpdfview.FPDF_DeviceToPage(page, 0, 0, sizeX, sizeY, 0,
-                (int)Math.Round(x * precision), (int)Math.Round(y * precision), ref px, ref py);
-            return (px, py);
-        }
-
-        // Quad points: upper-left, upper-right, lower-left, lower-right as seen on screen;
-        // DeviceToPage maps them correctly for rotated pages.
-        var ul = ToPage(left, top);
-        var ur = ToPage(right, top);
-        var ll = ToPage(left, bottom);
-        var lr = ToPage(right, bottom);
-
-        var annot = fpdf_annot.FPDFPageCreateAnnot(page, AnnotHighlight)
-                    ?? throw new ToolException("Could not add a highlight to the PDF.");
-        try
-        {
-            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, 255, 221, 0, 255);
-            fpdf_annot.FPDFAnnotAppendAttachmentPoints(annot, new FS_QUADPOINTSF
-            {
-                X1 = (float)ul.X, Y1 = (float)ul.Y, X2 = (float)ur.X, Y2 = (float)ur.Y,
-                X3 = (float)ll.X, Y3 = (float)ll.Y, X4 = (float)lr.X, Y4 = (float)lr.Y
-            });
-            double[] xs = [ul.X, ur.X, ll.X, lr.X], ys = [ul.Y, ur.Y, ll.Y, lr.Y];
-            fpdf_annot.FPDFAnnotSetRect(annot, new FS_RECTF_
-            {
-                Left = (float)xs.Min(), Right = (float)xs.Max(), Bottom = (float)ys.Min(), Top = (float)ys.Max()
-            });
-            fpdf_annot.FPDFAnnotSetFlags(annot, AnnotFlagPrint);
-            SetString(annot, "M", $"D:{DateTime.UtcNow:yyyyMMddHHmmss}Z");
-        }
-        finally
-        {
-            fpdf_annot.FPDFPageCloseAnnot(annot);
-        }
-    }
-
-    // PDFium takes UTF-16, null-terminated.
-    private static void SetString(FpdfAnnotationT annot, string key, string value)
-    {
-        var utf16 = value.Select(c => (ushort)c).Append((ushort)0).ToArray();
-        fpdf_annot.FPDFAnnotSetStringValue(annot, key, ref utf16[0]);
     }
 
     /// <summary>Extracts the text of each page as lines.</summary>

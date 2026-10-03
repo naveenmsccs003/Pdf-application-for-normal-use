@@ -122,7 +122,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
                 l: parseFloat(h.style.left), t: parseFloat(h.style.top), w: parseFloat(h.style.width), h: parseFloat(h.style.height),
                 sel: h.classList.contains('is-selected')
             })),
-            disabled: Object.fromEntries(['First page', 'Previous page', 'Next page', 'Last page', 'Fit Page', 'Fit Width', 'Highlight', 'Remove', 'Clear Highlights']
+            disabled: Object.fromEntries(['First page', 'Previous page', 'Next page', 'Last page', 'Fit Page', 'Fit Width', 'Highlight', 'Remove', 'Clear Markups']
                 .map(t => [t, btn(t).disabled])),
             zoomOutDisabled: q('[aria-label="Zoom out"]').disabled,
             zoomInDisabled: q('[aria-label="Zoom in"]').disabled
@@ -335,7 +335,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('Ctrl+S without highlights explains, no download', s.status.startsWith('Nothing to save yet'), s.status);
     await openMenu('file');
     const saveDisabled = await page.evaluate(() => [...document.querySelectorAll('#menu-file .menu-item')]
-        .find(b => b.textContent.includes('Save copy with highlights')).disabled);
+        .find(b => b.textContent.includes('Save copy with markups')).disabled);
     check('File > Save copy disabled without highlights', saveDisabled);
     await page.keyboard.press('Escape');
 
@@ -395,8 +395,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('Delete key removes the selected highlight', s.highlights.length === 0);
     await click('Highlight'); await drag(50, 50, 200, 80); await page.click('.highlight-remove'); await sleep(150); s = await state();
     check('× button removes the highlight', s.highlights.length === 0);
-    await drag(50, 50, 200, 80); await click('Clear Highlights'); s = await state();
-    check('Clear Highlights removes all', s.highlights.length === 0 && s.disabled['Clear Highlights']);
+    await drag(50, 50, 200, 80); await click('Clear Markups'); s = await state();
+    check('Clear Highlights removes all', s.highlights.length === 0 && s.disabled['Clear Markups']);
     await click('Next page'); s = await state(); check('Clear Highlights also cleared other pages', s.highlights.length === 0);
     await click('Highlight');
 
@@ -428,7 +428,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     const hp = s.highlights[0];
     await clickAt(hp.l + hp.w / 2, hp.t + hp.h / 2); s = await state();
     check('Pan: a click without moving still selects a highlight', s.highlights[0].sel, s.highlights[0]);
-    await click('Clear Highlights'); await click('Fit Page');
+    await click('Clear Markups'); await click('Fit Page');
 
     // ===== Render failure =====
     // Simulate a drawing failure part-way through rendering the next page (thrown once).
@@ -638,16 +638,16 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }, rect);
 
     await open('ten-pages.pdf'); await click('Actual size');
-    check('Save with highlights disabled without highlights', await page.$eval('button[aria-label="Save with highlights"]', b => b.disabled));
+    check('Save with highlights disabled without highlights', await page.$eval('button[aria-label="Save with markups"]', b => b.disabled));
     await click('Highlight');
     await drag(60, 120, 360, 160); await drag(60, 300, 260, 330);
     await click('Highlight');
     check('canvas has no yellow before saving (overlay only)', await yellowShare({ x: 70, y: 125, w: 280, h: 30 }) < 0.05);
-    await click('Save with highlights');
+    await click('Save with markups');
     await page.waitForFunction(() => /highlight|Unable/.test(document.querySelector('.status-text').textContent) &&
         !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
     s = await state();
-    check('save highlights reports the copy', /ten-pages-highlighted\.pdf with 2 highlights/.test(s.status), s.status);
+    check('save highlights reports the copy', /ten-pages-highlighted\.pdf with 2 markups/.test(s.status), s.status);
     check('viewer keeps the in-memory highlights after saving', s.highlights.length === 2);
     if (canCheckDownloads) {
         const saved = await waitForDownload('ten-pages-highlighted.pdf');
@@ -660,6 +660,122 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
             const outside = await yellowShare({ x: 70, y: 200, w: 280, h: 30 });
             check(`saved highlights are part of the PDF (pdf.js shows them: ${Math.round(inside * 100)}% yellow inside, ${Math.round(outside * 100)}% outside)`,
                 inside > 0.5 && outside < 0.05);
+        }
+    }
+
+    // ===== Markup tools: shapes, lines, freehand, notes =====
+    const shapes = () => page.evaluate(() => [...document.querySelectorAll('.markup-layer g.markup')].map(g => ({
+        type: g.dataset.type, stroke: g.getAttribute('stroke'), d: g.querySelector('path').getAttribute('d'),
+        leader: !!g.querySelectorAll('path')[1], text: g.querySelector('text') ? [...g.querySelectorAll('tspan')].map(t => t.textContent).join('\n') : ''
+    })));
+    const selectionBox = () => page.evaluate(() => {
+        const b = document.querySelector('.markup-selection');
+        return b ? { w: parseFloat(b.style.width), h: parseFloat(b.style.height) } : null;
+    });
+    const toolPressed = label => page.$eval(`button[aria-label="${label}"]`, b => b.getAttribute('aria-pressed') === 'true');
+    const noteDialog = () => page.evaluate(() => {
+        const input = document.getElementById('note-text-input');
+        const error = document.querySelector('[aria-labelledby="note-dialog-title"] .dialog-message');
+        return { open: !!input, focused: !!input && document.activeElement === input,
+                 title: input ? document.getElementById('note-dialog-title').textContent.trim() : '', error: error ? error.textContent.trim() : '' };
+    });
+    // Share of red-ish pixels in a CSS-pixel rectangle of the rendered canvas.
+    const redShare = rect => page.evaluate(r => {
+        const canvas = document.querySelector('.canvas-layer canvas');
+        const k = canvas.width / parseFloat(canvas.style.width);
+        const data = canvas.getContext('2d').getImageData(Math.round(r.x * k), Math.round(r.y * k), Math.round(r.w * k), Math.round(r.h * k)).data;
+        let red = 0;
+        for (let i = 0; i < data.length; i += 4) if (data[i] > 180 && data[i + 1] < 150 && data[i + 2] < 150) red++;   // anti-aliased edges are lighter
+        return red / (data.length / 4);
+    }, rect);
+
+    await open('one-page.pdf'); await click('Actual size');
+    await click('Rectangle'); s = await state();
+    check('Rectangle tool: pressed, hint in the status bar', await toolPressed('Rectangle') && !(await toolPressed('Pan')) && s.status.startsWith('Rectangle:'), s.status);
+    await drag(100, 100, 250, 180); let sh = await shapes(); let box = await selectionBox();
+    check('Rectangle: drag draws a red rectangle, selected', sh.length === 1 && sh[0].type === 'rect' && sh[0].stroke === '#e01b24' &&
+        box && near(box.w, 158, 1.5) && near(box.h, 88, 1.5), [sh, box]);
+    await drag(300, 300, 302, 301); sh = await shapes();
+    check('Rectangle: a tiny drag draws nothing', sh.length === 1, sh.length);
+    await click('Ellipse');
+    await page.keyboard.down('Shift'); await drag(300, 100, 400, 140); await page.keyboard.up('Shift');
+    box = await selectionBox(); sh = await shapes();
+    check('Ellipse: Shift draws a circle (selected after drawing)', sh[1].type === 'ellipse' && box && near(box.w, box.h, 1) && near(box.w, 108, 2), box);
+    await click('Cloud'); await drag(80, 220, 260, 300); sh = await shapes();
+    check('Cloud: scalloped outline', sh[2].type === 'cloud' && (sh[2].d.match(/A/g) || []).length >= 8, sh[2].d.slice(0, 60));
+    await click('Line');
+    await page.keyboard.down('Shift'); await drag(300, 220, 450, 228); await page.keyboard.up('Shift');
+    box = await selectionBox(); sh = await shapes();
+    check('Line: Shift snaps to horizontal', sh[3].type === 'line' && box && near(box.h, 8, 0.5) && near(box.w, 158, 2), box);
+    await click('Arrow'); await drag(300, 260, 400, 320); sh = await shapes();
+    check('Arrow: line plus an arrow head', sh[4].type === 'arrow' && (sh[4].d.match(/M/g) || []).length === 2, sh[4].d);
+    await click('Freehand');
+    const lb2 = await layerBox();
+    await page.mouse.move(lb2.x + 100, lb2.y + 400); await page.mouse.down();
+    for (let i = 1; i <= 20; i++) await page.mouse.move(lb2.x + 100 + i * 8, lb2.y + 400 + Math.sin(i / 2) * 20);
+    await page.mouse.up(); await sleep(150); sh = await shapes();
+    check('Freehand: follows the mouse', sh[5].type === 'pen' && (sh[5].d.match(/L/g) || []).length >= 15, (sh[5].d.match(/L/g) || []).length);
+
+    await click('Text note'); await clickAt(100, 500); await sleep(150); let nd = await noteDialog();
+    check('Text note: click opens the note dialog with the cursor in it', nd.open && nd.focused && nd.title === 'Text note', nd);
+    await page.click('.dialog-footer .tool-primary'); await sleep(100); nd = await noteDialog();
+    check('Text note: empty text is refused, cursor back in the text box', nd.open && nd.focused && nd.error === 'Type the note text.', nd);
+    await page.keyboard.press('ArrowRight'); await sleep(100);
+    check('Text note: page keys do not act behind the dialog', (await state()).pageStatus === 'Page: 1 / 1');
+    await page.keyboard.type('B12 lap 50d'); await page.keyboard.press('Enter'); await page.keyboard.type('see S-301');
+    await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control'); await sleep(200);
+    sh = await shapes(); nd = await noteDialog();
+    check('Text note: Ctrl+Enter adds a two-line note', !nd.open && sh[6].type === 'text' && sh[6].text === 'B12 lap 50d\nsee S-301', sh[6]);
+    await clickAt(200, 600); await sleep(150); await page.keyboard.type('never added'); await page.keyboard.press('Escape'); await sleep(100);
+    check('Text note: Esc cancels', !(await noteDialog()).open && (await shapes()).length === 7);
+
+    await click('Callout'); await drag(450, 450, 350, 380); await sleep(150); nd = await noteDialog();
+    check('Callout: drag opens the note dialog', nd.open && nd.title === 'Callout', nd);
+    await page.keyboard.type('Check column C3'); await page.click('.dialog-footer .tool-primary'); await sleep(200); sh = await shapes();
+    check('Callout: note with a leader arrow to the point', sh[7].type === 'callout' && sh[7].leader && sh[7].text === 'Check column C3', sh[7]);
+
+    await page.click('.color-swatch[aria-label="Blue"]'); await click('Rectangle'); await drag(420, 560, 520, 620); sh = await shapes();
+    check('Colour: Blue swatch draws blue', sh[8].stroke === '#1c71d8' && await page.$eval('.color-swatch[aria-label="Blue"]', b => b.getAttribute('aria-checked') === 'true' &&
+        getComputedStyle(b).backgroundColor === 'rgb(28, 113, 216)'), sh[8].stroke);
+    await page.click('.color-swatch[aria-label="Red"]');
+    await page.keyboard.press('Escape'); await sleep(100);
+    check('Esc returns to Pan', await toolPressed('Pan') && !(await toolPressed('Rectangle')));
+
+    s = await state();
+    const labels = await page.$$eval('.markup-row .markup-title', els => els.map(e => e.textContent.trim()));
+    check('Markups panel lists every markup by type', labels.join('|') ===
+        'Rectangle|Ellipse|Cloud|Line|Arrow|Freehand|Text note: B12 lap 50d|Callout: Check column C3|Rectangle', labels);
+    await clickAt(375, 224); box = await selectionBox();
+    check('Pan: clicking a line selects it', box && near(box.h, 8, 0.5), box);
+    await page.keyboard.press('Delete'); await sleep(150); sh = await shapes();
+    check('Delete removes the selected line', sh.length === 8 && !sh.some(x => x.type === 'line'), sh.map(x => x.type));
+    await clickAt(150, 505); box = await selectionBox();
+    check('Pan: clicking a note selects it', !!box, box);
+    await page.click('.markup-selection .highlight-remove'); await sleep(150);
+    check('× removes the selected note', !(await shapes()).some(x => x.type === 'text'));
+    await click('Text note'); await clickAt(100, 500); await sleep(150);
+    await page.keyboard.type('B12 lap 50d'); await page.click('.dialog-footer .tool-primary'); await sleep(200); await click('Text note');
+
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('save markups reports the copy', /one-page-highlighted\.pdf with 8 markups/.test(s.status), s.status);
+    if (canCheckDownloads) {
+        const saved = await waitForDownload('one-page-highlighted.pdf');
+        const raw = saved ? saved.toString('latin1') : '';
+        check('saved copy has standard annotations (Square, Circle, Ink, Stamp)',
+            ['Square', 'Circle', 'Ink', 'Stamp'].every(t => new RegExp('/Subtype\\s*/' + t + '\\b').test(raw)) &&
+            (raw.match(/\/InkList/g) || []).length === 3, ['Square', 'Circle', 'Ink', 'Stamp'].filter(t => !new RegExp('/Subtype\\s*/' + t + '\\b').test(raw)));
+        if (saved) {
+            await (await page.$('.toolbar input[type=file]')).uploadFile(path.join(DOWNLOADS, 'one-page-highlighted.pdf'));
+            await sleep(300); await settle(); await click('Actual size');
+            const rectEdge = await redShare({ x: 98, y: 98, w: 154, h: 5 });
+            const inside = await redShare({ x: 120, y: 120, w: 100, h: 40 });
+            const cloud = await redShare({ x: 70, y: 210, w: 200, h: 100 });
+            const note = await redShare({ x: 100, y: 500, w: 100, h: 30 });
+            check(`saved markups are drawn in the copy (rect edge ${Math.round(rectEdge * 100)}%, inside ${Math.round(inside * 100)}%, cloud ${Math.round(cloud * 1000) / 10}%, note ${Math.round(note * 1000) / 10}%)`,
+                rectEdge > 0.15 && inside < 0.02 && cloud > 0.02 && note > 0.01);
         }
     }
 

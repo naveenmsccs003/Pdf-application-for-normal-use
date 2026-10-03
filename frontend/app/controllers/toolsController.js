@@ -118,7 +118,7 @@
                 });
             };
 
-            // ----- Save highlights into a copy of the PDF (no dialog on the web; save dialog on desktop) -----
+            // ----- Save markups into a copy of the PDF (no dialog on the web; save dialog on desktop) -----
             tools.saving = false;
 
             tools.canSaveHighlights = function () {
@@ -130,11 +130,11 @@
                 var view = vm();
                 tools.saving = true;
                 view.error = '';
-                view.status = 'Saving a copy with highlights\u2026';
+                view.status = 'Saving a copy with markups\u2026';
                 toolsService.saveHighlights(view.source, view.fileName, view.highlights).then(function (message) {
                     view.status = message || 'Not saved.';
                 }, function (message) {
-                    var text = typeof message === 'string' ? message : 'Unable to save the highlights.';
+                    var text = typeof message === 'string' ? message : 'Unable to save the markups.';
                     view.error = text;
                     view.status = text;
                 }).finally(function () {
@@ -142,13 +142,13 @@
                 });
             };
 
-            // Ctrl+S / File > Save copy with highlights. There is no plain "Save": the original PDF is never changed.
+            // Ctrl+S / File > Save copy with markups. There is no plain "Save": the original PDF is never changed.
             $scope.$on('save-copy', function () {
                 var view = vm();
                 if (tools.canSaveHighlights()) {
                     tools.saveHighlights();
                 } else if (view.hasDocument() && !view.highlights.length && !tools.saving) {
-                    view.status = 'Nothing to save yet: add a highlight first. Saving always makes a copy; the original is not changed.';
+                    view.status = 'Nothing to save yet: add a markup first. Saving always makes a copy; the original is not changed.';
                 }
             });
 

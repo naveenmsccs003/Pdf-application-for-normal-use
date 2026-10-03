@@ -31,7 +31,7 @@
                 '            ng-click="onSelect({page: page})" aria-label="Go to page {{ page }}"' +
                 '            ng-attr-aria-current="{{ page === currentPage ? \'page\' : undefined }}">' +
                 '      <span class="thumb-frame" data-page="{{ page }}"></span>' +
-                '      <span class="thumb-label">{{ page }}<span class="thumb-marks" ng-if="markCount(page)" title="{{ markCount(page) }} highlight(s)">{{ markCount(page) }}</span></span>' +
+                '      <span class="thumb-label">{{ page }}<span class="thumb-marks" ng-if="markCount(page)" title="{{ markCount(page) }} markup(s)">{{ markCount(page) }}</span></span>' +
                 '    </button>' +
                 '  </div>' +
                 '</div>',

@@ -4,9 +4,9 @@
     /** Menu bar, toolbar and status bar state: open, recent files, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
-        'recentFilesService', 'VIEWER_CONFIG',
+        'recentFilesService', 'markupGeometry', 'VIEWER_CONFIG',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
-                  recentFilesService, VIEWER_CONFIG) {
+                  recentFilesService, markupGeometry, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -18,8 +18,13 @@
             vm.pageInput = '';
             vm.scale = 1;
             vm.fitMode = null;          // 'page' | 'width' | null (manual zoom)
-            vm.highlightMode = false;
-            vm.highlights = highlightService.all;
+            vm.tool = 'pan';            // 'pan' or the markup type being drawn (see markupGeometry)
+            vm.markupColors = [
+                { name: 'Red', value: '#e01b24' }, { name: 'Blue', value: '#1c71d8' },
+                { name: 'Green', value: '#26a269' }, { name: 'Black', value: '#000000' }
+            ];
+            vm.markupColor = vm.markupColors[0].value;
+            vm.highlights = highlightService.all;   // all markups
             vm.selectedHighlightId = null;
             vm.busy = false;
             vm.error = '';
@@ -182,7 +187,8 @@
                 desktopService.send('close');
                 highlightService.clear();
                 vm.selectedHighlightId = null;
-                vm.highlightMode = false;
+                vm.tool = 'pan';
+                vm.noteDialog = null;
                 vm.source = null;
                 vm.fileName = '';
                 vm.pageCount = 0;
@@ -198,7 +204,8 @@
             function showDocument(fileName, pageCount) {
                 highlightService.clear();
                 vm.selectedHighlightId = null;
-                vm.highlightMode = false;
+                vm.tool = 'pan';
+                vm.noteDialog = null;
                 vm.fileName = fileName;
                 vm.pageCount = pageCount;
                 setPage(1);
@@ -368,13 +375,16 @@
                 vm.closeCustomZoom();
             };
 
-            // While the dialog is open, keys belong to it: Esc closes it, and the viewer's and find
-            // shortcuts must not act on the page behind it. Capture phase, so this runs before them.
+            // While a dialog (custom zoom, note text) is open, keys belong to it: Esc closes it, and the
+            // viewer's and find shortcuts must not act on the page behind it. Capture phase, so this runs first.
             function onCustomZoomKey(event) {
-                if (!vm.customZoom) { return; }
+                if (!vm.customZoom && !vm.noteDialog) { return; }
                 event.stopImmediatePropagation();
                 if (event.key === 'Escape') {
-                    $scope.$apply(vm.closeCustomZoom);
+                    $scope.$apply(function () { vm.closeCustomZoom(); vm.closeNoteDialog(); });
+                } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && vm.noteDialog) {
+                    event.preventDefault();
+                    $scope.$apply(vm.applyNoteDialog);
                 }
             }
             $document[0].addEventListener('keydown', onCustomZoomKey, true);
@@ -414,21 +424,115 @@
                 }
             };
 
-            // ----- Highlights -----
-            vm.toggleHighlightMode = function () {
-                if (!vm.hasDocument()) { return; }
-                vm.highlightMode = !vm.highlightMode;
-                vm.status = vm.highlightMode ? 'Highlight mode: drag over the page to highlight.' : pageStatus();
+            // ----- Markup tools -----
+            var TOOL_HINTS = {
+                pan: null,
+                highlight: 'Highlight mode: drag over the page to highlight.',
+                rect: 'Rectangle: drag over the area. Shift draws a square.',
+                ellipse: 'Ellipse: drag over the area. Shift draws a circle.',
+                cloud: 'Cloud: drag around the area to mark.',
+                line: 'Line: drag from start to end. Shift snaps to 45\u00b0.',
+                arrow: 'Arrow: drag from the tail to the point. Shift snaps to 45\u00b0.',
+                pen: 'Freehand: draw on the page.',
+                text: 'Text note: click where the note goes.',
+                callout: 'Callout: drag from the point to where the note goes.'
             };
+
+            /** Picks a tool; picking the active markup tool again goes back to Pan. Esc also returns to Pan. */
+            vm.selectTool = function (tool) {
+                if (!vm.hasDocument() || !(tool in TOOL_HINTS)) { return; }
+                vm.tool = vm.tool === tool ? 'pan' : tool;
+                vm.status = TOOL_HINTS[vm.tool] || pageStatus();
+            };
+
+            vm.isTool = function (tool) { return vm.hasDocument() && vm.tool === tool; };
+
+            vm.toggleHighlightMode = function () { vm.selectTool('highlight'); };
 
             /** Pan tool (the default): drag the page to move around it. */
             vm.selectPanTool = function () {
-                if (vm.highlightMode) { vm.toggleHighlightMode(); }
+                if (vm.tool !== 'pan') { vm.selectTool(vm.tool); }
             };
 
+            vm.setMarkupColor = function (color) { vm.markupColor = color; };
+
             vm.addHighlight = function (pageNumber, rect) {
-                var highlight = highlightService.add(pageNumber, rect);
-                vm.selectedHighlightId = highlight.id;
+                vm.addMarkup(pageNumber, rect);
+            };
+
+            vm.addMarkup = function (pageNumber, markup) {
+                var added = highlightService.add(pageNumber, markup);
+                vm.selectedHighlightId = added.id;
+                return added;
+            };
+
+            // Text note / callout: ask for the text, then place the box.
+            vm.noteDialog = null;   // { pageNumber, at, tip, type, text, error } while open
+            var MAX_NOTE_LENGTH = 1000;
+
+            function focusNoteInput() {
+                $timeout(function () {
+                    var input = $document[0].getElementById('note-text-input');
+                    if (input) { input.focus(); }
+                });
+            }
+
+            vm.requestNoteText = function (pageNumber, at, tip) {
+                vm.noteDialog = { pageNumber: pageNumber, at: at, tip: tip, type: tip ? 'callout' : 'text', text: '', error: '' };
+                focusNoteInput();
+            };
+
+            vm.closeNoteDialog = function () { vm.noteDialog = null; };
+
+            vm.applyNoteDialog = function () {
+                var note = vm.noteDialog;
+                if (!note) { return; }
+                var text = String(note.text || '').replace(/\s+$/, '').replace(/^\s*\n/, '');
+                // On an error, put the cursor back in the text box (clicking Add note moved it to the button).
+                if (!text.trim()) { note.error = 'Type the note text.'; focusNoteInput(); return; }
+                if (text.length > MAX_NOTE_LENGTH) {
+                    note.error = 'Keep the note under ' + MAX_NOTE_LENGTH + ' characters.';
+                    focusNoteInput();
+                    return;
+                }
+                pdfService.getPageSize(note.pageNumber).then(function (size) {
+                    if (vm.noteDialog !== note) { return; }
+                    var sizes = markupGeometry.sizesFor(size.width, size.height);
+                    var box = markupGeometry.textBox(text, sizes.fontSize);
+                    var markup = { type: note.type, color: vm.markupColor, strokeWidth: sizes.strokeWidth,
+                                   fontSize: sizes.fontSize, text: text, width: box.width, height: box.height };
+                    var x = note.at.x, y = note.at.y;
+                    if (note.type === 'callout') {
+                        var tip = note.tip;
+                        if (!tip.dragged) {
+                            // A click: put the note up and to the right of the point.
+                            x = tip.x + sizes.fontSize * 3;
+                            y = tip.y - sizes.fontSize * 3 - box.height;
+                        } else {
+                            // The note sits beside where the drag ended, on the side away from the point.
+                            x = note.at.x < tip.x ? note.at.x - box.width : note.at.x;
+                            y = note.at.y - box.height / 2;
+                        }
+                        markup.tipX = tip.x;
+                        markup.tipY = tip.y;
+                    }
+                    // Keep the box on the page.
+                    markup.x = Math.min(Math.max(x, 0), Math.max(0, size.width - box.width));
+                    markup.y = Math.min(Math.max(y, 0), Math.max(0, size.height - box.height));
+                    vm.addMarkup(note.pageNumber, markup);
+                    vm.noteDialog = null;
+                }, function () {
+                    note.error = 'Unable to add the note to this page.';
+                });
+            };
+
+            vm.markupLabel = function (m) {
+                var label = markupGeometry.label(m);
+                if (m.text) {
+                    var first = m.text.split('\n')[0];
+                    label += ': ' + (first.length > 40 ? first.slice(0, 40) + '\u2026' : first);
+                }
+                return label;
             };
 
             vm.selectHighlight = function (id) {
@@ -464,14 +568,14 @@
 
             // ----- Status and errors -----
             vm.onPageRendered = function () {
-                if (!vm.highlightMode) {
+                if (vm.tool === 'pan') {
                     vm.status = pageStatus();
                 }
             };
 
             function pageStatus() {
                 var count = vm.highlights.length;
-                return vm.fileName + (count ? ' · ' + count + ' highlight' + (count === 1 ? '' : 's') : '');
+                return vm.fileName + (count ? ' · ' + count + ' markup' + (count === 1 ? '' : 's') : '');
             }
 
             function renderError() {
@@ -531,7 +635,7 @@
                         event.preventDefault();
                     } else if (event.key === 'Escape') {
                         vm.selectedHighlightId = null;
-                        if (vm.highlightMode) { vm.toggleHighlightMode(); }
+                        if (vm.tool !== 'pan') { vm.selectPanTool(); }
                     } else if (event.key === 'ArrowRight') {
                         vm.nextPage();
                     } else if (event.key === 'ArrowLeft') {

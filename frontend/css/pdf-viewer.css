@@ -431,6 +431,36 @@ page-thumbnails { display: block; flex: 1; min-height: 0; }
     cursor: pointer;
 }
 
+.markup-swatch.is-shape { background: transparent; border: 2px solid var(--swatch); }
+
+.color-swatches { display: inline-flex; align-items: center; gap: 3px; margin: 0 4px; }
+.color-swatch {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--swatch);
+    box-shadow: 0 0 0 1px var(--border);
+    cursor: pointer;
+}
+.color-swatch.is-active { box-shadow: 0 0 0 2px var(--text); }
+.color-swatch:disabled { opacity: 0.4; cursor: default; }
+.color-swatch:focus-visible { outline: 2px solid var(--focus, #1c71d8); outline-offset: 2px; }
+
+.note-text {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    resize: vertical;
+}
+
 .markup-swatch {
     flex: none;
     width: 16px;
@@ -581,6 +611,27 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 
 .highlight.is-selected { outline: 2px solid var(--highlight-selected); outline-offset: 1px; }
 .highlight.is-draft { outline: 1px dashed #c9a700; }
+
+/* ----- Shapes, lines and notes (SVG in PDF units, above highlights) ----- */
+.markup-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow: visible;
+    pointer-events: none;   /* input is handled by the interaction layer underneath */
+}
+.markup-layer .markup path { stroke-linecap: round; stroke-linejoin: round; }
+.markup-layer text { font-family: Helvetica, Arial, sans-serif; white-space: pre; }
+.markup-selection {
+    position: absolute;
+    z-index: 3;
+    border: 1.5px dashed var(--highlight-selected);
+    border-radius: 3px;
+    pointer-events: none;
+}
+.markup-selection .highlight-remove { pointer-events: auto; }
+.interaction-layer.is-text { cursor: text; }
+
 
 .highlight-remove {
     position: absolute;

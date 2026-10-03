@@ -5,12 +5,16 @@
      * Displays one PDF page using stacked layers:
      *   1. canvas layer       - PDF rendering (pdfService), never modified
      *   2. search layer       - find matches (FindController), positioned from PDF-unit coordinates
-     *   3. interaction layer  - mouse/touch input: pan (drag the page), draw and select highlights
-     *   4. highlight layer    - transparent overlay, positioned from PDF-unit coordinates
+     *   3. interaction layer  - mouse/touch input: pan (drag the page), draw and select markups
+     *   4. highlight layer    - transparent highlight overlay, positioned from PDF-unit coordinates
+     *   5. markup layer       - SVG shapes, lines and notes (markupGeometry), drawn in PDF units
      */
-    angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'VIEWER_CONFIG',
-        function (pdfService, VIEWER_CONFIG) {
+    angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'markupGeometry', 'VIEWER_CONFIG',
+        function (pdfService, markupGeometry, VIEWER_CONFIG) {
             var MIN_HIGHLIGHT_PX = 4;       // smaller drags count as a click
+            var MIN_PEN_STEP_PX = 1.5;      // freehand: points closer than this are skipped
+            var MAX_PEN_POINTS = 5000;
+            var SELECT_TOLERANCE_PX = 6;    // how close a click must be to a line to select it
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var RESIZE_DEBOUNCE_MS = 150;
 
@@ -20,13 +24,15 @@
                     docVersion: '<',
                     page: '<',
                     scale: '<',
-                    highlightMode: '<',
-                    highlights: '<',
+                    tool: '<',              // 'pan', or a markup type to draw
+                    markupColor: '<',
+                    highlights: '<',        // all markups
                     selectedId: '<',
                     searchMatches: '<',
                     activeMatch: '<',
                     api: '=',
-                    onCreateHighlight: '&',
+                    onCreateMarkup: '&',
+                    onRequestText: '&',     // text note / callout: the host asks for the text
                     onSelectHighlight: '&',
                     onRemoveHighlight: '&',
                     onResize: '&',
@@ -42,9 +48,9 @@
                     '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
                     '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}"></div>' +
                     '    </div>' +
-                    '    <div class="interaction-layer" ng-class="{\'is-drawing\': highlightMode && !spacePan, \'is-pan\': !highlightMode || spacePan}"></div>' +
+                    '    <div class="interaction-layer" ng-class="{\'is-drawing\': drawing() && !spacePan, \'is-text\': (tool === \'text\') && !spacePan, \'is-pan\': !drawing() || spacePan}"></div>' +
                     '    <div class="highlight-layer">' +
-                    '      <div class="highlight" ng-repeat="h in highlights | filter:{pageNumber: rendered.page}:true track by h.id"' +
+                    '      <div class="highlight" ng-repeat="h in highlights | filter:{pageNumber: rendered.page, type: \'highlight\'}:true track by h.id"' +
                     '           ng-class="{\'is-selected\': h.id === selectedId}"' +
                     '           ng-style="{left: h.x * rendered.scale + \'px\', top: h.y * rendered.scale + \'px\',' +
                     '                      width: h.width * rendered.scale + \'px\', height: h.height * rendered.scale + \'px\'}">' +
@@ -53,6 +59,22 @@
                     '                ng-click="onRemoveHighlight({id: h.id})">&times;</button>' +
                     '      </div>' +
                     '      <div class="highlight is-draft ng-hide"></div>' +
+                    '    </div>' +
+                    '    <svg class="markup-layer" ng-attr-width="{{ rendered.width }}" ng-attr-height="{{ rendered.height }}"' +
+                    '         ng-attr-view_box="0 0 {{ rendered.width / rendered.scale }} {{ rendered.height / rendered.scale }}">' +
+                    '      <g class="markup" ng-repeat="m in highlights | filter:isShapeOnPage track by m.id" data-type="{{ m.type }}"' +
+                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' +
+                    '        <path ng-attr-d="{{ shape(m).outline }}" ng-attr-fill="{{ shape(m).fill }}"></path>' +
+                    '        <path ng-if="shape(m).leader" ng-attr-d="{{ shape(m).leader }}" fill="none"></path>' +
+                    '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none">' +
+                    '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}">{{ l.text }}</tspan>' +
+                    '        </text>' +
+                    '      </g>' +
+                    '      <path class="markup-draft" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>' +
+                    '    </svg>' +
+                    '    <div class="markup-selection" ng-if="selectedBox()" ng-style="selectedBox()">' +
+                    '      <button type="button" class="highlight-remove" title="Remove markup" aria-label="Remove markup"' +
+                    '              ng-click="onRemoveHighlight({id: selectedId})">&times;</button>' +
                     '    </div>' +
                     '  </div>' +
                     '</div>' +
@@ -182,8 +204,58 @@
                     });
                     resizeObserver.observe(scrollEl);
 
-                    // ----- Highlight drawing and selection -----
-                    var start = null;
+                    // ----- Markups on the page -----
+                    var svgDraft = element[0].querySelector('.markup-draft');
+                    var start = null;       // { point, markup } while drawing
+
+                    scope.drawing = function () { return !!scope.tool && scope.tool !== 'pan'; };
+
+                    scope.isShapeOnPage = function (m) {
+                        return m.pageNumber === scope.rendered.page && m.type !== 'highlight';
+                    };
+
+                    // Markups do not change once drawn, so their SVG is computed once.
+                    var shapes = {};
+                    scope.shape = function (m) {
+                        var cached = shapes[m.id];
+                        if (cached && cached.markup === m) { return cached; }
+                        var isNote = m.type === 'text' || m.type === 'callout';
+                        cached = {
+                            markup: m,
+                            outline: isNote ? markupGeometry.path({ type: 'rect', x: m.x, y: m.y, width: m.width, height: m.height }) : markupGeometry.path(m),
+                            fill: isNote ? '#ffffff' : 'none',
+                            leader: m.type === 'callout' ? markupGeometry.strokes(m).map(function (p) {
+                                return p.reduce(function (d, v, k) { return d + (k % 2 ? ' ' + v : (k ? 'L' : 'M') + v); }, '');
+                            }).join('') : null,
+                            lines: isNote ? markupGeometry.textLayout(m) : null
+                        };
+                        shapes[m.id] = cached;
+                        return cached;
+                    };
+
+                    // Dashed box around the selected markup (highlights show their own). The same object is
+                    // returned while the box is unchanged: watchers compare by reference.
+                    var lastBox = null;
+                    scope.selectedBox = function () {
+                        var m = selectedMarkup();
+                        if (!m || m.type === 'highlight') { lastBox = null; return null; }
+                        var b = markupGeometry.bounds(m), s = scope.rendered.scale, pad = 4;
+                        var box = { left: b.x * s - pad + 'px', top: b.y * s - pad + 'px',
+                                    width: b.width * s + 2 * pad + 'px', height: b.height * s + 2 * pad + 'px' };
+                        if (!lastBox || lastBox.left !== box.left || lastBox.top !== box.top ||
+                            lastBox.width !== box.width || lastBox.height !== box.height) {
+                            lastBox = box;
+                        }
+                        return lastBox;
+                    };
+
+                    function selectedMarkup() {
+                        var list = scope.highlights || [];
+                        for (var i = 0; i < list.length; i++) {
+                            if (list[i].id === scope.selectedId && list[i].pageNumber === scope.rendered.page) { return list[i]; }
+                        }
+                        return null;
+                    }
 
                     function pointFromEvent(event) {
                         var rect = interactionLayer.getBoundingClientRect();
@@ -204,32 +276,31 @@
 
                     function hideDraft() {
                         draftEl.classList.add('ng-hide');
+                        svgDraft.removeAttribute('d');
                     }
 
-                    // Returns the topmost highlight under a screen point on the current page.
+                    // Returns the topmost markup under a screen point on the current page.
                     function highlightAt(point) {
-                        var x = point.x / scope.rendered.scale;
-                        var y = point.y / scope.rendered.scale;
+                        var s = scope.rendered.scale;
                         var list = scope.highlights || [];
                         for (var i = list.length - 1; i >= 0; i--) {
-                            var h = list[i];
-                            if (h.pageNumber === scope.rendered.page &&
-                                x >= h.x && x <= h.x + h.width && y >= h.y && y <= h.y + h.height) {
-                                return h;
+                            var m = list[i];
+                            if (m.pageNumber === scope.rendered.page && markupGeometry.hits(m, point.x / s, point.y / s, SELECT_TOLERANCE_PX / s)) {
+                                return m;
                             }
                         }
                         return null;
                     }
 
                     // ----- Pan: drag the page with the mouse to move around a zoomed-in drawing -----
-                    // Pan is the default tool. In highlight mode, hold Space or use the middle button.
+                    // Pan is the default tool. With a markup tool, hold Space or use the middle button.
                     // Touch keeps the browser's own finger scrolling.
                     var pan = null;
                     scope.spacePan = false;
 
                     function wantsPan(event) {
                         if (event.button === 1) { return true; }
-                        return event.button === 0 && event.pointerType !== 'touch' && (!scope.highlightMode || scope.spacePan);
+                        return event.button === 0 && event.pointerType !== 'touch' && (!scope.drawing() || scope.spacePan);
                     }
 
                     function onSpace(event) {
@@ -237,7 +308,7 @@
                         var tag = event.target && event.target.tagName;
                         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') { return; }
                         var down = event.type === 'keydown';
-                        if (down && scope.highlightMode) { event.preventDefault(); }   // do not scroll the page instead
+                        if (down && scope.drawing()) { event.preventDefault(); }   // do not scroll the page instead
                         if (scope.spacePan !== down) {
                             scope.$evalAsync(function () { scope.spacePan = down; });
                         }
@@ -278,7 +349,7 @@
                         interactionLayer.classList.remove('is-panning');
                         event.stopImmediatePropagation();
                         if (!cancelled && p.click && !p.moved) {
-                            // A click without moving still selects a highlight (or clears the selection).
+                            // A click without moving still selects a markup (or clears the selection).
                             var hit = highlightAt(pointFromEvent(event));
                             scope.$apply(function () { scope.onSelectHighlight({ id: hit ? hit.id : null }); });
                         }
@@ -288,12 +359,68 @@
                     // Middle-button clicks must not open links or paste (Linux) on the page.
                     interactionLayer.addEventListener('auxclick', function (event) { if (event.button === 1) { event.preventDefault(); } });
 
-                    // ----- Draw / select highlights -----
+                    // ----- Draw / select markups -----
+                    // The markup being drawn, in PDF units, from the drag so far; null if too small yet.
+                    function draftMarkup(from, to, event) {
+                        var s = scope.rendered.scale;
+                        var a = { x: from.x / s, y: from.y / s }, b = { x: to.x / s, y: to.y / s };
+                        var sizes = markupGeometry.sizesFor(scope.rendered.width / s, scope.rendered.height / s);
+                        var m = { type: scope.tool, color: scope.markupColor, strokeWidth: sizes.strokeWidth };
+                        var minSize = MIN_HIGHLIGHT_PX / s;
+                        switch (scope.tool) {
+                            case 'highlight':
+                            case 'rect':
+                            case 'ellipse':
+                            case 'cloud':
+                                if (event && event.shiftKey && scope.tool !== 'highlight') {
+                                    // Shift: square / circle.
+                                    var side = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+                                    b = { x: a.x + (b.x >= a.x ? side : -side), y: a.y + (b.y >= a.y ? side : -side) };
+                                }
+                                var r = rectBetween(a, b);
+                                if (r.width < minSize || r.height < minSize) { return null; }
+                                return angular.extend(m, r);
+                            case 'line':
+                            case 'arrow':
+                                if (event && event.shiftKey) {
+                                    // Shift: snap to 45° steps (horizontal / vertical dimension lines).
+                                    var angle = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) * (Math.PI / 4);
+                                    var length = Math.hypot(b.x - a.x, b.y - a.y);
+                                    b = { x: a.x + length * Math.cos(angle), y: a.y + length * Math.sin(angle) };
+                                }
+                                if (Math.hypot(b.x - a.x, b.y - a.y) < minSize) { return null; }
+                                return angular.extend(m, { x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+                            case 'callout':
+                                // Drawn from the point to the place for the note; the leader is the draft.
+                                if (Math.hypot(b.x - a.x, b.y - a.y) < minSize) { return null; }
+                                return angular.extend(m, { type: 'arrow', x1: b.x, y1: b.y, x2: a.x, y2: a.y });
+                            default:
+                                return null;
+                        }
+                    }
+
+                    function showDraft(m) {
+                        if (!m) { hideDraft(); return; }
+                        var s = scope.rendered.scale;
+                        if (m.type === 'highlight') {
+                            draftEl.style.left = m.x * s + 'px';
+                            draftEl.style.top = m.y * s + 'px';
+                            draftEl.style.width = m.width * s + 'px';
+                            draftEl.style.height = m.height * s + 'px';
+                            draftEl.classList.remove('ng-hide');
+                            return;
+                        }
+                        svgDraft.setAttribute('d', markupGeometry.path(m));
+                        svgDraft.setAttribute('stroke', m.color);
+                        svgDraft.setAttribute('stroke-width', m.strokeWidth);
+                    }
+
                     interactionLayer.addEventListener('pointerdown', function (event) {
                         if (event.button !== 0 || !scope.rendered.page) {
                             return;
                         }
-                        start = pointFromEvent(event);
+                        var point = pointFromEvent(event);
+                        start = { point: point, pen: scope.tool === 'pen' ? [point.x, point.y] : null };
                         interactionLayer.setPointerCapture(event.pointerId);
                         // preventDefault stops text selection but also keeps focus where it was
                         // (e.g. the page input), which would swallow keyboard shortcuts.
@@ -304,34 +431,66 @@
                     });
 
                     interactionLayer.addEventListener('pointermove', function (event) {
-                        if (!start || !scope.highlightMode) {
+                        if (!start || !scope.drawing()) {
                             return;
                         }
-                        var r = rectBetween(start, pointFromEvent(event));
-                        draftEl.style.left = r.x + 'px';
-                        draftEl.style.top = r.y + 'px';
-                        draftEl.style.width = r.width + 'px';
-                        draftEl.style.height = r.height + 'px';
-                        draftEl.classList.remove('ng-hide');
+                        var point = pointFromEvent(event);
+                        if (start.pen) {
+                            var p = start.pen;
+                            if (p.length < MAX_PEN_POINTS * 2 &&
+                                Math.hypot(point.x - p[p.length - 2], point.y - p[p.length - 1]) >= MIN_PEN_STEP_PX) {
+                                p.push(point.x, point.y);
+                                var s = scope.rendered.scale;
+                                var sizes = markupGeometry.sizesFor(scope.rendered.width / s, scope.rendered.height / s);
+                                showDraft({ type: 'pen', color: scope.markupColor, strokeWidth: sizes.strokeWidth,
+                                            points: p.map(function (v) { return v / s; }) });
+                            }
+                            return;
+                        }
+                        showDraft(draftMarkup(start.point, point, event));
                     });
 
                     interactionLayer.addEventListener('pointerup', function (event) {
                         if (!start) {
                             return;
                         }
+                        var begin = start;
                         var end = pointFromEvent(event);
-                        var r = rectBetween(start, end);
                         start = null;
                         hideDraft();
+                        var s = scope.rendered.scale;
+                        var page = scope.rendered.page;
 
                         scope.$apply(function () {
-                            if (scope.highlightMode && r.width >= MIN_HIGHLIGHT_PX && r.height >= MIN_HIGHLIGHT_PX) {
-                                // Store in PDF units so the highlight is independent of zoom.
-                                var s = scope.rendered.scale;
-                                scope.onCreateHighlight({
-                                    pageNumber: scope.rendered.page,
-                                    rect: { x: r.x / s, y: r.y / s, width: r.width / s, height: r.height / s }
+                            var tool = scope.drawing() ? scope.tool : null;
+                            if (tool === 'text' || tool === 'callout') {
+                                // The note goes where the button was released; a callout points at where the drag began.
+                                var dragged = Math.hypot(end.x - begin.point.x, end.y - begin.point.y) >= MIN_HIGHLIGHT_PX;
+                                scope.onRequestText({
+                                    pageNumber: page,
+                                    at: { x: end.x / s, y: end.y / s },
+                                    tip: tool === 'callout' ? { x: begin.point.x / s, y: begin.point.y / s, dragged: dragged } : null
                                 });
+                                return;
+                            }
+                            var markup = null;
+                            if (tool === 'pen') {
+                                var p = begin.pen;
+                                if (p.length >= 4) {
+                                    var sizes = markupGeometry.sizesFor(scope.rendered.width / s, scope.rendered.height / s);
+                                    markup = { type: 'pen', color: scope.markupColor, strokeWidth: sizes.strokeWidth,
+                                               points: p.map(function (v) { return Math.round(v / s * 100) / 100; }) };
+                                }
+                            } else if (tool) {
+                                markup = draftMarkup(begin.point, end, event);
+                            }
+                            if (markup) {
+                                if (markup.type === 'highlight') {
+                                    // Highlights keep their own colour.
+                                    delete markup.color;
+                                    delete markup.strokeWidth;
+                                }
+                                scope.onCreateMarkup({ pageNumber: page, markup: markup });
                             } else {
                                 var hit = highlightAt(end);
                                 scope.onSelectHighlight({ id: hit ? hit.id : null });

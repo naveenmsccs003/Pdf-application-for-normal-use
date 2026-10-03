@@ -285,7 +285,7 @@ async function startHost() {
         await click('Highlight'); await drag(60, 120, 360, 160); await click('Highlight');
         const saveHighlights = async dialog => {
             const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
-            await page.click('button[aria-label="Save with highlights"]');
+            await page.click('button[aria-label="Save with markups"]');
             await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 60000 }, before);
             await sleep(200);
             return page.$eval('.status-text', e => e.textContent);
@@ -295,7 +295,7 @@ async function startHost() {
         await dismiss();
         const highlightedPath = path.join(outDir, 'with-highlights.pdf');
         status = await saveHighlights({ save: highlightedPath });
-        check('desktop: copy with highlights saved', /with-highlights\.pdf with 1 highlight/.test(status) && fs.existsSync(highlightedPath), status);
+        check('desktop: copy with highlights saved', /with-highlights\.pdf with 1 markup/.test(status) && fs.existsSync(highlightedPath), status);
         check('desktop: original PDF unchanged', fs.statSync(fixture('ten-pages.pdf')).size === fs.readFileSync(fixture('ten-pages.pdf')).length &&
             !fs.readFileSync(fixture('ten-pages.pdf')).includes('/Highlight'));
         await open(highlightedPath); await click('Actual size');

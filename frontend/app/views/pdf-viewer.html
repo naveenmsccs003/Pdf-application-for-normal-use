@@ -2,6 +2,14 @@
 <svg class="icon-sprite" aria-hidden="true" focusable="false">
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H7.5a2 2 0 0 0-1.9 1.4L3 19V7z"/><path d="M3 19l2.6-7.6A2 2 0 0 1 7.5 10H22l-2.7 8.1a1.5 1.5 0 0 1-1.4.9H3z"/></symbol>
     <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5v-8a1.5 1.5 0 0 1 3 0V12"/><path d="M14 5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M17 8.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-2a6 6 0 0 1-4.9-2.6L4.4 14.6a1.5 1.5 0 0 1 2.3-1.9L8 14"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="0.5"/></symbol>
+    <symbol id="i-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6.5"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M6 8a2 2 0 0 1 4-1 2 2 0 0 1 4 0 2 2 0 0 1 4 1 2 2 0 0 1 1 4 2 2 0 0 1-1 4 2 2 0 0 1-4 1 2 2 0 0 1-4 0 2 2 0 0 1-4-1 2 2 0 0 1-1-4 2 2 0 0 1 1-4z"/></symbol>
+    <symbol id="i-line" viewBox="0 0 24 24"><path d="M5 19L19 5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 19L19 5M11 5h8v8"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M3 17c3-6 5-6 7-2s4 4 6-1 3-6 5-4"/></symbol>
+    <symbol id="i-text" viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6"/></symbol>
+    <symbol id="i-callout" viewBox="0 0 24 24"><rect x="9" y="3" width="12" height="9" rx="1"/><path d="M12 7h6M9 12l-6 8M3 20l1-4M3 20l4-1"/></symbol>
     <symbol id="i-highlight" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L10 18H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h16"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
     <symbol id="i-clear" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 17l-3-3 9-9 6 6-6 6H7z"/><path d="M10 8l6 6"/></symbol>
@@ -52,8 +60,8 @@
                     <svg class="icon icon-sm"><use href="#i-close"></use></svg><span>Close PDF</span></button>
                 <div class="menu-separator" role="separator"></div>
                 <button type="button" class="menu-item" role="menuitem" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
-                        title="Saves a copy with the highlights; the original PDF is never changed">
-                    <svg class="icon icon-sm"><use href="#i-save"></use></svg><span>Save copy with highlights&hellip;</span><kbd>{{ vm.modKey }}S</kbd></button>
+                        title="Saves a copy with the markups; the original PDF is never changed">
+                    <svg class="icon icon-sm"><use href="#i-save"></use></svg><span>Save copy with markups&hellip;</span><kbd>{{ vm.modKey }}S</kbd></button>
                 <div class="menu-separator" role="separator"></div>
                 <div class="menu-heading" role="presentation">Recent files</div>
                 <button type="button" class="menu-item menu-item-recent" role="menuitem" ng-repeat="f in vm.recentFiles track by f.id"
@@ -129,25 +137,74 @@
 
     <div class="tool-group" role="group" aria-label="Markup tools">
         <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.hasDocument() && !vm.highlightMode}" aria-pressed="{{ vm.hasDocument() && !vm.highlightMode }}"
+                ng-class="{'is-active': vm.isTool('pan')}" aria-pressed="{{ vm.isTool('pan') }}"
                 aria-label="Pan" title="Pan: drag the page to move around (middle mouse button or hold Space in any tool)">
             <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
         </button>
-        <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.toggleHighlightMode()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.highlightMode}" aria-pressed="{{ vm.highlightMode }}" aria-label="Highlight"
+        <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.selectTool('highlight')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('highlight')}" aria-pressed="{{ vm.isTool('highlight') }}" aria-label="Highlight"
                 title="Highlight: drag over the page (Esc to exit)">
             <svg class="icon"><use href="#i-highlight"></use></svg><span>Highlight</span>
         </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('rect')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('rect')}" aria-pressed="{{ vm.isTool('rect') }}"
+                aria-label="Rectangle" title="Rectangle: mark an area (Shift: square)">
+            <svg class="icon"><use href="#i-rect"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('ellipse')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('ellipse')}" aria-pressed="{{ vm.isTool('ellipse') }}"
+                aria-label="Ellipse" title="Ellipse: circle a detail (Shift: circle)">
+            <svg class="icon"><use href="#i-ellipse"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('cloud')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('cloud')}" aria-pressed="{{ vm.isTool('cloud') }}"
+                aria-label="Cloud" title="Cloud: mark a revision or problem area">
+            <svg class="icon"><use href="#i-cloud"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('line')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('line')}" aria-pressed="{{ vm.isTool('line') }}"
+                aria-label="Line" title="Line: dimensions or rebar direction (Shift: 45° steps)">
+            <svg class="icon"><use href="#i-line"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('arrow')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('arrow')}" aria-pressed="{{ vm.isTool('arrow') }}"
+                aria-label="Arrow" title="Arrow: point to a location (Shift: 45° steps)">
+            <svg class="icon"><use href="#i-arrow"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('pen')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('pen')}" aria-pressed="{{ vm.isTool('pen') }}"
+                aria-label="Freehand" title="Freehand: draw on the drawing">
+            <svg class="icon"><use href="#i-pen"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('text')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('text')}" aria-pressed="{{ vm.isTool('text') }}"
+                aria-label="Text note" title="Text note: click where the note goes">
+            <svg class="icon"><use href="#i-text"></use></svg>
+        </button>
+        <button type="button" class="tool" ng-click="vm.selectTool('callout')" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.isTool('callout')}" aria-pressed="{{ vm.isTool('callout') }}"
+                aria-label="Callout" title="Callout: drag from the point to where the note goes">
+            <svg class="icon"><use href="#i-callout"></use></svg>
+        </button>
+        <div class="color-swatches" role="radiogroup" aria-label="Markup colour">
+            <button type="button" class="color-swatch" ng-repeat="c in vm.markupColors" role="radio"
+                    ng-click="vm.setMarkupColor(c.value)" ng-disabled="!vm.hasDocument()"
+                    ng-class="{'is-active': vm.markupColor === c.value}" aria-checked="{{ vm.markupColor === c.value }}"
+                    aria-label="{{ c.name }}" title="Markup colour: {{ c.name }}" ng-attr-style="--swatch: {{ c.value }}"></button>
+        </div>
+    </div>
+
+    <div class="tool-group" role="group" aria-label="Markup actions">
         <button type="button" class="tool" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
-                aria-label="Remove" title="Remove selected highlight (Delete)">
+                aria-label="Remove" title="Remove selected markup (Delete)">
             <svg class="icon"><use href="#i-trash"></use></svg>
         </button>
         <button type="button" class="tool" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
-                aria-label="Clear Highlights" title="Clear all highlights">
+                aria-label="Clear Markups" title="Clear all markups">
             <svg class="icon"><use href="#i-clear"></use></svg>
         </button>
         <button type="button" class="tool" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
-                aria-label="Save with highlights" title="Save a copy of the PDF with the highlights (the original is not changed)">
+                aria-label="Save with markups" title="Save a copy of the PDF with the markups (the original is not changed)">
             <svg class="icon"><use href="#i-save"></use></svg>
         </button>
     </div>
@@ -246,17 +303,19 @@
             </div>
         </div>
 
-        <main class="viewer" ng-class="{'is-highlighting': vm.highlightMode}">
+        <main class="viewer" ng-class="{'is-highlighting': vm.tool !== 'pan'}">
             <pdf-viewer doc-version="vm.docVersion"
                         page="vm.currentPage"
                         scale="vm.scale"
-                        highlight-mode="vm.highlightMode"
+                        tool="vm.tool"
+                        markup-color="vm.markupColor"
                         highlights="vm.highlights"
                         selected-id="vm.selectedHighlightId"
                         search-matches="find.matches"
                         active-match="find.current"
                         api="vm.viewer"
-                        on-create-highlight="vm.addHighlight(pageNumber, rect)"
+                        on-create-markup="vm.addMarkup(pageNumber, markup)"
+                        on-request-text="vm.requestNoteText(pageNumber, at, tip)"
                         on-select-highlight="vm.selectHighlight(id)"
                         on-remove-highlight="vm.removeHighlight(id)"
                         on-resize="vm.onViewerResize()"
@@ -337,28 +396,28 @@
             <li class="markup-row" ng-repeat="h in vm.highlights | orderBy:['pageNumber', 'id'] track by h.id"
                 ng-class="{'is-selected': h.id === vm.selectedHighlightId}">
                 <button type="button" class="markup-main" ng-click="vm.goToHighlight(h)"
-                        aria-label="Highlight on page {{ h.pageNumber }}">
-                    <span class="markup-swatch"></span>
+                        aria-label="{{ vm.markupLabel(h) }} on page {{ h.pageNumber }}">
+                    <span class="markup-swatch" ng-class="{'is-shape': h.type !== 'highlight'}" ng-attr-style="{{ h.color ? '--swatch: ' + h.color : undefined }}"></span>
                     <span class="markup-text">
-                        <span class="markup-title">Highlight</span>
+                        <span class="markup-title">{{ vm.markupLabel(h) }}</span>
                         <span class="markup-meta">Page {{ h.pageNumber }} &middot; {{ h.createdAt | date:'HH:mm:ss' }}</span>
                     </span>
                 </button>
                 <button type="button" class="markup-delete" ng-click="vm.removeHighlight(h.id)"
-                        aria-label="Delete highlight on page {{ h.pageNumber }}" title="Delete">
+                        aria-label="Delete {{ vm.markupLabel(h) }} on page {{ h.pageNumber }}" title="Delete">
                     <svg class="icon icon-sm"><use href="#i-trash"></use></svg>
                 </button>
             </li>
         </ul>
         <p class="panel-empty" ng-if="!vm.highlights.length">
-            No markups yet.<br>Use <strong>Highlight</strong> and drag over the page.
+            No markups yet.<br>Pick a markup tool in the toolbar, such as <strong>Highlight</strong> or <strong>Rectangle</strong>, and draw on the page.
         </p>
         <div class="panel-footer" ng-if="vm.highlights.length">
             <button type="button" class="tool tool-labelled tool-outline panel-action" ng-click="tools.saveHighlights()"
                     ng-disabled="!tools.canSaveHighlights()" title="The original PDF is not changed">
                 <span class="spinner spinner-sm" ng-if="tools.saving"></span>
                 <svg class="icon" ng-if="!tools.saving"><use href="#i-save"></use></svg>
-                <span>{{ tools.saving ? 'Saving\u2026' : 'Save copy with highlights' }}</span>
+                <span>{{ tools.saving ? 'Saving\u2026' : 'Save copy with markups' }}</span>
             </button>
         </div>
     </aside>
@@ -408,6 +467,30 @@
         </button>
     </div>
 </footer>
+
+<!-- Note text dialog (Text note / Callout tools) -->
+<div class="dialog-backdrop" ng-if="vm.noteDialog" ng-click="vm.closeNoteDialog()">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="note-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="note-dialog-title">{{ vm.noteDialog.type === 'callout' ? 'Callout' : 'Text note' }}</h2>
+            <button type="button" class="panel-close" ng-click="vm.closeNoteDialog()" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applyNoteDialog()" id="note-form">
+            <label for="note-text-input" class="dialog-intro">Note on page {{ vm.noteDialog.pageNumber }}</label>
+            <textarea id="note-text-input" class="note-text" rows="4" maxlength="1000" ng-model="vm.noteDialog.text"
+                      ng-change="vm.noteDialog.error = ''" placeholder="e.g. Check lap length of B12 bars"></textarea>
+            <p class="dialog-note">Enter starts a new line; {{ vm.modKey }}Enter adds the note. Saved copies keep Latin letters,
+                digits and common symbols.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.noteDialog.error">{{ vm.noteDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeNoteDialog()">Cancel</button>
+            <button type="submit" form="note-form" class="tool tool-labelled tool-primary">Add note</button>
+        </div>
+    </div>
+</div>
 
 <!-- Custom zoom dialog (Zoom > Custom zoom) -->
 <div class="dialog-backdrop" ng-if="vm.customZoom" ng-click="vm.closeCustomZoom()">
