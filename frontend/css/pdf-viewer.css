@@ -226,14 +226,66 @@ html, body {
 
 /* ----- Tools (toolbar and status bar buttons) ----- */
 .toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
     background: var(--chrome-2);
     border-bottom: 1px solid var(--border);
 }
+
+/* Ribbon: category tabs, then the selected category's tools in captioned groups */
+.ribbon-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 8px;
+    background: var(--chrome);
+    border-bottom: 1px solid var(--border);
+}
+.ribbon-tablist { display: flex; align-self: stretch; gap: 2px; }
+.ribbon-tab {
+    position: relative;
+    padding: 0 14px;
+    min-height: 32px;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+.ribbon-tab:hover { color: var(--text); background: var(--tool-hover); }
+.ribbon-tab.is-active { color: var(--primary); font-weight: 600; background: var(--chrome-2); }
+.ribbon-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--primary);
+}
+.ribbon-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ribbon-tabs .tool-group { border-left: 0; padding-right: 0; }
+
+.ribbon-panel {
+    display: flex;
+    align-items: stretch;
+    padding: 4px 8px 2px;
+    overflow-x: auto;
+}
+.ribbon-panel.ng-hide { display: none; }
+.ribbon-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 0 10px;
+    border-left: 1px solid var(--border);
+}
+.ribbon-group:first-child { border-left: 0; padding-left: 0; }
+.ribbon-tools { display: flex; align-items: center; gap: 2px; flex: 1; }
+.ribbon-caption { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.ribbon-zoom-level { min-width: 56px; font-variant-numeric: tabular-nums; }
+.ribbon-page { padding: 0 8px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .tool-group {
     display: flex;
@@ -926,6 +978,9 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 
 @media (max-width: 640px) {
     .tool-labelled span { display: none; }
+    .ribbon-caption { display: none; }
+    .ribbon-group { padding: 0 4px; }
+    .ribbon-tab { padding: 0 9px; }
     .tool-labelled { padding: 0 7px; }
     .tool-group { padding: 0 3px; }
     .status-text { display: none; }
@@ -942,6 +997,7 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     .tool-sm { min-width: 36px; height: 36px; }
     .page-input, .zoom-value { height: 34px; }
     .menu-button { height: 34px; }
+    .ribbon-tab { min-height: 40px; }
     .menu-item { min-height: 40px; }
     .markup-delete { opacity: 1; }
 }

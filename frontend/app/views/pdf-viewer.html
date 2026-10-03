@@ -121,149 +121,245 @@
     </button>
 </header>
 
-<!-- Tool bar -->
+<!-- Tool bar: a ribbon. The tabs pick a category; its panel shows that category's tools in labelled groups. -->
 <nav class="toolbar" aria-label="PDF tools">
-    <div class="tool-group">
-        <label class="tool tool-labelled tool-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}" title="Open a PDF from your computer">
-            <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
-                   on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
-            <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
-        </label>
-        <button type="button" class="tool tool-labelled tool-primary" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy"
-                aria-label="Open PDF" title="Open a PDF from your computer">
-            <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
-        </button>
-    </div>
-
-    <div class="tool-group" role="group" aria-label="Markup tools">
-        <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('pan')}" aria-pressed="{{ vm.isTool('pan') }}"
-                aria-label="Pan" title="Pan: drag the page to move around (middle mouse button or hold Space in any tool)">
-            <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
-        </button>
-        <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.selectTool('highlight')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('highlight')}" aria-pressed="{{ vm.isTool('highlight') }}" aria-label="Highlight"
-                title="Highlight: drag over the page (Esc to exit)">
-            <svg class="icon"><use href="#i-highlight"></use></svg><span>Highlight</span>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('rect')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('rect')}" aria-pressed="{{ vm.isTool('rect') }}"
-                aria-label="Rectangle" title="Rectangle: mark an area (Shift: square)">
-            <svg class="icon"><use href="#i-rect"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('ellipse')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('ellipse')}" aria-pressed="{{ vm.isTool('ellipse') }}"
-                aria-label="Ellipse" title="Ellipse: circle a detail (Shift: circle)">
-            <svg class="icon"><use href="#i-ellipse"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('cloud')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('cloud')}" aria-pressed="{{ vm.isTool('cloud') }}"
-                aria-label="Cloud" title="Cloud: mark a revision or problem area">
-            <svg class="icon"><use href="#i-cloud"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('line')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('line')}" aria-pressed="{{ vm.isTool('line') }}"
-                aria-label="Line" title="Line: dimensions or rebar direction (Shift: 45° steps)">
-            <svg class="icon"><use href="#i-line"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('arrow')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('arrow')}" aria-pressed="{{ vm.isTool('arrow') }}"
-                aria-label="Arrow" title="Arrow: point to a location (Shift: 45° steps)">
-            <svg class="icon"><use href="#i-arrow"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('pen')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('pen')}" aria-pressed="{{ vm.isTool('pen') }}"
-                aria-label="Freehand" title="Freehand: draw on the drawing">
-            <svg class="icon"><use href="#i-pen"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('text')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('text')}" aria-pressed="{{ vm.isTool('text') }}"
-                aria-label="Text note" title="Text note: click where the note goes">
-            <svg class="icon"><use href="#i-text"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.selectTool('callout')" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.isTool('callout')}" aria-pressed="{{ vm.isTool('callout') }}"
-                aria-label="Callout" title="Callout: drag from the point to where the note goes">
-            <svg class="icon"><use href="#i-callout"></use></svg>
-        </button>
-        <div class="color-swatches" role="radiogroup" aria-label="Markup colour">
-            <button type="button" class="color-swatch" ng-repeat="c in vm.markupColors" role="radio"
-                    ng-click="vm.setMarkupColor(c.value)" ng-disabled="!vm.hasDocument()"
-                    ng-class="{'is-active': vm.markupColor === c.value}" aria-checked="{{ vm.markupColor === c.value }}"
-                    aria-label="{{ c.name }}" title="Markup colour: {{ c.name }}" ng-attr-style="--swatch: {{ c.value }}"></button>
+    <div class="ribbon-tabs">
+        <div class="ribbon-tablist" role="tablist" aria-label="Tool categories">
+            <button type="button" class="ribbon-tab" role="tab" ng-repeat="t in vm.ribbonTabs track by t.id"
+                    id="ribbon-tab-{{ t.id }}" aria-controls="ribbon-{{ t.id }}" aria-selected="{{ vm.ribbonTab === t.id }}"
+                    ng-attr-tabindex="{{ vm.ribbonTab === t.id ? 0 : -1 }}" ng-class="{'is-active': vm.ribbonTab === t.id}"
+                    ng-click="vm.setRibbonTab(t.id)" ng-keydown="vm.onRibbonTabKey($event, $index)">{{ t.label }}</button>
+        </div>
+        <div class="tool-group tool-group-end" role="group" aria-label="Panels">
+            <button type="button" class="tool" ng-click="vm.showThumbnails = !vm.showThumbnails"
+                    ng-class="{'is-active': vm.showThumbnails}" aria-pressed="{{ vm.showThumbnails }}"
+                    aria-label="Thumbnails panel" title="Thumbnails">
+                <svg class="icon"><use href="#i-thumbs"></use></svg>
+            </button>
+            <button type="button" class="tool" ng-click="vm.showMarkups = !vm.showMarkups"
+                    ng-class="{'is-active': vm.showMarkups}" aria-pressed="{{ vm.showMarkups }}"
+                    aria-label="Markups panel" title="Markups list">
+                <svg class="icon"><use href="#i-list"></use></svg>
+            </button>
         </div>
     </div>
 
-    <div class="tool-group" role="group" aria-label="Markup actions">
-        <button type="button" class="tool" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
-                aria-label="Remove" title="Remove selected markup (Delete)">
-            <svg class="icon"><use href="#i-trash"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
-                aria-label="Clear Markups" title="Clear all markups">
-            <svg class="icon"><use href="#i-clear"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
-                aria-label="Save with markups" title="Save a copy of the PDF with the markups (the original is not changed)">
-            <svg class="icon"><use href="#i-save"></use></svg>
-        </button>
+    <!-- File -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-file" aria-labelledby="ribbon-tab-file" ng-show="vm.ribbonTab === 'file'">
+        <div class="ribbon-group" role="group" aria-label="Document">
+            <div class="ribbon-tools">
+                <label class="tool tool-labelled tool-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}" title="Open a PDF from your computer">
+                    <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
+                           on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
+                    <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
+                </label>
+                <button type="button" class="tool tool-labelled tool-primary" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy"
+                        aria-label="Open PDF" title="Open a PDF from your computer">
+                    <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
+                        aria-label="Save copy" title="Save a copy of the PDF with the markups (the original is not changed)">
+                    <svg class="icon"><use href="#i-save"></use></svg><span>Save copy</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.closeDocument()" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Close PDF" title="Close the open PDF">
+                    <svg class="icon"><use href="#i-close"></use></svg><span>Close</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Document</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="PDF tools">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="tools.open('merge')" ng-disabled="vm.busy" aria-label="Merge" title="Combine several PDFs into one">
+                    <svg class="icon"><use href="#i-merge"></use></svg><span>Merge</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="tools.open('split')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Split" title="Split this PDF into several files">
+                    <svg class="icon"><use href="#i-split"></use></svg><span>Split</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="tools.open('compress')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Compress" title="Make this PDF smaller">
+                    <svg class="icon"><use href="#i-compress"></use></svg><span>Compress</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="tools.open('convert')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Convert" title="Convert this PDF to Word, Excel or images">
+                    <svg class="icon"><use href="#i-convert"></use></svg><span>Convert</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">PDF tools</span>
+        </div>
     </div>
 
-    <div class="tool-group" role="group" aria-label="Find">
-        <button type="button" class="tool" ng-click="find.isOpen ? find.close() : find.show()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': find.isOpen}" aria-pressed="{{ find.isOpen }}"
-                aria-label="Find" title="Find text ({{ vm.modKey }}F)">
-            <svg class="icon"><use href="#i-search"></use></svg>
-        </button>
+    <!-- Zoom -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-zoom" aria-labelledby="ribbon-tab-zoom" ng-show="vm.ribbonTab === 'zoom'">
+        <div class="ribbon-group" role="group" aria-label="Zoom level">
+            <div class="ribbon-tools">
+                <button type="button" class="tool" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()"
+                        aria-label="Zoom out" title="Zoom out ({{ vm.modKey }}&minus;)">
+                    <svg class="icon"><use href="#i-zoom-out"></use></svg>
+                </button>
+                <button type="button" class="tool ribbon-zoom-level" ng-click="vm.openCustomZoom()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Custom zoom" title="Custom zoom: type a percentage">{{ vm.hasDocument() ? vm.zoomPercent() : '&ndash;' }}</button>
+                <button type="button" class="tool" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()"
+                        aria-label="Zoom in" title="Zoom in ({{ vm.modKey }}+)">
+                    <svg class="icon"><use href="#i-zoom-in"></use></svg>
+                </button>
+            </div>
+            <span class="ribbon-caption">Zoom</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Page fit">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.fitPage()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.fitMode === 'page'}" aria-pressed="{{ vm.fitMode === 'page' }}"
+                        aria-label="Fit Page" title="Fit page">
+                    <svg class="icon"><use href="#i-fit-page"></use></svg><span>Fit page</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.fitWidth()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.fitMode === 'width'}" aria-pressed="{{ vm.fitMode === 'width' }}"
+                        aria-label="Fit Width" title="Fit width">
+                    <svg class="icon"><use href="#i-fit-width"></use></svg><span>Fit width</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': !vm.fitMode && vm.hasDocument() && vm.zoomPercent() === '100%'}"
+                        aria-label="Actual size" title="Actual size: 100% ({{ vm.modKey }}0)">
+                    <svg class="icon"><use href="#i-actual-size"></use></svg><span>Actual size</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Fit</span>
+        </div>
     </div>
 
-    <div class="tool-group" role="group" aria-label="Page fit">
-        <button type="button" class="tool" ng-click="vm.fitPage()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.fitMode === 'page'}" aria-pressed="{{ vm.fitMode === 'page' }}"
-                aria-label="Fit Page" title="Fit page">
-            <svg class="icon"><use href="#i-fit-page"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.fitWidth()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': vm.fitMode === 'width'}" aria-pressed="{{ vm.fitMode === 'width' }}"
-                aria-label="Fit Width" title="Fit width">
-            <svg class="icon"><use href="#i-fit-width"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()"
-                ng-class="{'is-active': !vm.fitMode && vm.hasDocument() && vm.zoomPercent() === '100%'}"
-                aria-label="Actual size" title="Actual size: 100% ({{ vm.modKey }}0)">
-            <svg class="icon"><use href="#i-actual-size"></use></svg>
-        </button>
+    <!-- Navigation -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-navigation" aria-labelledby="ribbon-tab-navigation" ng-show="vm.ribbonTab === 'navigation'">
+        <div class="ribbon-group" role="group" aria-label="Pages">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.firstPage()" ng-disabled="!vm.canGoPrevious()"
+                        aria-label="First page" title="First page">
+                    <svg class="icon"><use href="#i-first"></use></svg><span>First</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()"
+                        aria-label="Previous page" title="Previous page (&larr;)">
+                    <svg class="icon"><use href="#i-prev"></use></svg><span>Previous</span>
+                </button>
+                <span class="ribbon-page" aria-live="polite">Page {{ vm.hasDocument() ? vm.currentPage : '&ndash;' }} of {{ vm.pageCount || '&ndash;' }}</span>
+                <button type="button" class="tool tool-labelled" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()"
+                        aria-label="Next page" title="Next page (&rarr;)">
+                    <span>Next</span><svg class="icon"><use href="#i-next"></use></svg>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.lastPage()" ng-disabled="!vm.canGoNext()"
+                        aria-label="Last page" title="Last page">
+                    <span>Last</span><svg class="icon"><use href="#i-last"></use></svg>
+                </button>
+            </div>
+            <span class="ribbon-caption">Pages</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Find">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="find.isOpen ? find.close() : find.show()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': find.isOpen}" aria-pressed="{{ find.isOpen }}"
+                        aria-label="Find" title="Find text ({{ vm.modKey }}F)">
+                    <svg class="icon"><use href="#i-search"></use></svg><span>Find</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Search</span>
+        </div>
     </div>
 
-    <div class="tool-group" role="group" aria-label="PDF tools">
-        <button type="button" class="tool tool-labelled" ng-click="tools.open('merge')" ng-disabled="vm.busy" aria-label="Merge" title="Combine several PDFs into one">
-            <svg class="icon"><use href="#i-merge"></use></svg><span>Merge</span>
-        </button>
-        <button type="button" class="tool tool-labelled" ng-click="tools.open('split')" ng-disabled="!vm.hasDocument() || vm.busy"
-                aria-label="Split" title="Split this PDF into several files">
-            <svg class="icon"><use href="#i-split"></use></svg><span>Split</span>
-        </button>
-        <button type="button" class="tool tool-labelled" ng-click="tools.open('compress')" ng-disabled="!vm.hasDocument() || vm.busy"
-                aria-label="Compress" title="Make this PDF smaller">
-            <svg class="icon"><use href="#i-compress"></use></svg><span>Compress</span>
-        </button>
-        <button type="button" class="tool tool-labelled" ng-click="tools.open('convert')" ng-disabled="!vm.hasDocument() || vm.busy"
-                aria-label="Convert" title="Convert this PDF to Word, Excel or images">
-            <svg class="icon"><use href="#i-convert"></use></svg><span>Convert</span>
-        </button>
-    </div>
-
-    <div class="tool-group tool-group-end" role="group" aria-label="Panels">
-        <button type="button" class="tool" ng-click="vm.showThumbnails = !vm.showThumbnails"
-                ng-class="{'is-active': vm.showThumbnails}" aria-pressed="{{ vm.showThumbnails }}"
-                aria-label="Thumbnails panel" title="Thumbnails">
-            <svg class="icon"><use href="#i-thumbs"></use></svg>
-        </button>
-        <button type="button" class="tool" ng-click="vm.showMarkups = !vm.showMarkups"
-                ng-class="{'is-active': vm.showMarkups}" aria-pressed="{{ vm.showMarkups }}"
-                aria-label="Markups panel" title="Markups list">
-            <svg class="icon"><use href="#i-list"></use></svg>
-        </button>
+    <!-- Markup -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-markup" aria-labelledby="ribbon-tab-markup" ng-show="vm.ribbonTab === 'markup'">
+        <div class="ribbon-group" role="group" aria-label="Markup tools">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('pan')}" aria-pressed="{{ vm.isTool('pan') }}"
+                        aria-label="Pan" title="Pan: drag the page to move around (middle mouse button or hold Space in any tool)">
+                    <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
+                </button>
+                <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.selectTool('highlight')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('highlight')}" aria-pressed="{{ vm.isTool('highlight') }}" aria-label="Highlight"
+                        title="Highlight: drag over the page (Esc to exit)">
+                    <svg class="icon"><use href="#i-highlight"></use></svg><span>Highlight</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Select</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Shapes">
+            <div class="ribbon-tools">
+                <button type="button" class="tool" ng-click="vm.selectTool('rect')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('rect')}" aria-pressed="{{ vm.isTool('rect') }}"
+                        aria-label="Rectangle" title="Rectangle: mark an area (Shift: square)">
+                    <svg class="icon"><use href="#i-rect"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.selectTool('ellipse')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('ellipse')}" aria-pressed="{{ vm.isTool('ellipse') }}"
+                        aria-label="Ellipse" title="Ellipse: circle a detail (Shift: circle)">
+                    <svg class="icon"><use href="#i-ellipse"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.selectTool('cloud')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('cloud')}" aria-pressed="{{ vm.isTool('cloud') }}"
+                        aria-label="Cloud" title="Cloud: mark a revision or problem area">
+                    <svg class="icon"><use href="#i-cloud"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.selectTool('line')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('line')}" aria-pressed="{{ vm.isTool('line') }}"
+                        aria-label="Line" title="Line: dimensions or rebar direction (Shift: 45° steps)">
+                    <svg class="icon"><use href="#i-line"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.selectTool('arrow')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('arrow')}" aria-pressed="{{ vm.isTool('arrow') }}"
+                        aria-label="Arrow" title="Arrow: point to a location (Shift: 45° steps)">
+                    <svg class="icon"><use href="#i-arrow"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.selectTool('pen')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('pen')}" aria-pressed="{{ vm.isTool('pen') }}"
+                        aria-label="Freehand" title="Freehand: draw on the drawing">
+                    <svg class="icon"><use href="#i-pen"></use></svg>
+                </button>
+            </div>
+            <span class="ribbon-caption">Shapes</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Notes">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('text')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('text')}" aria-pressed="{{ vm.isTool('text') }}"
+                        aria-label="Text note" title="Text note: click where the note goes">
+                    <svg class="icon"><use href="#i-text"></use></svg><span>Text</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('callout')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('callout')}" aria-pressed="{{ vm.isTool('callout') }}"
+                        aria-label="Callout" title="Callout: drag from the point to where the note goes">
+                    <svg class="icon"><use href="#i-callout"></use></svg><span>Callout</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Notes</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Colour">
+            <div class="ribbon-tools">
+                <div class="color-swatches" role="radiogroup" aria-label="Markup colour">
+                    <button type="button" class="color-swatch" ng-repeat="c in vm.markupColors" role="radio"
+                            ng-click="vm.setMarkupColor(c.value)" ng-disabled="!vm.hasDocument()"
+                            ng-class="{'is-active': vm.markupColor === c.value}" aria-checked="{{ vm.markupColor === c.value }}"
+                            aria-label="{{ c.name }}" title="Markup colour: {{ c.name }}" ng-attr-style="--swatch: {{ c.value }}"></button>
+                </div>
+            </div>
+            <span class="ribbon-caption">Colour</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Markup actions">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
+                        aria-label="Remove" title="Remove selected markup (Delete)">
+                    <svg class="icon"><use href="#i-trash"></use></svg><span>Remove</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
+                        aria-label="Clear Markups" title="Clear all markups">
+                    <svg class="icon"><use href="#i-clear"></use></svg><span>Clear all</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
+                        aria-label="Save with markups" title="Save a copy of the PDF with the markups (the original is not changed)">
+                    <svg class="icon"><use href="#i-save"></use></svg><span>Save copy</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Edit</span>
+        </div>
     </div>
 </nav>
 

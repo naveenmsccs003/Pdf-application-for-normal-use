@@ -734,6 +734,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.keyboard.type('Check column C3'); await page.click('.dialog-footer .tool-primary'); await sleep(200); sh = await shapes();
     check('Callout: note with a leader arrow to the point', sh[7].type === 'callout' && sh[7].leader && sh[7].text === 'Check column C3', sh[7]);
 
+    await page.click('#ribbon-tab-markup'); await sleep(100);
     await page.click('.color-swatch[aria-label="Blue"]'); await click('Rectangle'); await drag(420, 560, 520, 620); sh = await shapes();
     check('Colour: Blue swatch draws blue', sh[8].stroke === '#1c71d8' && await page.$eval('.color-swatch[aria-label="Blue"]', b => b.getAttribute('aria-checked') === 'true' &&
         getComputedStyle(b).backgroundColor === 'rgb(28, 113, 216)'), sh[8].stroke);
@@ -781,6 +782,38 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
                 rectEdge > 0.15 && inside < 0.02 && cloud > 0.02 && note > 0.01);
         }
     }
+
+    // ===== Ribbon: tool categories =====
+    const ribbon = () => page.evaluate(() => ({
+        tabs: [...document.querySelectorAll('.ribbon-tab')].map(t => t.textContent.trim()),
+        selected: document.querySelector('.ribbon-tab[aria-selected="true"]').textContent.trim(),
+        visible: [...document.querySelectorAll('.ribbon-panel')].filter(p => p.offsetParent).map(p => p.id),
+        focused: document.activeElement && document.activeElement.id,
+        page: document.querySelector('.ribbon-page').textContent.replace(/\s+/g, ' ').trim(),
+        zoomLevel: document.querySelector('.ribbon-zoom-level').textContent.trim()
+    }));
+    await open('ten-pages.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
+    check('ribbon: File, Zoom, Navigation, Markup tabs; one panel shown', rb.tabs.join('|') === 'File|Zoom|Navigation|Markup' &&
+        rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
+    await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
+    check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
+    await page.click('#ribbon-zoom button[aria-label="Zoom in"]'); await settle(); rb = await ribbon(); s = await state();
+    check('ribbon: Zoom in works from the ribbon', rb.zoomLevel === s.zoom && rb.zoomLevel !== '100%', [rb.zoomLevel, s.zoom]);
+    await page.click('#ribbon-tab-navigation'); await sleep(100);
+    await page.click('#ribbon-navigation button[aria-label="Next page"]'); await settle(); rb = await ribbon();
+    check('ribbon: Navigation tab turns pages and shows the page', rb.visible.join() === 'ribbon-navigation' && rb.page === 'Page 2 of 10', rb);
+    await page.focus('#ribbon-tab-navigation');
+    await page.keyboard.press('ArrowRight'); await settle(); rb = await ribbon(); s = await state();
+    check('ribbon: arrow keys on the tabs move to the next tab, not the next page',
+        rb.selected === 'Markup' && rb.focused === 'ribbon-tab-markup' && rb.visible.join() === 'ribbon-markup' && rb.page === 'Page 2 of 10', rb);
+    await page.keyboard.press('ArrowRight'); await sleep(100); rb = await ribbon();
+    check('ribbon: arrow keys wrap around', rb.selected === 'File' && rb.focused === 'ribbon-tab-file', rb);
+    await page.click('#ribbon-tab-markup'); await sleep(100);
+    await page.click('#ribbon-markup button[aria-label="Rectangle"]'); await sleep(100);
+    await page.click('#ribbon-tab-file'); await sleep(100);
+    check('ribbon: the markup tool stays active on another tab', (await state()).status.startsWith('Rectangle:'));
+    await page.keyboard.press('Escape'); await sleep(100); await click('Fit Page');
 
     // ===== Side panels =====
     await click('Thumbnails panel'); await click('Markups panel'); s = await state();

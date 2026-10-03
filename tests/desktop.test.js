@@ -285,6 +285,7 @@ async function startHost() {
         await click('Highlight'); await drag(60, 120, 360, 160); await click('Highlight');
         const saveHighlights = async dialog => {
             const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
+            await page.click('#ribbon-tab-markup');
             await page.click('button[aria-label="Save with markups"]');
             await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 60000 }, before);
             await sleep(200);

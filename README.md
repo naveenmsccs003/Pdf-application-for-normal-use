@@ -67,7 +67,13 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Menu bar**: **File** (Open, Close PDF, Save copy with highlights, Recent files, Clear recent files),
   **Edit** (Find, Find next, Find previous) and **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
   through and between menus, Esc closes them
-- **Tool bar**: Open PDF, Pan, Highlight, Remove, Clear Highlights, Fit Page, Fit Width, panel switches
+- **Tool bar** (ribbon): category tabs, each showing its tools in captioned groups; panel switches on the right.
+  Arrow keys, Home and End move between the tabs.
+  - **File**: Open PDF, Save copy, Close; Merge, Split, Compress, Convert
+  - **Zoom**: zoom out / level (click for a custom zoom) / zoom in; Fit page, Fit width, Actual size
+  - **Navigation**: first / previous / page / next / last; Find
+  - **Markup**: Pan, Highlight; shapes (rectangle, ellipse, cloud, line, arrow, freehand); text note, callout;
+    colour; Remove, Clear all, Save copy
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
 - **Document tab** with the file name and a close button
@@ -79,7 +85,7 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 
 ## PDF tools
 
-In the **Tools** group of the toolbar (web and desktop):
+On the **File** tab of the toolbar, in the **PDF tools** group (web and desktop):
 
 | Tool | What it does | Output (web) | Output (desktop) |
 | --- | --- | --- | --- |

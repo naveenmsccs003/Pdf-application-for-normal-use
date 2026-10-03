@@ -424,6 +424,30 @@
                 }
             };
 
+            // ----- Ribbon: tool categories in the toolbar -----
+            vm.ribbonTabs = [
+                { id: 'file', label: 'File' }, { id: 'zoom', label: 'Zoom' },
+                { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' }
+            ];
+            vm.ribbonTab = 'file';
+
+            vm.setRibbonTab = function (id) { vm.ribbonTab = id; };
+
+            /** Tab list keys (WAI-ARIA tabs): arrows, Home and End move to another tab and show it. */
+            vm.onRibbonTabKey = function (event, index) {
+                var count = vm.ribbonTabs.length;
+                var moves = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
+                if (!(event.key in moves)) { return; }
+                event.preventDefault();
+                event.stopPropagation();    // arrows here must not turn the page
+                var tab = vm.ribbonTabs[(moves[event.key] + count) % count];
+                vm.setRibbonTab(tab.id);
+                $timeout(function () {
+                    var button = $document[0].getElementById('ribbon-tab-' + tab.id);
+                    if (button) { button.focus(); }
+                });
+            };
+
             // ----- Markup tools -----
             var TOOL_HINTS = {
                 pan: null,
