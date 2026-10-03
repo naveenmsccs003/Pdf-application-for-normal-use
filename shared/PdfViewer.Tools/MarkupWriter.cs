@@ -43,18 +43,45 @@ internal static partial class MarkupWriter
     [GeneratedRegex("^#[0-9a-fA-F]{6}$")]
     private static partial Regex ColorPattern();
 
-    public static void Add(FpdfDocumentT document, FpdfPageT page, Markup markup)
+    /// <summary>Adds the markups of one page.</summary>
+    public static void AddAll(FpdfDocumentT document, FpdfPageT page, IEnumerable<Markup> markups)
     {
         var map = new PageMap(page);
-        switch (markup.Type ?? "highlight")
+        var notes = new List<(int Index, string Text)>();
+        foreach (var markup in markups)
         {
-            case "highlight": AddHighlight(page, map, markup); break;
-            case "rect": AddShape(page, map, markup, AnnotSquare); break;
-            case "ellipse": AddShape(page, map, markup, AnnotCircle); break;
-            case "text":
-            case "callout": AddNote(document, page, map, markup); break;
-            case var type when InkTypes.Contains(type): AddInk(page, map, markup); break;
-            default: throw new ToolException("Unknown markup type.");
+            switch (markup.Type ?? "highlight")
+            {
+                case "highlight": AddHighlight(page, map, markup); break;
+                case "rect": AddShape(page, map, markup, AnnotSquare); break;
+                case "ellipse": AddShape(page, map, markup, AnnotCircle); break;
+                case "text":
+                case "callout": notes.Add((AddNote(document, page, map, markup), markup.Text!)); break;
+                case var type when InkTypes.Contains(type): AddInk(page, map, markup); break;
+                default: throw new ToolException("Unknown markup type.");
+            }
+        }
+
+        // Rendering with annotations makes PDFium generate the appearance streams of
+        // highlights, shapes and ink, so viewers that need them show the markups too.
+        var bitmap = fpdfview.FPDFBitmapCreateEx(1, 1, (int)FPDFBitmapFormat.BGRA, IntPtr.Zero, 0);
+        fpdfview.FPDF_RenderPageBitmap(bitmap, page, 0, 0, 1, 1, 0, 0x01);
+        fpdfview.FPDFBitmapDestroy(bitmap);
+
+        // The note text goes in /Contents (shown in other viewers' comment lists) only after rendering:
+        // for an annotation with /Contents the render builds a popup appearance that is saved unused.
+        foreach (var (index, text) in notes)
+        {
+            var annot = fpdf_annot.FPDFPageGetAnnot(page, index)
+                        ?? throw new ToolException("Could not add a note to the PDF.");
+            try
+            {
+                SetString(annot, "Contents", text);
+            }
+            finally
+            {
+                fpdf_annot.FPDFPageCloseAnnot(annot);
+            }
         }
     }
 
@@ -90,7 +117,7 @@ internal static partial class MarkupWriter
                 X3 = (float)ll.X, Y3 = (float)ll.Y, X4 = (float)lr.X, Y4 = (float)lr.Y
             });
             SetRect(annot, [ul, ur, ll, lr], 0);
-            Finish(annot, null);
+            Finish(annot);
         }
         finally
         {
@@ -112,7 +139,7 @@ internal static partial class MarkupWriter
             // The appearance is drawn inside /Rect, so widen it by half the line width: the line then
             // runs along the edge the user drew.
             SetRect(annot, Corners(map, m.X, m.Y, m.Width, m.Height), width / 2);
-            Finish(annot, null);
+            Finish(annot);
         }
         finally
         {
@@ -145,7 +172,7 @@ internal static partial class MarkupWriter
                     throw new ToolException("Could not add a markup to the PDF.");
             }
             SetRect(annot, all, width);
-            Finish(annot, null);
+            Finish(annot);
         }
         finally
         {
@@ -154,7 +181,8 @@ internal static partial class MarkupWriter
     }
 
     // ----- Text note / callout: Stamp with a white box, the text and the leader line -----
-    private static void AddNote(FpdfDocumentT document, FpdfPageT page, PageMap map, Markup m)
+    /// <summary>Adds the note and returns its annotation index on the page.</summary>
+    private static int AddNote(FpdfDocumentT document, FpdfPageT page, PageMap map, Markup m)
     {
         CheckBox(m, "A note has an invalid size.");
         if (string.IsNullOrWhiteSpace(m.Text) || m.Text.Length > MaxTextLength)
@@ -206,7 +234,8 @@ internal static partial class MarkupWriter
                 fpdf_edit.FPDFPageObjTransform(text, right.X, right.Y, -down.X, -down.Y, origin.X, origin.Y);
                 Append(annot, text);
             }
-            Finish(annot, m.Text);
+            Finish(annot);
+            return fpdf_annot.FPDFPageGetAnnotIndex(page, annot);
         }
         finally
         {
@@ -218,12 +247,10 @@ internal static partial class MarkupWriter
     private static FpdfAnnotationT Create(FpdfPageT page, int subtype) =>
         fpdf_annot.FPDFPageCreateAnnot(page, subtype) ?? throw new ToolException("Could not add a markup to the PDF.");
 
-    private static void Finish(FpdfAnnotationT annot, string? contents)
+    private static void Finish(FpdfAnnotationT annot)
     {
         fpdf_annot.FPDFAnnotSetFlags(annot, AnnotFlagPrint);
         SetString(annot, "M", $"D:{DateTime.UtcNow:yyyyMMddHHmmss}Z");
-        if (contents is not null)
-            SetString(annot, "Contents", contents);
     }
 
     private static void Append(FpdfAnnotationT annot, FpdfPageobjectT obj)

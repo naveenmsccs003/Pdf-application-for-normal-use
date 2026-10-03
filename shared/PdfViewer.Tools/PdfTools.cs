@@ -189,14 +189,7 @@ public static class PdfTools
                     var page = fpdfview.FPDF_LoadPage(document, pageMarkups.Key - 1);
                     try
                     {
-                        foreach (var markup in pageMarkups)
-                            MarkupWriter.Add(document, page, markup);
-
-                        // Rendering with annotations makes PDFium generate the appearance streams of
-                        // highlights, shapes and ink, so viewers that need them show the markups too.
-                        var bitmap = fpdfview.FPDFBitmapCreateEx(1, 1, (int)FPDFBitmapFormat.BGRA, IntPtr.Zero, 0);
-                        fpdfview.FPDF_RenderPageBitmap(bitmap, page, 0, 0, 1, 1, 0, 0x01);
-                        fpdfview.FPDFBitmapDestroy(bitmap);
+                        MarkupWriter.AddAll(document, page, pageMarkups);
                     }
                     finally
                     {

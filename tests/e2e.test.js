@@ -767,6 +767,9 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         check('saved copy has standard annotations (Square, Circle, Ink, Stamp)',
             ['Square', 'Circle', 'Ink', 'Stamp'].every(t => new RegExp('/Subtype\\s*/' + t + '\\b').test(raw)) &&
             (raw.match(/\/InkList/g) || []).length === 3, ['Square', 'Circle', 'Ink', 'Stamp'].filter(t => !new RegExp('/Subtype\\s*/' + t + '\\b').test(raw)));
+        const unused = [...raw.matchAll(/(\d+) 0 obj\b/g)].map(m => m[1]).filter(n => !new RegExp('\\b' + n + ' 0 R\\b').test(raw));
+        check('saved notes keep their text, no unused objects (popup appearances) in the copy',
+            raw.includes('/Contents(Check column C3)') && raw.includes('/Contents(B12 lap 50d)') && unused.length === 0, unused);
         if (saved) {
             await (await page.$('.toolbar input[type=file]')).uploadFile(path.join(DOWNLOADS, 'one-page-highlighted.pdf'));
             await sleep(300); await settle(); await click('Actual size');
