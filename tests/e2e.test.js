@@ -813,7 +813,52 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.click('#ribbon-markup button[aria-label="Rectangle"]'); await sleep(100);
     await page.click('#ribbon-tab-file'); await sleep(100);
     check('ribbon: the markup tool stays active on another tab', (await state()).status.startsWith('Rectangle:'));
-    await page.keyboard.press('Escape'); await sleep(100); await click('Fit Page');
+    await page.keyboard.press('Escape'); await sleep(100);
+
+    // ===== More colours: any colour for markups =====
+    const picker = () => page.evaluate(() => ({
+        open: !!document.querySelector('.color-popover'),
+        focused: document.activeElement && document.activeElement.className.split(' ')[0],
+        hex: document.querySelector('.color-hex') ? document.querySelector('.color-hex').value : null,
+        presets: document.querySelectorAll('[aria-label="Preset colours"] .color-cell').length,
+        recent: [...document.querySelectorAll('[aria-label="Recent colours"] .color-cell')].map(c => c.title),
+        custom: document.querySelector('.color-more').classList.contains('is-active')
+    }));
+    const lastStroke = () => page.$$eval('.markup-layer g.markup', gs => gs.length ? gs[gs.length - 1].getAttribute('stroke') : null);
+    await page.click('#ribbon-tab-markup'); await sleep(100); await click('Rectangle');
+    await page.click('button[aria-label="More colours"]'); await sleep(200); let cp = await picker();
+    check('More colours: opens with the current colour, 72 presets, cursor in the colour square',
+        cp.open && cp.hex === '#e01b24' && cp.presets === 72 && cp.focused === 'color-sv', cp);
+    const svBox = await (await page.$('.color-sv')).boundingBox();
+    await page.mouse.click(svBox.x + svBox.width / 2, svBox.y + svBox.height / 4); await sleep(100); cp = await picker();
+    check('More colours: clicking the square sets saturation and brightness', cp.hex === '#bf6064' && cp.custom, cp);
+    await page.$eval('.color-hue', e => { e.value = 120; e.dispatchEvent(new Event('input', { bubbles: true })); }); await sleep(100); cp = await picker();
+    check('More colours: hue slider changes the hue', cp.hex === '#60bf60', cp);
+    await page.focus('.color-sv'); await page.keyboard.down('Shift'); await page.keyboard.press('ArrowUp'); await page.keyboard.up('Shift'); await sleep(100); cp = await picker();
+    check('More colours: arrow keys adjust the square (Shift: 10 steps)', cp.hex === '#6cd96c', cp);
+    await page.click('.color-hex', { clickCount: 3 }); await page.keyboard.type('#zz'); await sleep(100);
+    check('More colours: an invalid hex code is marked and ignored', await page.$eval('.color-hex', e => e.classList.contains('is-invalid')) && (await picker()).custom);
+    await page.click('.color-hex', { clickCount: 3 }); await page.keyboard.type('#f80'); await sleep(100);
+    await page.keyboard.press('Escape'); await sleep(150); cp = await picker(); s = await state();
+    check('More colours: Esc closes the pop-up but keeps the drawing tool', !cp.open && cp.focused === 'tool' && s.status.startsWith('Rectangle:'), [cp, s.status]);
+    await drag(100, 100, 250, 180);
+    check('More colours: shape drawn in the typed colour (#f80)', await lastStroke() === '#ff8800', await lastStroke());
+    await page.click('button[aria-label="More colours"]'); await sleep(200); cp = await picker();
+    check('More colours: the colour is listed under Recent', cp.recent[0] === '#ff8800', cp.recent);
+    await page.click('[aria-label="Preset colours"] .color-cell:nth-child(9)'); await sleep(100);
+    const presetHex = (await picker()).hex;
+    await page.mouse.click(5, (await page.evaluate(() => innerHeight)) - 60); await sleep(150);
+    check('More colours: a click outside closes the pop-up', !(await picker()).open);
+    await drag(300, 100, 400, 180);
+    check('More colours: shape drawn in the preset colour', await lastStroke() === presetHex, [await lastStroke(), presetHex]);
+    await page.click('.color-swatch[aria-label="Red"]'); await sleep(100);
+    check('More colours: picking a quick swatch leaves custom colours', !(await picker()).custom);
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('More colours: custom colours save into the PDF copy', /with 2 markups/.test(s.status), s.status);
+    await click('Clear Markups'); await page.keyboard.press('Escape'); await sleep(100); await click('Fit Page');
 
     // ===== Side panels =====
     await click('Thumbnails panel'); await click('Markups panel'); s = await state();

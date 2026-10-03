@@ -340,6 +340,8 @@
                             ng-class="{'is-active': vm.markupColor === c.value}" aria-checked="{{ vm.markupColor === c.value }}"
                             aria-label="{{ c.name }}" title="Markup colour: {{ c.name }}" ng-attr-style="--swatch: {{ c.value }}"></button>
                 </div>
+                <markup-color-picker color="vm.markupColor" basics="vm.markupColors" disabled="!vm.hasDocument()"
+                                     on-pick="vm.setMarkupColor(color)"></markup-color-picker>
             </div>
             <span class="ribbon-caption">Colour</span>
         </div>

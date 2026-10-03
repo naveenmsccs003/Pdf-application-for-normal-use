@@ -74,6 +74,9 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
   - **Navigation**: first / previous / page / next / last; Find
   - **Markup**: Pan, Highlight; shapes (rectangle, ellipse, cloud, line, arrow, freehand); text note, callout;
     colour; Remove, Clear all, Save copy
+  - **Colour**: four quick colours, or **More colours** for any colour (16.7 million): a saturation/brightness
+    square, hue slider and hex code box (`#f80` or `#ff8800`), 72 presets, and the last 10 custom colours
+    (remembered in this browser / app). Saved copies keep the exact colour.
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
 - **Document tab** with the file name and a close button
