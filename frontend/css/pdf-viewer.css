@@ -555,6 +555,8 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 
 .interaction-layer { z-index: 1; }
 .interaction-layer.is-drawing { cursor: crosshair; touch-action: none; }
+.interaction-layer.is-pan { cursor: grab; }
+.interaction-layer.is-panning { cursor: grabbing; }
 
 .highlight-layer {
     z-index: 2;

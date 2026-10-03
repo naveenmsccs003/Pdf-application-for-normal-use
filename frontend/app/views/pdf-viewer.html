@@ -1,6 +1,7 @@
 <!-- Icon set (stroke icons, 24x24) -->
 <svg class="icon-sprite" aria-hidden="true" focusable="false">
     <symbol id="i-open" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H7.5a2 2 0 0 0-1.9 1.4L3 19V7z"/><path d="M3 19l2.6-7.6A2 2 0 0 1 7.5 10H22l-2.7 8.1a1.5 1.5 0 0 1-1.4.9H3z"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11.5v-8a1.5 1.5 0 0 1 3 0V12"/><path d="M14 5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M17 8.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-2a6 6 0 0 1-4.9-2.6L4.4 14.6a1.5 1.5 0 0 1 2.3-1.9L8 14"/></symbol>
     <symbol id="i-highlight" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L10 18H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h16"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
     <symbol id="i-clear" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 17l-3-3 9-9 6 6-6 6H7z"/><path d="M10 8l6 6"/></symbol>
@@ -127,6 +128,11 @@
     </div>
 
     <div class="tool-group" role="group" aria-label="Markup tools">
+        <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
+                ng-class="{'is-active': vm.hasDocument() && !vm.highlightMode}" aria-pressed="{{ vm.hasDocument() && !vm.highlightMode }}"
+                aria-label="Pan" title="Pan: drag the page to move around (middle mouse button or hold Space in any tool)">
+            <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
+        </button>
         <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.toggleHighlightMode()" ng-disabled="!vm.hasDocument()"
                 ng-class="{'is-active': vm.highlightMode}" aria-pressed="{{ vm.highlightMode }}" aria-label="Highlight"
                 title="Highlight: drag over the page (Esc to exit)">

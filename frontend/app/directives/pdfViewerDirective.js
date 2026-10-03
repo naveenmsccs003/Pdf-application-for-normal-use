@@ -5,12 +5,13 @@
      * Displays one PDF page using stacked layers:
      *   1. canvas layer       - PDF rendering (pdfService), never modified
      *   2. search layer       - find matches (FindController), positioned from PDF-unit coordinates
-     *   3. interaction layer  - mouse/touch input for drawing and selecting highlights
+     *   3. interaction layer  - mouse/touch input: pan (drag the page), draw and select highlights
      *   4. highlight layer    - transparent overlay, positioned from PDF-unit coordinates
      */
     angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'VIEWER_CONFIG',
         function (pdfService, VIEWER_CONFIG) {
             var MIN_HIGHLIGHT_PX = 4;       // smaller drags count as a click
+            var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var RESIZE_DEBOUNCE_MS = 150;
 
             return {
@@ -41,7 +42,7 @@
                     '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
                     '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}"></div>' +
                     '    </div>' +
-                    '    <div class="interaction-layer" ng-class="{\'is-drawing\': highlightMode}"></div>' +
+                    '    <div class="interaction-layer" ng-class="{\'is-drawing\': highlightMode && !spacePan, \'is-pan\': !highlightMode || spacePan}"></div>' +
                     '    <div class="highlight-layer">' +
                     '      <div class="highlight" ng-repeat="h in highlights | filter:{pageNumber: rendered.page}:true track by h.id"' +
                     '           ng-class="{\'is-selected\': h.id === selectedId}"' +
@@ -220,6 +221,74 @@
                         return null;
                     }
 
+                    // ----- Pan: drag the page with the mouse to move around a zoomed-in drawing -----
+                    // Pan is the default tool. In highlight mode, hold Space or use the middle button.
+                    // Touch keeps the browser's own finger scrolling.
+                    var pan = null;
+                    scope.spacePan = false;
+
+                    function wantsPan(event) {
+                        if (event.button === 1) { return true; }
+                        return event.button === 0 && event.pointerType !== 'touch' && (!scope.highlightMode || scope.spacePan);
+                    }
+
+                    function onSpace(event) {
+                        if (event.key !== ' ' && event.code !== 'Space') { return; }
+                        var tag = event.target && event.target.tagName;
+                        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') { return; }
+                        var down = event.type === 'keydown';
+                        if (down && scope.highlightMode) { event.preventDefault(); }   // do not scroll the page instead
+                        if (scope.spacePan !== down) {
+                            scope.$evalAsync(function () { scope.spacePan = down; });
+                        }
+                    }
+                    function onBlur() {
+                        if (scope.spacePan) { scope.$evalAsync(function () { scope.spacePan = false; }); }
+                    }
+                    document.addEventListener('keydown', onSpace);
+                    document.addEventListener('keyup', onSpace);
+                    window.addEventListener('blur', onBlur);
+
+                    interactionLayer.addEventListener('pointerdown', function (event) {
+                        if (!scope.rendered.page || !wantsPan(event)) { return; }
+                        pan = { x: event.clientX, y: event.clientY, left: scrollEl.scrollLeft, top: scrollEl.scrollTop,
+                                moved: false, click: event.button === 0 };
+                        interactionLayer.setPointerCapture(event.pointerId);
+                        interactionLayer.classList.add('is-panning');
+                        event.preventDefault();     // no text selection, no middle-button autoscroll
+                        if (document.activeElement && document.activeElement !== document.body) {
+                            document.activeElement.blur();
+                        }
+                        event.stopImmediatePropagation();
+                    });
+
+                    interactionLayer.addEventListener('pointermove', function (event) {
+                        if (!pan) { return; }
+                        var dx = event.clientX - pan.x, dy = event.clientY - pan.y;
+                        if (!pan.moved && Math.abs(dx) < MIN_PAN_PX && Math.abs(dy) < MIN_PAN_PX) { return; }
+                        pan.moved = true;
+                        scrollEl.scrollLeft = pan.left - dx;
+                        scrollEl.scrollTop = pan.top - dy;
+                        event.stopImmediatePropagation();
+                    });
+
+                    function endPan(event, cancelled) {
+                        var p = pan;
+                        pan = null;
+                        interactionLayer.classList.remove('is-panning');
+                        event.stopImmediatePropagation();
+                        if (!cancelled && p.click && !p.moved) {
+                            // A click without moving still selects a highlight (or clears the selection).
+                            var hit = highlightAt(pointFromEvent(event));
+                            scope.$apply(function () { scope.onSelectHighlight({ id: hit ? hit.id : null }); });
+                        }
+                    }
+                    interactionLayer.addEventListener('pointerup', function (event) { if (pan) { endPan(event, false); } });
+                    interactionLayer.addEventListener('pointercancel', function (event) { if (pan) { endPan(event, true); } });
+                    // Middle-button clicks must not open links or paste (Linux) on the page.
+                    interactionLayer.addEventListener('auxclick', function (event) { if (event.button === 1) { event.preventDefault(); } });
+
+                    // ----- Draw / select highlights -----
                     interactionLayer.addEventListener('pointerdown', function (event) {
                         if (event.button !== 0 || !scope.rendered.page) {
                             return;
@@ -278,6 +347,9 @@
                     scope.$on('$destroy', function () {
                         resizeObserver.disconnect();
                         clearTimeout(resizeTimer);
+                        document.removeEventListener('keydown', onSpace);
+                        document.removeEventListener('keyup', onSpace);
+                        window.removeEventListener('blur', onBlur);
                     });
                 }
             };

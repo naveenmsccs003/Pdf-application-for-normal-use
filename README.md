@@ -67,7 +67,7 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Menu bar**: **File** (Open, Close PDF, Save copy with highlights, Recent files, Clear recent files),
   **Edit** (Find, Find next, Find previous) and **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
   through and between menus, Esc closes them
-- **Tool bar**: Open PDF, Highlight, Remove, Clear Highlights, Fit Page, Fit Width, panel switches
+- **Tool bar**: Open PDF, Pan, Highlight, Remove, Clear Highlights, Fit Page, Fit Width, panel switches
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
 - **Document tab** with the file name and a close button
@@ -106,6 +106,9 @@ Notes:
 
 - Open a PDF (validated in the browser and on the server: `.pdf` only, non-empty, max 50 MB, real `%PDF-` header)
 - Page navigation: Prev / Next, type a page number, or ← / → keys
+- **Pan** (hand tool, the default): drag the page with the mouse to move around a zoomed-in drawing.
+  The middle mouse button pans in any tool, and holding **Space** pans while in Highlight mode.
+  A click without moving still selects a highlight. On touch screens, scroll with your finger as usual.
 - Zoom in / out (25%–300%), or set any percentage in that range with **Zoom > Custom zoom…** (a small dialog) or by
   typing it into the zoom box in the status bar (values outside are clamped)
 - Shortcuts (Cmd on macOS): **Ctrl+O** open, **Ctrl+S** save a copy with highlights, **Ctrl+=** / **Ctrl+−**
@@ -230,7 +233,7 @@ Covered: invalid / empty / oversized / corrupt / truncated / password-protected 
 a 45 MB PDF, landscape, rotated and mixed page sizes, image-based and form PDFs, a real-world PDF
 (pdf.js test corpus, downloaded by `npm run fixtures`), navigation, zoom limits, Fit Page / Fit Width,
 highlight create / select / remove / clear and their positions after zoom, fit, page change and window resize,
-menu bar, shortcuts, custom zoom, find (as you type, next / previous, match case, whole words, rotated pages,
+menu bar, shortcuts, custom zoom, pan (drag, Space, middle button), find (as you type, next / previous, match case, whole words, rotated pages,
 1,000-match limit; web and desktop), recent files (web and desktop, including moved files and Clear),
 render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.

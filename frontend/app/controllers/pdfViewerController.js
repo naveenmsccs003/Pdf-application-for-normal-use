@@ -421,6 +421,11 @@
                 vm.status = vm.highlightMode ? 'Highlight mode: drag over the page to highlight.' : pageStatus();
             };
 
+            /** Pan tool (the default): drag the page to move around it. */
+            vm.selectPanTool = function () {
+                if (vm.highlightMode) { vm.toggleHighlightMode(); }
+            };
+
             vm.addHighlight = function (pageNumber, rect) {
                 var highlight = highlightService.add(pageNumber, rect);
                 vm.selectedHighlightId = highlight.id;

@@ -400,6 +400,36 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await click('Next page'); s = await state(); check('Clear Highlights also cleared other pages', s.highlights.length === 0);
     await click('Highlight');
 
+    // ===== Pan (hand tool) =====
+    const scrollPos = () => page.$eval('.viewer-scroll', el => ({ left: el.scrollLeft, top: el.scrollTop }));
+    const panPressed = () => page.$eval('button[aria-label="Pan"]', b => b.getAttribute('aria-pressed') === 'true');
+    await typeZoom('300');
+    check('Pan is the default tool', await panPressed() && await page.$eval('.interaction-layer', el => getComputedStyle(el).cursor === 'grab'));
+    let p0 = await scrollPos();
+    await drag(400, 400, 250, 300); let p1 = await scrollPos(); s = await state();
+    check('Pan: dragging the page moves around it', near(p1.left - p0.left, 150, 3) && near(p1.top - p0.top, 100, 3) && s.highlights.length === 0, [p0, p1]);
+    await click('Highlight');
+    check('Highlight tool turns Pan off', !(await panPressed()));
+    await page.$eval('button[aria-label="Highlight"]', b => b.blur());
+    p0 = await scrollPos();
+    await page.keyboard.down('Space'); await drag(400, 400, 300, 350); await page.keyboard.up('Space'); await sleep(100);
+    p1 = await scrollPos(); s = await state();
+    check('Pan: hold Space to pan in highlight mode', near(p1.left - p0.left, 100, 3) && near(p1.top - p0.top, 50, 3) && s.highlights.length === 0, [p0, p1, s.highlights.length]);
+    await drag(400, 400, 500, 450); s = await state();
+    check('Highlight mode still draws after Space is released', s.highlights.length === 1, s.highlights.length);
+    p0 = await scrollPos();
+    const lb = await layerBox();
+    await page.mouse.move(lb.x + 400, lb.y + 400); await page.mouse.down({ button: 'middle' });
+    await page.mouse.move(lb.x + 330, lb.y + 360, { steps: 4 }); await page.mouse.up({ button: 'middle' }); await sleep(150);
+    p1 = await scrollPos(); s = await state();
+    check('Pan: middle mouse button pans in any tool', near(p1.left - p0.left, 70, 3) && near(p1.top - p0.top, 40, 3) && s.highlights.length === 1, [p0, p1]);
+    await click('Pan'); s = await state();
+    check('Pan button leaves highlight mode', await panPressed() && !s.status.startsWith('Highlight mode'), s.status);
+    const hp = s.highlights[0];
+    await clickAt(hp.l + hp.w / 2, hp.t + hp.h / 2); s = await state();
+    check('Pan: a click without moving still selects a highlight', s.highlights[0].sel, s.highlights[0]);
+    await click('Clear Highlights'); await click('Fit Page');
+
     // ===== Render failure =====
     // Simulate a drawing failure part-way through rendering the next page (thrown once).
     await page.evaluate(() => {
