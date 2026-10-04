@@ -99,13 +99,30 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                 }
                 case "save-report":
                 {
-                    // The markup report, written by the UI (CSV or a printable HTML page).
+                    // A report built by the UI: CSV or a printable HTML page as text, or PDF / Excel written here.
                     var (path, name) = Single(inputs);
-                    var format = options.GetProperty("format").GetString() == "html" ? "html" : "csv";
+                    var requested = options.GetProperty("format").GetString();
+                    if (requested is "pdf" or "xlsx")
+                    {
+                        var report = options.GetProperty("report").Deserialize<ReportTable>(JsonSerializerOptions.Web)
+                                     ?? throw new ToolException("There is no report to save.");
+                        ReportWriter.Validate(report);
+                        var fileName = options.TryGetProperty("name", out var n) ? n.GetString() : null;
+                        var target = AskSaveFile(dialogs, "Save report", path, "." + requested, inputs, fileName ?? $"{BaseName(name)}-report");
+                        if (target is null) return Cancelled;
+                        await WriteFileAsync(target, stream =>
+                        {
+                            if (requested == "pdf") ReportWriter.WritePdf(report, stream); else ReportWriter.WriteXlsx(report, stream);
+                            return 0;
+                        });
+                        return Done($"Saved {Path.GetFileName(target)}.");
+                    }
+                    var format = requested == "html" ? "html" : "csv";
                     var content = options.GetProperty("content").GetString() ?? "";
                     if (content.Length > MaxReportLength)
                         throw new ToolException("The report is too large.");
-                    var output = AskSaveFile(dialogs, "Save markup report", path, "." + format, inputs, $"{BaseName(name)}-markups");
+                    var suggested = options.TryGetProperty("name", out var nm) ? nm.GetString() : null;
+                    var output = AskSaveFile(dialogs, "Save report", path, "." + format, inputs, suggested ?? $"{BaseName(name)}-markups");
                     if (output is null) return Cancelled;
                     // CSV with a byte order mark, so Excel reads the text as UTF-8.
                     await WriteFileAsync(output, stream =>
@@ -131,14 +148,18 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                     var (path, name) = Single(inputs);
                     var highlights = options.GetProperty("highlights").Deserialize<List<Markup?>>(JsonSerializerOptions.Web)
                         ?.OfType<Markup>().ToList() ?? [];
-                    if (highlights.Count == 0)
+                    var annotated = ReadAnnotatedOptions(options);
+                    if (highlights.Count == 0 && !annotated.Flatten && annotated.Pages is null)
                         throw new ToolException("There are no markups to save.");
 
                     // A copy: the open document is never overwritten (enforced in AskSaveFile).
-                    var output = AskSaveFile(dialogs, "Save a copy with markups", path, ".pdf", inputs, $"{BaseName(name)}-highlighted");
+                    var suffix = annotated.Flatten ? "-flattened" : "-highlighted";
+                    var output = AskSaveFile(dialogs, annotated.Flatten ? "Save a flattened copy" : "Save a copy with markups", path, ".pdf",
+                        inputs, $"{BaseName(name)}{suffix}");
                     if (output is null) return Cancelled;
-                    var count = await WriteFileAsync(output, stream => PdfTools.SaveWithHighlights(path, highlights, stream));
-                    return Done($"Saved {Path.GetFileName(output)} with {count} markup{(count == 1 ? "" : "s")}.");
+                    var count = await WriteFileAsync(output, stream => PdfTools.SaveAnnotated(path, highlights, annotated, stream));
+                    return Done($"Saved {Path.GetFileName(output)} with {count} markup{(count == 1 ? "" : "s")}" +
+                                (annotated.Flatten ? " (flattened)." : "."));
                 }
                 default:
                     throw new ToolException("Unknown tool.");
@@ -261,6 +282,11 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                 return fallback;
         }
     }
+
+    /// <summary>"flatten" and "pages" (1-based page numbers) of a save or print request.</summary>
+    public static AnnotatedOptions ReadAnnotatedOptions(JsonElement options) => new(
+        options.TryGetProperty("flatten", out var f) && f.ValueKind == JsonValueKind.True,
+        options.TryGetProperty("pages", out var p) && p.ValueKind == JsonValueKind.Array ? p.Deserialize<List<int>>() : null);
 
     private static List<PageSpec> ReadLayout(JsonElement element) =>
         element.GetProperty("layout").Deserialize<List<PageSpec>>(JsonSerializerOptions.Web)

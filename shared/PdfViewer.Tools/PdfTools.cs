@@ -3,6 +3,9 @@ using PDFiumCore;
 
 namespace PdfViewer.Tools;
 
+/// <summary>How an annotated copy is written: flattened, and only some pages (1-based, in order; null = all).</summary>
+public sealed record AnnotatedOptions(bool Flatten = false, IReadOnlyList<int>? Pages = null);
+
 /// <summary>Merge, split, page export and markup saving with PDFium. Inputs are read from disk.</summary>
 public static class PdfTools
 {
@@ -167,9 +170,18 @@ public static class PdfTools
     /// which other PDF viewers show, print and can edit. The source file is not changed.
     /// Returns the number of markups written.
     /// </summary>
-    public static int SaveWithHighlights(string path, IReadOnlyList<Markup> markups, Stream output)
+    public static int SaveWithHighlights(string path, IReadOnlyList<Markup> markups, Stream output) =>
+        SaveAnnotated(path, markups, new AnnotatedOptions(), output);
+
+    /// <summary>
+    /// Writes a copy of the PDF with the markups as annotations. <see cref="AnnotatedOptions.Flatten"/> makes every
+    /// annotation and form field (the markups and the PDF's own) part of the page content, so it can no longer be
+    /// edited or hidden; <see cref="AnnotatedOptions.Pages"/> keeps only those pages, in that order.
+    /// Returns the number of markups written.
+    /// </summary>
+    public static int SaveAnnotated(string path, IReadOnlyList<Markup> markups, AnnotatedOptions options, Stream output)
     {
-        if (markups.Count == 0)
+        if (markups.Count == 0 && !options.Flatten && options.Pages is null)
             throw new ToolException("There are no markups to save.");
         if (markups.Count > MaxHighlights)
             throw new ToolException($"Too many markups (maximum {MaxHighlights}).");
@@ -181,15 +193,32 @@ public static class PdfTools
             try
             {
                 var pageCount = fpdfview.FPDF_GetPageCount(document);
-                foreach (var pageMarkups in markups.GroupBy(m => m.PageNumber))
-                {
-                    if (pageMarkups.Key < 1 || pageMarkups.Key > pageCount)
-                        throw new ToolException("A markup refers to a page that does not exist.");
+                var pages = options.Pages;
+                if (pages is not null && (pages.Count == 0 || pages.Any(p => p < 1 || p > pageCount)))
+                    throw new ToolException($"Choose pages from 1 to {pageCount}.");
+                var wanted = pages is null ? null : new HashSet<int>(pages);
 
-                    var page = fpdfview.FPDF_LoadPage(document, pageMarkups.Key - 1);
+                var byPage = markups.GroupBy(m => m.PageNumber).ToDictionary(g => g.Key, g => g.ToList());
+                if (byPage.Keys.Any(p => p < 1 || p > pageCount))
+                    throw new ToolException("A markup refers to a page that does not exist.");
+
+                // Pages that are written and have markups to add or (flattening) annotations to merge.
+                var toVisit = options.Flatten
+                    ? Enumerable.Range(1, pageCount).Where(p => wanted is null || wanted.Contains(p))
+                    : byPage.Keys.Where(p => wanted is null || wanted.Contains(p)).OrderBy(p => p);
+                var written = 0;
+                foreach (var pageNumber in toVisit)
+                {
+                    var page = fpdfview.FPDF_LoadPage(document, pageNumber - 1);
                     try
                     {
-                        MarkupWriter.AddAll(document, page, pageMarkups);
+                        if (byPage.TryGetValue(pageNumber, out var pageMarkups))
+                        {
+                            MarkupWriter.AddAll(document, page, pageMarkups);
+                            written += pageMarkups.Count;
+                        }
+                        if (options.Flatten)
+                            fpdf_flatten.FPDFPageFlatten(page, FlattenForPrint);
                     }
                     finally
                     {
@@ -197,8 +226,25 @@ public static class PdfTools
                     }
                 }
 
-                Pdfium.Save(document, output);
-                return markups.Count;
+                if (pages is null)
+                {
+                    Pdfium.Save(document, output);
+                    return written;
+                }
+
+                // Only some pages: write the whole annotated copy aside, then take those pages from it.
+                var temp = Path.Combine(Path.GetTempPath(), $"pdf-viewer-annotated-{Guid.NewGuid():N}.pdf");
+                try
+                {
+                    using (var stream = File.Create(temp))
+                        Pdfium.Save(document, stream);
+                    PageEditor.Rearrange(temp, pages.Select(p => new PageSpec(0, p)).ToList(), [], output);
+                    return written;
+                }
+                finally
+                {
+                    File.Delete(temp);
+                }
             }
             finally
             {
@@ -206,6 +252,8 @@ public static class PdfTools
             }
         }
     }
+
+    private const int FlattenForPrint = 1;   // FLAT_PRINT: annotations as they print
 
     /// <summary>Extracts the text of each page as lines.</summary>
     public static List<string[]> ExtractText(string path, CancellationToken ct = default)

@@ -320,7 +320,7 @@ async function startHost() {
         await click('Compare with a revision'); await sleep(500); rvs = await revisionState();
         check('desktop: cancelling the open dialog keeps the comparison', rvs.regions === 2 && rvs.file === 'one-page.pdf', rvs);
         await click('Cloud changes'); await sleep(300);
-        await page.click('button[aria-label="Markup report"]'); await sleep(200);
+        await page.click('#ribbon-revision button[aria-label="Markup report"]'); await sleep(200);
         const reportPath = path.join(outDir, 'report');
         const saveReport = async (dialog, button) => {
             const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);

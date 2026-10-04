@@ -186,15 +186,33 @@
                 });
             }
 
-            /** Saves a copy of the open document with the markups as PDF annotations. */
-            function saveHighlights(source, fileName, highlights) {
+            /**
+             * Saves a copy of the open document with the markups as PDF annotations. `options`: { flatten (make every
+             * annotation and form field part of the page), pages ([1-based page numbers] to keep, in order) }.
+             */
+            function saveHighlights(source, fileName, highlights, options) {
+                options = options || {};
                 var payload = highlights.map(markupGeometry.toSaved);
+                var extra = { flatten: !!options.flatten, pages: options.pages || null };
                 if (desktopService.isDesktop) {
-                    return runDesktop('save-highlights', ['current'], { highlights: payload });
+                    return runDesktop('save-highlights', ['current'], angular.extend({ highlights: payload }, extra));
                 }
-                return post('save-highlights', { id: source.id, name: fileName, highlights: payload }).then(function (result) {
+                return post('save-highlights', angular.extend({ id: source.id, name: fileName, highlights: payload }, extra)).then(function (result) {
                     var count = result.headers('X-Highlight-Count');
-                    return 'Downloaded ' + result.name + ' with ' + count + ' markup' + (count === '1' ? '' : 's') + '.';
+                    return 'Downloaded ' + result.name + ' with ' + count + ' markup' + (count === '1' ? '' : 's') +
+                        (options.flatten ? ' (flattened)' : '') + '.';
+                });
+            }
+
+            /** The annotated copy as a Blob (for printing), without saving it anywhere. Same options as saveHighlights. */
+            function annotatedPdf(source, highlights, options) {
+                options = options || {};
+                var body = { highlights: highlights.map(markupGeometry.toSaved), flatten: !!options.flatten, pages: options.pages || null };
+                var url = desktopService.isDesktop ? 'api/local/' + pdfService.localToken() + '/annotated' : 'api/tools/save-highlights';
+                if (!desktopService.isDesktop) { body.id = source.id; body.name = 'print.pdf'; }
+                return $http.post(url, body, { responseType: 'blob' }).then(function (response) { return response.data; }, function (response) {
+                    if (response.status <= 0) { return $q.reject('Unable to reach the server. Please check that the application is running.'); }
+                    return readError(response.data).then($q.reject);
                 });
             }
 
@@ -213,14 +231,24 @@
             }
 
             /**
-             * Saves the markup report (`format` 'csv' or 'html'): a download on the web, the save dialog on desktop.
-             * CSV gets a byte order mark so Excel reads it as UTF-8.
+             * Saves a report: 'csv' or 'html' (`content`, made here), 'pdf' or 'xlsx' (`table`, written by the host;
+             * reportService.toHost). A download on the web, the save dialog on desktop. CSV gets a byte order mark so
+             * Excel reads it as UTF-8. `suffix` ends the file name (default "markups").
              */
-            function saveReport(fileName, format, content) {
-                if (desktopService.isDesktop) {
-                    return runDesktop('save-report', ['current'], { format: format, content: content });
+            function saveReport(fileName, format, content, table, suffix) {
+                var base = String(fileName || 'document').replace(/\.pdf$/i, '') + '-' + (suffix || 'markups');
+                if (format === 'pdf' || format === 'xlsx') {
+                    if (desktopService.isDesktop) {
+                        return runDesktop('save-report', ['current'], { format: format, report: table, name: base });
+                    }
+                    return post('report', { format: format, name: base, report: table }).then(function (result) {
+                        return 'Downloaded ' + result.name + '.';
+                    });
                 }
-                var name = String(fileName || 'document').replace(/\.pdf$/i, '') + '-markups.' + format;
+                if (desktopService.isDesktop) {
+                    return runDesktop('save-report', ['current'], { format: format, content: content, name: base });
+                }
+                var name = base + '.' + format;
                 var blob = format === 'csv'
                     ? new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8' })
                     : new Blob([content], { type: 'text/html;charset=utf-8' });
@@ -232,6 +260,7 @@
                 isDesktop: desktopService.isDesktop,
                 saveHighlights: saveHighlights,
                 saveReport: saveReport,
+                annotatedPdf: annotatedPdf,
                 extractPages: extractPages,
                 saveBlob: saveBlob,
                 validateFile: pdfService.validateFile,

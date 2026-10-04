@@ -5,10 +5,10 @@
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
         'recentFilesService', 'markupGeometry', 'scaleService', 'compareService', 'revisionService', 'reportService',
-        'toolsService', 'pagesService', 'customMarkupService', 'VIEWER_CONFIG', '$q',
+        'toolsService', 'pagesService', 'customMarkupService', 'printService', 'VIEWER_CONFIG', '$q',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
                   recentFilesService, markupGeometry, scaleService, compareService, revisionService, reportService,
-                  toolsService, pagesService, customMarkupService, VIEWER_CONFIG, $q) {
+                  toolsService, pagesService, customMarkupService, printService, VIEWER_CONFIG, $q) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -520,7 +520,8 @@
             function onCustomZoomKey(event) {
                 if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog &&
                     !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog && !vm.unitsDialog &&
-                    !vm.stampDialog && !vm.customDialog && !vm.customSaveDialog && !vm.propertiesDialog) { return; }
+                    !vm.stampDialog && !vm.customDialog && !vm.customSaveDialog && !vm.propertiesDialog &&
+                    !vm.saveAnnotatedDialog && !vm.printDialog) { return; }
                 // The colour pop-up (Edit markup dialog) handles its own keys, Esc included.
                 var popover = $document[0].querySelector('.color-popover');
                 if (popover && popover.contains(event.target)) { return; }
@@ -532,6 +533,8 @@
                         if (!vm.pagesDialog || !vm.pagesDialog.busy) { vm.pagesDialog = null; }
                         vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null; vm.unitsDialog = null;
                         vm.stampDialog = null; vm.customDialog = null; vm.customSaveDialog = null; vm.propertiesDialog = null;
+                        if (!vm.saveAnnotatedDialog || !vm.saveAnnotatedDialog.busy) { vm.saveAnnotatedDialog = null; }
+                        if (!vm.printDialog || !vm.printDialog.busy) { vm.printDialog = null; }
                     });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
@@ -707,7 +710,8 @@
                 vm.pagesDialog = {
                     op: op, pages: String(vm.currentPage), at: vm.currentPage,
                     position: op === 'move' ? 'before' : 'after', degrees: String(degrees || 90),
-                    count: 1, size: 'a4', orientation: 'portrait', file: null, filePages: '', error: '', busy: false
+                    count: 1, size: 'a4', orientation: 'portrait', file: null, filePages: '', error: '', busy: false,
+                    withMarkups: vm.highlights.length > 0
                 };
                 $timeout(function () {
                     var input = $document[0].getElementById(op === 'blank' || op === 'insert' ? 'pages-at-input' : 'pages-input');
@@ -783,7 +787,11 @@
 
                 if (op === 'extract') {
                     d.busy = true;
-                    toolsService.extractPages(vm.source, vm.fileName, built.layout).then(function (message) {
+                    // With markups: an annotated copy of just those pages; without: the pages as they are.
+                    var extracted = d.withMarkups && vm.highlights.length
+                        ? toolsService.saveHighlights(vm.source, vm.fileName, vm.highlights, { pages: o.pages })
+                        : toolsService.extractPages(vm.source, vm.fileName, built.layout);
+                    extracted.then(function (message) {
                         vm.status = message || 'Not saved.';
                         vm.pagesDialog = null;
                     }, function (message) {
@@ -887,7 +895,7 @@
 
             // ----- Ribbon: tool categories in the toolbar -----
             vm.ribbonTabs = [
-                { id: 'file', label: 'File' }, { id: 'pages', label: 'Pages' }, { id: 'zoom', label: 'Zoom' },
+                { id: 'file', label: 'File' }, { id: 'pages', label: 'Pages' }, { id: 'output', label: 'Output' }, { id: 'zoom', label: 'Zoom' },
                 { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' },
                 { id: 'measure', label: 'Measure' }, { id: 'review', label: 'Review' }, { id: 'revision', label: 'Revision' }
             ];
@@ -896,8 +904,10 @@
             vm.setRibbonTab = function (id) { vm.ribbonTab = id; };
 
             /** Tab list keys (WAI-ARIA tabs): arrows, Home and End move to another tab and show it. */
-            vm.onRibbonTabKey = function (event, index) {
+            vm.onRibbonTabKey = function (event) {
                 var count = vm.ribbonTabs.length;
+                // From the selected tab, not the one the key came from: fast key presses can arrive before focus moves.
+                var index = vm.ribbonTabs.findIndex(function (t) { return t.id === vm.ribbonTab; });
                 var moves = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
                 if (!(event.key in moves)) { return; }
                 event.preventDefault();
@@ -1495,20 +1505,73 @@
                 });
             };
 
-            // ----- Markup report -----
-            vm.reportDialog = null;     // { revision, rows, summary, busy } while open
+            // ----- Reports: markup list, review report, change report -----
+            vm.reportDialog = null;     // { kind, revision, table, totalText, busy, progress, error } while open
+            vm.reportKinds = [
+                { value: 'markups', label: 'Markup list' }, { value: 'review', label: 'Review report' }, { value: 'changes', label: 'Change report' }
+            ];
+            var REPORT_SUFFIX = { markups: 'markups', review: 'review', changes: 'changes' };
+            var MAX_COMPARE_PAGES = 500;
 
-            vm.openReport = function () {
+            vm.openReport = function (kind) {
                 if (!vm.hasDocument()) { return; }
-                vm.reportDialog = { revision: '', rows: [], summary: null, busy: false };
+                vm.reportDialog = { kind: kind || 'markups', revision: '', table: null, totalText: '', busy: false, progress: '', error: '' };
                 vm.updateReport();
             };
 
+            function reportInfo(d) {
+                var revision = d.revision === '-' ? 'No revision' : d.revision ? 'Revision ' + d.revision : '';
+                return { fileName: vm.fileName, revision: revision, revisionFilter: d.revision, compareName: vm.compare.fileName };
+            }
+
             vm.updateReport = function () {
                 var d = vm.reportDialog;
-                d.rows = reportService.rows(vm.highlights, d.revision);
-                d.summary = reportService.summary(d.rows);
+                if (!d) { return; }
+                d.error = '';
+                if (d.kind === 'changes') { buildChangeReport(d); return; }
+                d.table = d.kind === 'review' ? reportService.reviewTable(vm.highlights, reportInfo(d))
+                                              : reportService.markupTable(vm.highlights, reportInfo(d));
+                var noun = d.kind === 'review' ? 'review item' : 'markup';
+                var byType = d.table.summaries[0].items;
+                d.totalText = d.table.rows.length + ' ' + noun + (d.table.rows.length === 1 ? '' : 's') +
+                    byType.map(function (t) { return ' · ' + t.count + ' ' + t.name; }).join('');
             };
+
+            /** Compares every page with the open comparison (cached per page), then lists the changed areas. */
+            function buildChangeReport(d) {
+                d.table = null;
+                d.totalText = '';
+                if (!compareService.isOpen()) {
+                    d.error = 'Open the revision to compare with first: Revision tab > Compare.';
+                    return;
+                }
+                var count = Math.min(vm.pageCount, MAX_COMPARE_PAGES), pages = [];
+                d.busy = true;
+                var chain = $q.when();
+                for (var n = 1; n <= count; n++) {
+                    chain = chain.then(comparePage.bind(null, n));
+                }
+                chain.then(function () {
+                    if (vm.reportDialog !== d) { return; }
+                    d.table = reportService.changeTable(pages, vm.highlights, reportInfo(d));
+                    var changed = d.table.summaries[0].items[1].count;
+                    d.totalText = d.table.rows.length + ' change' + (d.table.rows.length === 1 ? '' : 's') + ' on ' + changed +
+                        ' of ' + count + ' page' + (count === 1 ? '' : 's') + (vm.pageCount > count ? ' (first ' + count + ' pages compared)' : '');
+                }, function (message) {
+                    if (vm.reportDialog === d) { d.error = typeof message === 'string' ? message : 'Unable to compare the pages.'; }
+                }).finally(function () {
+                    d.busy = false;
+                    d.progress = '';
+                });
+
+                function comparePage(n) {
+                    if (vm.reportDialog !== d) { return $q.reject('cancelled'); }
+                    d.progress = 'Comparing page ' + n + ' of ' + count + '…';
+                    return $q.all([compareService.comparePage(n), pdfService.getPageSize(n)]).then(function (both) {
+                        pages.push({ pageNumber: n, size: both[1], regions: both[0].regions || [], missing: !!both[0].missing });
+                    });
+                }
+            }
 
             vm.reportRevisions = function () {
                 var labels = [];
@@ -1516,17 +1579,84 @@
                 return labels.sort();
             };
 
+            /** Saves the report: 'csv', 'html' (printable), 'pdf' or 'xlsx' (Excel). */
             vm.exportReport = function (format) {
                 var d = vm.reportDialog;
-                if (!d || d.busy || !d.rows.length) { return; }
-                var revision = d.revision === '-' ? 'No revision' : d.revision ? 'Revision ' + d.revision : '';
-                var content = format === 'csv' ? reportService.toCsv(d.rows) : reportService.toHtml(d.rows, { fileName: vm.fileName, revision: revision });
+                if (!d || d.busy || !d.table || !d.table.rows.length) { return; }
+                var content = format === 'csv' ? reportService.toCsv(d.table) : format === 'html' ? reportService.toHtml(d.table) : null;
+                var table = format === 'pdf' || format === 'xlsx' ? reportService.toHost(d.table) : null;
                 d.busy = true;
-                toolsService.saveReport(vm.fileName, format, content).then(function (message) {
+                toolsService.saveReport(vm.fileName, format, content, table, REPORT_SUFFIX[d.kind]).then(function (message) {
                     vm.status = message || 'Not saved.';
                 }, function (message) {
                     showError(typeof message === 'string' ? message : 'Unable to save the report.');
                 }).finally(function () { d.busy = false; });
+            };
+
+            // ----- Output: save annotated / flattened PDF, print -----
+            vm.saveAnnotatedDialog = null;  // { flatten, scope, pages, withMarkups, busy, error } while open
+            vm.printDialog = null;          // { scope, pages, withMarkups, busy, progress, error } while open
+
+            vm.openSaveAnnotated = function (flatten) {
+                if (!vm.hasDocument()) { return; }
+                vm.saveAnnotatedDialog = { flatten: !!flatten, scope: 'all', pages: String(vm.currentPage), withMarkups: true, busy: false, error: '' };
+            };
+
+            /** The pages chosen in an output dialog: null for all of them; { error } when the range is wrong. */
+            function outputPages(d) {
+                if (d.scope === 'all') { return null; }
+                if (d.scope === 'current') { return [vm.currentPage]; }
+                var parsed = pagesService.parsePages(d.pages, vm.pageCount);
+                return parsed.error ? { error: parsed.error } : parsed.pages;
+            }
+
+            vm.applySaveAnnotated = function () {
+                var d = vm.saveAnnotatedDialog;
+                if (!d || d.busy) { return; }
+                var pages = outputPages(d);
+                if (pages && pages.error) { d.error = pages.error; return; }
+                var markups = d.withMarkups ? vm.highlights : [];
+                if (!markups.length && !d.flatten && !pages) { d.error = 'There are no markups to save; choose Flatten or some pages.'; return; }
+                d.busy = true;
+                d.error = '';
+                vm.status = d.flatten ? 'Saving a flattened copy…' : 'Saving a copy with markups…';
+                toolsService.saveHighlights(vm.source, vm.fileName, markups, { flatten: d.flatten, pages: pages }).then(function (message) {
+                    vm.status = message || 'Not saved.';
+                    if (vm.saveAnnotatedDialog === d) { vm.saveAnnotatedDialog = null; }
+                }, function (message) {
+                    d.error = typeof message === 'string' ? message : 'Unable to save the copy.';
+                    vm.status = d.error;
+                }).finally(function () { d.busy = false; });
+            };
+
+            vm.openPrintDialog = function () {
+                if (!vm.hasDocument()) { return; }
+                vm.printDialog = { scope: vm.pageCount > printService.MAX_PAGES ? 'current' : 'all', pages: String(vm.currentPage),
+                                   withMarkups: true, busy: false, progress: '', error: '' };
+            };
+
+            vm.applyPrint = function () {
+                var d = vm.printDialog;
+                if (!d || d.busy) { return; }
+                var pages = outputPages(d);
+                if (pages && pages.error) { d.error = pages.error; return; }
+                var count = pages ? pages.length : vm.pageCount;
+                if (count > printService.MAX_PAGES) { d.error = 'Print up to ' + printService.MAX_PAGES + ' pages at a time: choose a page range.'; return; }
+                d.busy = true;
+                d.error = '';
+                d.progress = 'Preparing the pages…';
+                // The printout is the annotated copy, flattened, so it looks exactly like the screen.
+                toolsService.annotatedPdf(vm.source, d.withMarkups ? vm.highlights : [], { flatten: true, pages: pages }).then(function (blob) {
+                    return printService.print(blob, function (done, total) { d.progress = 'Preparing page ' + done + ' of ' + total + '…'; });
+                }).then(function (printed) {
+                    vm.status = 'Sent ' + printed + ' page' + (printed === 1 ? '' : 's') + ' to the print dialog.';
+                    if (vm.printDialog === d) { vm.printDialog = null; }
+                }, function (message) {
+                    d.error = typeof message === 'string' ? message : 'Unable to print.';
+                }).finally(function () {
+                    d.busy = false;
+                    d.progress = '';
+                });
             };
 
             // ----- Measurement scale -----
@@ -1755,6 +1885,8 @@
                 var command = null;
                 if (key === 'o') {
                     command = vm.chooseFile;
+                } else if (key === 'p' && vm.hasDocument()) {
+                    command = vm.openPrintDialog;   // the browser would print the app, not the document
                 } else if (key === 'd' && vm.hasDocument()) {
                     command = vm.openProperties;
                 } else if (key === 'l' && vm.hasDocument()) {

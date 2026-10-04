@@ -794,7 +794,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }));
     await open('ten-pages.pdf'); await click('Actual size');
     await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
-    check('ribbon: File, Pages, Zoom, Navigation, Markup, Measure, Review, Revision tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Zoom|Navigation|Markup|Measure|Review|Revision' &&
+    check('ribbon: File, Pages, Output, Zoom, Navigation, Markup, Measure, Review, Revision tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Output|Zoom|Navigation|Markup|Measure|Review|Revision' &&
         rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
     await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
     check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
@@ -1371,7 +1371,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.click('#ribbon-tab-markup'); await click('Rectangle'); await drag(100, 560, 200, 580); await page.keyboard.press('Escape');
     await page.click('#ribbon-tab-revision'); await sleep(100);
     check('revision: markups made after switching to A belong to A', (await page.$$eval('.markup-meta', els => els.map(e => e.textContent)))[3].includes('Rev A'));
-    await page.click('button[aria-label="Markup report"]'); await sleep(200);
+    await page.click('#ribbon-revision button[aria-label="Markup report"]'); await sleep(200);
     const report = () => page.evaluate(() => ({ total: document.querySelector('.report-total').textContent.replace(/\s+/g, ' ').trim(),
         rows: [...document.querySelectorAll('.report-table tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim())) }));
     let rep = await report();
@@ -1601,7 +1601,11 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     const pagesOp = async (label, fields = {}, file) => {
         await page.click('#ribbon-tab-pages'); await sleep(100);
         await page.click(`#ribbon-pages button[aria-label="${label}"]`); await sleep(200);
-        for (const [selector, value] of Object.entries(fields)) await setField(selector, value);
+        for (const [selector, value] of Object.entries(fields)) {
+            // true / false: tick or untick a checkbox.
+            if (typeof value === 'boolean') { if (await page.$eval(selector, c => c.checked) !== value) await page.click(selector); continue; }
+            await setField(selector, value);
+        }
         if (file) { await (await page.$('#pages-form input[type=file]')).uploadFile(path.join(FIXTURES, file)); await sleep(200); }
         await page.click('.dialog-footer .tool-primary');
         await page.waitForFunction(() => !document.querySelector('#pages-form') || document.querySelector('.dialog-message.is-error'), { timeout: 30000 });
@@ -1655,7 +1659,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     po = await pagesOp('Replace pages', { '#pages-input': '13-14' }, 'one-page.pdf'); s = await state();
     check('pages: replace the 2 blank pages with a 1-page PDF', !po.open && await pageTotal() === 13 && /^Replaced 2 pages/.test(s.status), [po, s.pageStatus, s.status]);
 
-    po = await pagesOp('Extract pages', { '#pages-input': '1, 4-5' }); s = await state();
+    po = await pagesOp('Extract pages', { '#pages-input': '1, 4-5', '#pages-form input[type=checkbox]': false }); s = await state();
     check('pages: extract pages 1, 4-5 into a new PDF (the document stays as it is)',
         !po.open && /Downloaded ten-pages-pages\.pdf \(3 pages\)/.test(s.status) && await pageTotal() === 13, s.status);
     if (canCheckDownloads) {
@@ -1706,6 +1710,152 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }
     await shot('pages');
     await click('Close');
+
+    // ===== Output: annotated / flattened PDF, print, export pages, reports (PDF, Excel, CSV), review and change reports =====
+    await page.evaluate(() => {
+        // Printing is checked up to the print dialog: count the prepared pages, then close it at once.
+        window.print = () => {
+            window.__printed = (window.__printed || []).concat([[...document.querySelectorAll('.print-sheets img')].map(i => i.naturalWidth > 0)]);
+            setTimeout(() => window.dispatchEvent(new Event('afterprint')), 20);
+        };
+    });
+    // The newest finished download matching `pattern` written after the previous one this section took.
+    let since = Date.now();
+    const latestDownload = async pattern => {
+        for (let t = 0; t < 30000; t += 250) {
+            const f = fs.readdirSync(DOWNLOADS).filter(n => pattern.test(n) && !n.endsWith('.crdownload'))
+                .map(n => path.join(DOWNLOADS, n)).filter(n => fs.statSync(n).mtimeMs >= since - 50)
+                .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+            if (f && fs.statSync(f).size > 0 && !fs.existsSync(f + '.crdownload')) {
+                await sleep(200);   // let the file be written completely
+                since = Date.now();
+                return fs.readFileSync(f);
+            }
+            await sleep(250);
+        }
+        return null;
+    };
+    const waitStatus = async re => {
+        await page.waitForFunction(r => new RegExp(r).test(document.querySelector('.status-text').textContent), { timeout: 60000 }, re.source);
+        return (await state()).status;
+    };
+    await open('ten-pages.pdf'); await click('Actual size');
+    await page.keyboard.press('r'); await drag(100, 100, 200, 160);
+    await goTo(3); await page.evaluate(() => document.activeElement.blur());
+    await page.keyboard.press('m'); await clickAt(300, 120); await sleep(200);
+    await page.keyboard.type('Check the lap length'); await page.click('#note-form ~ .dialog-footer .tool-primary').catch(() => page.click('.dialog-footer .tool-primary')); await sleep(200);
+    await page.keyboard.press('s'); await drag(40, 300, 300, 314); await page.keyboard.press('v'); await sleep(100);
+    await page.click('#ribbon-tab-output'); await sleep(100);
+    const outTools = await page.$$eval('#ribbon-output button', bs => bs.map(b => b.getAttribute('aria-label')));
+    check('output: an Output tab with save, flatten, print, export and the reports', outTools.join('|') ===
+        'Save annotated PDF|Flatten annotations|Print|Export pages|Export markup list|Markup report|Review report|Change report', outTools);
+
+    await click('Flatten annotations'); await sleep(200);
+    await page.click('[aria-labelledby="save-annotated-title"] .tool-primary');
+    let os = await waitStatus(/Downloaded|Unable/);
+    check('flatten: saves a flattened copy with the markups', /^Downloaded ten-pages-flattened\.pdf with 3 markups \(flattened\)\./.test(os), os);
+    if (canCheckDownloads) {
+        const flat = await latestDownload(/^ten-pages-flattened.*\.pdf$/);
+        const raw = flat ? flat.toString('latin1') : '';
+        check('flatten: the copy has no annotations left (part of the page)', !!flat && !raw.includes('/Annots') && (await pdfPages(flat)).length === 10, flat && flat.length);
+    }
+    await click('Save annotated PDF'); await sleep(200);
+    await page.select('[aria-labelledby="save-annotated-title"] select[aria-label="Which pages"]', 'range');
+    await page.click('[aria-labelledby="save-annotated-title"] input[aria-label="Page range"]', { clickCount: 3 });
+    await page.keyboard.type('1-3');
+    await page.click('[aria-labelledby="save-annotated-title"] .tool-primary');
+    os = await waitStatus(/Downloaded ten-pages-highlighted|Unable/);
+    check('annotated PDF: pages 1-3 with their markups as annotations', /with 3 markups\./.test(os), os);
+    if (canCheckDownloads) {
+        const copy = await latestDownload(/^ten-pages-highlighted.*\.pdf$/);
+        const raw = copy ? copy.toString('latin1') : '';
+        check('annotated PDF: 3 pages, the markups still editable annotations', !!copy && (await pdfPages(copy)).length === 3 &&
+            /\/Subtype\s*\/Square/.test(raw) && /\/Subtype\s*\/StrikeOut/.test(raw) && /\/Subtype\s*\/Text/.test(raw), copy && copy.length);
+    }
+
+    await page.evaluate(() => { window.__printed = []; });
+    await shortcut('KeyP'); await sleep(200);
+    check('print: Ctrl+P opens the print dialog (not the browser printing the app)', !!(await page.$('#print-dialog-title')));
+    await page.select('[aria-labelledby="print-dialog-title"] select[aria-label="Which pages"]', 'range');
+    await page.click('[aria-labelledby="print-dialog-title"] input[aria-label="Page range"]', { clickCount: 3 });
+    await page.keyboard.type('2-4');
+    await page.click('[aria-labelledby="print-dialog-title"] .tool-primary');
+    os = await waitStatus(/Sent|Unable/);
+    let printed = await page.evaluate(() => window.__printed);
+    check('print: the chosen pages are drawn and sent to the print dialog', os === 'Sent 3 pages to the print dialog.' &&
+        printed.length === 1 && printed[0].length === 3 && printed[0].every(Boolean), [os, printed]);
+    check('print: the prepared pages are removed afterwards', !(await page.$('.print-sheets')) &&
+        !(await page.evaluate(() => document.body.classList.contains('is-printing'))));
+    await page.evaluate(() => {
+        const s = [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch { return []; } })
+            .filter(r => r.media && /print/.test(r.media.mediaText)).map(r => r.cssText).join(' ');
+        window.__printCss = s;
+    });
+    check('print: in print, only the prepared pages show', /body\.is-printing > \*?:not\(\.print-sheets\)/.test(await page.evaluate(() => window.__printCss)),
+        await page.evaluate(() => window.__printCss.slice(0, 200)));
+
+    await click('Export pages'); await sleep(200);
+    const withMarkups = await page.$eval('#pages-form input[type=checkbox]', c => c.checked);
+    await page.$eval('#pages-input', e => { e.value = ''; }); await page.type('#pages-input', '1, 3');
+    await page.click('.dialog-footer .tool-primary');
+    os = await waitStatus(/Downloaded ten-pages-highlighted|Unable/);
+    check('export pages: selected pages with their markups (the rectangle on 1, comment and strikeout on 3)', withMarkups && /with 3 markups\./.test(os), os);
+    if (canCheckDownloads) {
+        const pages = await latestDownload(/^ten-pages-highlighted.*\.pdf$/);
+        check('export pages: the file has just those pages', !!pages && (await pdfPages(pages)).map(p => p.text).join('|') === 'Page 1|Page 3');
+    }
+
+    await click('Review report'); await sleep(300);
+    let rpt = await page.evaluate(() => ({ title: document.querySelector('#report-dialog-title').textContent.trim(),
+        total: document.querySelector('.report-total').textContent.replace(/\s+/g, ' ').trim(),
+        rows: [...document.querySelectorAll('.report-table tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim())) }));
+    check('review report: the comment and the strikeout with what they ask for (the rectangle is not a review item)',
+        rpt.title === 'Review report' && rpt.rows.length === 2 && rpt.rows.map(r => r[3]).join('|') === 'Check the lap length|Delete the struck-out text' &&
+        /^2 review items/.test(rpt.total), rpt);
+    await page.click('.dialog-footer .tool-outline:nth-child(4)'); os = await waitStatus(/Downloaded ten-pages-review\.pdf|Unable/);
+    check('review report: saved as a PDF report', os === 'Downloaded ten-pages-review.pdf.', os);
+    if (canCheckDownloads) {
+        const pdf = await latestDownload(/^ten-pages-review.*\.pdf$/);
+        const pp = pdf ? await page.evaluate(async b64 => {
+            const doc = await pdfjsLib.getDocument({ data: Uint8Array.from(atob(b64), c => c.charCodeAt(0)), isEvalSupported: false }).promise;
+            const t = await (await doc.getPage(1)).getTextContent();
+            return t.items.map(i => i.str).join(' ');
+        }, pdf.toString('base64')) : '';
+        check('review report: the PDF has the title, summary and rows', /Review report/.test(pp) && /By type: Comment 1/.test(pp) &&
+            /Check the lap length/.test(pp) && /Page 1 of 1/.test(pp), pp.slice(0, 300));
+    }
+    await page.click('.dialog-footer .tool-outline:nth-child(3)'); os = await waitStatus(/Downloaded ten-pages-review\.xlsx|Unable/);
+    check('review report: saved as an Excel workbook', os === 'Downloaded ten-pages-review.xlsx.', os);
+    if (canCheckDownloads) {
+        const xlsx = await latestDownload(/^ten-pages-review.*\.xlsx$/);
+        const text = xlsx ? xlsx.toString('latin1') : '';
+        check('review report: the workbook is a real .xlsx (zip with the report and summary sheets)', !!xlsx && text.startsWith('PK') &&
+            text.includes('xl/worksheets/sheet2.xml'), xlsx && xlsx.length);
+    }
+    await page.select('[aria-label="Report kind"]', 'string:markups'); await sleep(200);
+    rpt = await page.evaluate(() => document.querySelectorAll('.report-table tbody tr').length);
+    check('markup list: every markup (export as Excel, CSV, PDF or HTML)', rpt === 3, rpt);
+    await page.click('.dialog-footer .tool-outline:nth-child(3)'); os = await waitStatus(/Downloaded ten-pages-markups\.xlsx|Unable/);
+    check('markup list: Excel export', os === 'Downloaded ten-pages-markups.xlsx.', os);
+    await page.select('[aria-label="Report kind"]', 'string:changes'); await sleep(200);
+    check('change report: needs a revision to compare with', /Open the revision to compare with first/.test(await page.$eval('.dialog-message.is-error', e => e.textContent)));
+    await page.click('[aria-labelledby="report-dialog-title"] .tool-primary'); await sleep(100);
+
+    await open('one-page-rev-b.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-revision'); await sleep(100);
+    await (await page.$('#ribbon-revision input[type=file]')).uploadFile(path.join(FIXTURES, 'one-page.pdf'));
+    await page.waitForFunction(() => /changed area|no differences/.test(document.querySelector('.status-text').textContent), { timeout: 30000 });
+    await click('Cloud changes'); await sleep(200);
+    await page.click('#ribbon-tab-output'); await click('Change report');
+    await page.waitForFunction(() => /changes? on/.test((document.querySelector('.report-total') || {}).textContent || ''), { timeout: 30000 });
+    rpt = await page.evaluate(() => ({ total: document.querySelector('.report-total').textContent.trim(),
+        rows: [...document.querySelectorAll('.report-table tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim())) }));
+    check('change report: every changed area against the compared revision, where it is and whether it is clouded',
+        rpt.total === '2 changes on 1 of 1 page' && rpt.rows.length === 2 && rpt.rows.every(r => r[2] === 'Changed area' && /mm at/.test(r[4]) && /^Yes/.test(r[5])), rpt);
+    await page.click('.dialog-footer .tool-outline:nth-child(1)'); os = await waitStatus(/Downloaded one-page-rev-b-changes\.csv|Unable/);
+    check('change report: CSV export', os === 'Downloaded one-page-rev-b-changes.csv.', os);
+    await page.click('[aria-labelledby="report-dialog-title"] .tool-primary'); await sleep(100);
+    await click('Close comparison'); await click('Clear Markups').catch(() => {});
 
     // ===== Search by drawing / beam / column number; page size; document properties =====
     const results = () => page.evaluate(() => ({

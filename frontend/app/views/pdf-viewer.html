@@ -73,6 +73,10 @@
     <symbol id="i-find-drawing" viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="16" rx="1"/><path d="M9 16h8M9 16v4"/><circle cx="17.5" cy="9.5" r="3"/><path d="M19.7 11.7L22 14"/></symbol>
     <symbol id="i-find-beam" viewBox="0 0 24 24"><path d="M2 8h14M2 13h14M4 8v5M14 8v5"/><circle cx="17.5" cy="16.5" r="3"/><path d="M19.7 18.7L22 21"/></symbol>
     <symbol id="i-find-column" viewBox="0 0 24 24"><path d="M5 3h8M5 21h8M7 3v18M11 3v18"/><circle cx="17.5" cy="12.5" r="3"/><path d="M19.7 14.7L22 17"/></symbol>
+    <symbol id="i-flatten" viewBox="0 0 24 24"><path d="M4 7l8-4 8 4-8 4z"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4"/></symbol>
+    <symbol id="i-print" viewBox="0 0 24 24"><path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="1.5"/><path d="M7 14h10v7H7z"/></symbol>
+    <symbol id="i-review-report" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4M9 12h6M9 15.5h4"/><path d="M3 8h3"/></symbol>
+    <symbol id="i-change-report" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/><path d="M9 15l2-3 2 2 2-4"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -179,7 +183,7 @@
             <button type="button" class="ribbon-tab" role="tab" ng-repeat="t in vm.ribbonTabs track by t.id"
                     id="ribbon-tab-{{ t.id }}" aria-controls="ribbon-{{ t.id }}" aria-selected="{{ vm.ribbonTab === t.id }}"
                     ng-attr-tabindex="{{ vm.ribbonTab === t.id ? 0 : -1 }}" ng-class="{'is-active': vm.ribbonTab === t.id}"
-                    ng-click="vm.setRibbonTab(t.id)" ng-keydown="vm.onRibbonTabKey($event, $index)">{{ t.label }}</button>
+                    ng-click="vm.setRibbonTab(t.id)" ng-keydown="vm.onRibbonTabKey($event)">{{ t.label }}</button>
         </div>
         <div class="tool-group tool-group-end" role="group" aria-label="Panels">
             <button type="button" class="tool" ng-click="vm.showThumbnails = !vm.showThumbnails"
@@ -315,6 +319,57 @@
                 </button>
             </div>
             <span class="ribbon-caption">Extract &amp; replace</span>
+        </div>
+    </div>
+
+    <!-- Output -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-output" aria-labelledby="ribbon-tab-output" ng-show="vm.ribbonTab === 'output'">
+        <div class="ribbon-group" role="group" aria-label="Save copies">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openSaveAnnotated(false)" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Save annotated PDF" title="Save a copy with the markups as annotations (others can still edit them)">
+                    <svg class="icon"><use href="#i-save"></use></svg><span>Annotated PDF</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openSaveAnnotated(true)" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Flatten annotations" title="Save a flattened copy: markups, annotations and form fields become part of the page">
+                    <svg class="icon"><use href="#i-flatten"></use></svg><span>Flatten</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Save</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Print and export">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPrintDialog()" ng-disabled="!vm.hasDocument() || vm.busy" data-shortcut="{{ vm.modKey }}P"
+                        aria-label="Print" title="Print the document with its markups">
+                    <svg class="icon"><use href="#i-print"></use></svg><span>Print</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('extract')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Export pages" title="Save selected pages as a new PDF (with or without markups)">
+                    <svg class="icon"><use href="#i-page-extract"></use></svg><span>Export pages</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openReport('markups')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Export markup list" title="Every markup in a table: PDF, Excel, CSV or a printable page">
+                    <svg class="icon"><use href="#i-list"></use></svg><span>Markup list</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Print &amp; export</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Reports">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openReport('markups')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Markup report" title="Markup report as PDF, Excel, CSV or a printable page">
+                    <svg class="icon"><use href="#i-report"></use></svg><span>Markup report</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openReport('review')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Review report" title="Comments, notes, corrections and stamps with what they say">
+                    <svg class="icon"><use href="#i-review-report"></use></svg><span>Review report</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openReport('changes')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Change report" title="Every changed area against the compared revision (Revision > Compare)">
+                    <svg class="icon"><use href="#i-change-report"></use></svg><span>Change report</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Reports</span>
         </div>
     </div>
 
@@ -1092,47 +1147,124 @@
     </div>
 </div>
 
-<!-- Markup report dialog (Revision > Markup report) -->
+<!-- Report dialog (Output tab; Revision > Markup report): markup list, review report, change report -->
 <div class="dialog-backdrop" ng-if="vm.reportDialog" ng-click="vm.reportDialog = null">
     <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" ng-click="$event.stopPropagation()">
         <div class="dialog-header">
-            <h2 id="report-dialog-title">Markup report</h2>
+            <h2 id="report-dialog-title">{{ vm.reportDialog.table ? vm.reportDialog.table.title : 'Report' }}</h2>
             <button type="button" class="panel-close" ng-click="vm.reportDialog = null" aria-label="Close dialog">
                 <svg class="icon icon-sm"><use href="#i-close"></use></svg>
             </button>
         </div>
         <div class="dialog-body">
             <div class="report-bar">
-                <label>Revision
+                <label>Report
+                    <select ng-model="vm.reportDialog.kind" ng-change="vm.updateReport()" aria-label="Report kind"
+                            ng-options="k.value as k.label for k in vm.reportKinds" ng-disabled="vm.reportDialog.busy"></select>
+                </label>
+                <label ng-if="vm.reportDialog.kind !== 'changes'">Revision
                     <select ng-model="vm.reportDialog.revision" ng-change="vm.updateReport()" aria-label="Report revision">
                         <option value="">All markups</option>
                         <option ng-repeat="r in vm.reportRevisions()" value="{{ r }}">Revision {{ r }}</option>
                         <option value="-">Without a revision</option>
                     </select>
                 </label>
-                <span class="report-total">{{ vm.reportDialog.summary.total }} markup{{ vm.reportDialog.summary.total === 1 ? '' : 's' }}<span
-                      ng-repeat="t in vm.reportDialog.summary.byType track by t.name"> &middot; {{ t.count }} {{ t.name }}</span></span>
+                <span class="report-total">{{ vm.reportDialog.progress || vm.reportDialog.totalText }}</span>
             </div>
-            <div class="report-table-wrap" ng-if="vm.reportDialog.rows.length">
+            <div class="dialog-message is-error" role="alert" ng-if="vm.reportDialog.error">{{ vm.reportDialog.error }}</div>
+            <div class="report-table-wrap" ng-if="vm.reportDialog.table.rows.length">
                 <table class="report-table">
-                    <thead><tr><th>No.</th><th>Page</th><th>Type</th><th>Content</th><th>Colour</th><th>Rev</th><th>Created</th></tr></thead>
+                    <thead><tr><th ng-repeat="c in vm.reportDialog.table.columns">{{ c.label === 'Revision' ? 'Rev' : c.label }}</th></tr></thead>
                     <tbody>
-                        <tr ng-repeat="r in vm.reportDialog.rows track by r.number">
-                            <td class="num">{{ r.number }}</td><td class="num">{{ r.page }}</td><td>{{ r.type }}</td><td>{{ r.content }}</td>
-                            <td><span class="report-swatch" ng-attr-style="--swatch: {{ r.color === 'Yellow' ? '#ffdd00' : r.color }}"></span>{{ r.color }}</td>
-                            <td>{{ r.revision }}</td><td class="report-time">{{ r.created }}</td>
+                        <tr ng-repeat="r in vm.reportDialog.table.rows track by r.number">
+                            <td ng-repeat="c in vm.reportDialog.table.columns" ng-class="{'num': c.number, 'report-time': c.key === 'created'}"><span
+                                ng-if="c.key === 'color'" class="report-swatch" ng-attr-style="--swatch: {{ r.color === 'Yellow' ? '#ffdd00' : r.color }}"></span>{{ r[c.key] }}</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-            <p class="dialog-intro" ng-if="!vm.reportDialog.rows.length">No markups to report.</p>
+            <p class="dialog-intro" ng-if="vm.reportDialog.table && !vm.reportDialog.table.rows.length">Nothing to report.</p>
         </div>
         <div class="dialog-footer">
-            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('csv')" ng-disabled="!vm.reportDialog.rows.length || vm.reportDialog.busy"
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('csv')" ng-disabled="!vm.reportDialog.table.rows.length || vm.reportDialog.busy"
                     title="A spreadsheet file (opens in Excel)">Save CSV&hellip;</button>
-            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('html')" ng-disabled="!vm.reportDialog.rows.length || vm.reportDialog.busy"
-                    title="A web page with the summary and table, ready to print or save as PDF">Save printable report&hellip;</button>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('html')" ng-disabled="!vm.reportDialog.table.rows.length || vm.reportDialog.busy"
+                    title="A web page with the summary and table, ready to print">Save printable report&hellip;</button>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('xlsx')" ng-disabled="!vm.reportDialog.table.rows.length || vm.reportDialog.busy"
+                    title="An Excel workbook: the table and a Summary sheet">Save Excel&hellip;</button>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('pdf')" ng-disabled="!vm.reportDialog.table.rows.length || vm.reportDialog.busy"
+                    title="A PDF report (A4 landscape) with the summary and table">Save PDF report&hellip;</button>
             <button type="button" class="tool tool-labelled tool-primary" ng-click="vm.reportDialog = null">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Save annotated / flattened PDF (Output tab) -->
+<div class="dialog-backdrop" ng-if="vm.saveAnnotatedDialog" ng-click="!vm.saveAnnotatedDialog.busy && (vm.saveAnnotatedDialog = null)">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="save-annotated-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="save-annotated-title">{{ vm.saveAnnotatedDialog.flatten ? 'Save a flattened PDF' : 'Save annotated PDF' }}</h2>
+            <button type="button" class="panel-close" ng-click="vm.saveAnnotatedDialog = null" ng-disabled="vm.saveAnnotatedDialog.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applySaveAnnotated()" id="save-annotated-form">
+            <label class="choice"><input type="radio" name="flatten" ng-model="vm.saveAnnotatedDialog.flatten" ng-value="false">
+                <span>Keep annotations<small>Markups are saved as annotations; other PDF viewers show, move and edit them.</small></span></label>
+            <label class="choice"><input type="radio" name="flatten" ng-model="vm.saveAnnotatedDialog.flatten" ng-value="true">
+                <span>Flatten<small>Markups, the PDF's own annotations and form fields become part of the page: they always show and print, and cannot be changed.</small></span></label>
+            <label class="choice"><input type="checkbox" ng-model="vm.saveAnnotatedDialog.withMarkups">
+                <span>Include my markups ({{ vm.highlights.length }})</span></label>
+            <div class="pages-form output-pages">
+                <div class="pages-field">
+                    <span>Pages</span>
+                    <select ng-model="vm.saveAnnotatedDialog.scope" aria-label="Which pages">
+                        <option value="all">All pages</option><option value="current">Current page ({{ vm.currentPage }})</option><option value="range">Pages&hellip;</option>
+                    </select>
+                    <input type="text" class="inline-text" ng-if="vm.saveAnnotatedDialog.scope === 'range'" ng-model="vm.saveAnnotatedDialog.pages"
+                           aria-label="Page range" placeholder="e.g. 1-3, 5" autocomplete="off">
+                </div>
+            </div>
+            <p class="dialog-note">A copy is saved; the open document is not changed.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.saveAnnotatedDialog.error">{{ vm.saveAnnotatedDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.saveAnnotatedDialog = null" ng-disabled="vm.saveAnnotatedDialog.busy">Cancel</button>
+            <button type="submit" form="save-annotated-form" class="tool tool-labelled tool-primary" ng-disabled="vm.saveAnnotatedDialog.busy">
+                {{ vm.saveAnnotatedDialog.busy ? 'Saving…' : 'Save' }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- Print (Output tab, Ctrl+P) -->
+<div class="dialog-backdrop" ng-if="vm.printDialog" ng-click="!vm.printDialog.busy && (vm.printDialog = null)">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="print-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="print-dialog-title">Print</h2>
+            <button type="button" class="panel-close" ng-click="vm.printDialog = null" ng-disabled="vm.printDialog.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applyPrint()" id="print-form">
+            <div class="pages-form output-pages">
+                <div class="pages-field">
+                    <span>Pages</span>
+                    <select ng-model="vm.printDialog.scope" aria-label="Which pages">
+                        <option value="all">All pages ({{ vm.pageCount }})</option><option value="current">Current page ({{ vm.currentPage }})</option><option value="range">Pages&hellip;</option>
+                    </select>
+                    <input type="text" class="inline-text" ng-if="vm.printDialog.scope === 'range'" ng-model="vm.printDialog.pages"
+                           aria-label="Page range" placeholder="e.g. 1-3, 5" autocomplete="off">
+                </div>
+            </div>
+            <label class="choice"><input type="checkbox" ng-model="vm.printDialog.withMarkups"> <span>Print my markups ({{ vm.highlights.length }})</span></label>
+            <p class="dialog-note">Paper size, orientation and the printer are chosen in the print dialog that opens next. Large sheets are
+                scaled to the paper. Up to {{ 300 }} pages at a time.</p>
+            <p class="dialog-intro" ng-if="vm.printDialog.progress"><span class="spinner spinner-sm"></span> {{ vm.printDialog.progress }}</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.printDialog.error">{{ vm.printDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.printDialog = null" ng-disabled="vm.printDialog.busy">Cancel</button>
+            <button type="submit" form="print-form" class="tool tool-labelled tool-primary" ng-disabled="vm.printDialog.busy">Print&hellip;</button>
         </div>
     </div>
 </div>
@@ -1288,6 +1420,8 @@
                        ng-change="vm.pagesDialog.error = ''">
             </div>
 
+            <label class="choice" ng-if="vm.pagesDialog.op === 'extract' && vm.highlights.length">
+                <input type="checkbox" ng-model="vm.pagesDialog.withMarkups"> <span>Include my markups (as annotations)</span></label>
             <p class="dialog-note" id="pages-hint" ng-switch="vm.pagesDialog.op">
                 <span ng-switch-when="extract">The pages are saved as a new PDF; this document stays as it is.</span>
                 <span ng-switch-when="replace">The other file's pages take the place of these pages.</span>

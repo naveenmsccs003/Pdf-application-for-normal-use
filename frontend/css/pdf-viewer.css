@@ -1359,3 +1359,17 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 .properties-sizes th, .properties-sizes td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 .properties-sizes th { color: var(--muted); font-weight: normal; }
 .properties-muted { color: var(--muted); }
+
+.output-pages { margin: 8px 0 4px; }
+.report-bar label + label { margin-left: 12px; }
+
+/* Print: only the prepared pages (printService.js); hidden on screen */
+.print-sheets { display: none; }
+@media print {
+    @page { margin: 8mm; }
+    body.is-printing > *:not(.print-sheets) { display: none !important; }
+    body.is-printing { background: #ffffff !important; }
+    body.is-printing .print-sheets { display: block; }
+    .print-sheet { display: block; width: 100%; height: auto; break-after: page; page-break-after: always; }
+    .print-sheet:last-child { break-after: auto; page-break-after: auto; }
+}

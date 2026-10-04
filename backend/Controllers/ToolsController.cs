@@ -155,9 +155,31 @@ public class ToolsController(PdfService pdfService, ILogger<ToolsController> log
             var highlights = request.Highlights ?? [];
 
             var output = CreateTempFile();
-            var count = await Task.Run(() => PdfTools.SaveWithHighlights(path, highlights, output), ct);
+            var options = new AnnotatedOptions(request.Flatten, request.Pages);
+            var count = await Task.Run(() => PdfTools.SaveAnnotated(path, highlights, options, output), ct);
             Response.Headers["X-Highlight-Count"] = count.ToString();
-            return Download(output, "application/pdf", $"{BaseName(request.Name)}-highlighted.pdf");
+            var suffix = request.Flatten ? "-flattened" : "-highlighted";
+            return Download(output, "application/pdf", $"{BaseName(request.Name)}{suffix}.pdf");
+        });
+
+    /// <summary>A markup, review or change report built by the viewer, as a PDF or an Excel workbook.</summary>
+    [HttpPost("report")]
+    public Task<IActionResult> Report([FromBody] ReportRequest request, CancellationToken ct) =>
+        Run(async () =>
+        {
+            var report = request.Report ?? throw new ToolException("There is no report to save.");
+            var output = CreateTempFile();
+            switch (request.Format)
+            {
+                case "pdf":
+                    await Task.Run(() => ReportWriter.WritePdf(report, output), ct);
+                    return Download(output, "application/pdf", $"{BaseName(request.Name)}.pdf");
+                case "xlsx":
+                    await Task.Run(() => ReportWriter.WriteXlsx(report, output), ct);
+                    return Download(output, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{BaseName(request.Name)}.xlsx");
+                default:
+                    throw new ToolException("Choose PDF or Excel.");
+            }
         });
 
     private async Task<IActionResult> Run(Func<Task<IActionResult>> action)

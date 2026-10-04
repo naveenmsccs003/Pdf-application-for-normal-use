@@ -349,6 +349,7 @@
                 renderThumbnail: renderThumbnail,
                 currentDocument: currentDocument,
                 isLocal: function () { return !!localDocument; },
+                localToken: function () { return localDocument ? localDocument.token : null; },
                 getPageText: getPageText,
                 searchLocal: searchLocal
             };
