@@ -1300,3 +1300,62 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 .custom-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .custom-type { color: var(--muted); font-size: 12px; }
 .color-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2); }
+
+/* Find: what to look for, and the results list */
+.find-kind {
+    height: 24px;
+    padding: 0 2px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+}
+.find-results {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+    max-height: min(50vh, 420px);
+    margin-top: 4px;
+    overflow-y: auto;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.find-results ul { margin: 0; padding: 0; list-style: none; }
+.find-results li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; padding: 4px 0; border-top: 1px solid var(--border); }
+.find-summary { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+.find-page { min-width: 58px; color: var(--muted); font-size: 12px; }
+.find-hit {
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.find-hit:hover { background: var(--tool-hover); }
+.find-hit.is-current { border-color: var(--primary); background: var(--active-bg); }
+.find-hit-count { color: var(--muted); }
+
+/* Status bar: the page's size */
+.page-size { padding: 0 8px; color: var(--muted); white-space: nowrap; cursor: pointer; font-variant-numeric: tabular-nums; }
+.page-size:hover { color: var(--text); }
+
+/* Document properties */
+.properties h3 { margin: 14px 0 6px; font-size: 13px; }
+.properties h3:first-of-type { margin-top: 0; }
+.properties-list { display: grid; grid-template-columns: 150px 1fr; gap: 3px 16px; margin: 0; }
+.properties-list > div { display: contents; }
+.properties-list dt { color: var(--muted); }
+.properties-list dd { margin: 0; overflow-wrap: anywhere; }
+.properties-sizes { width: 100%; border-collapse: collapse; font-size: 12px; }
+.properties-sizes th, .properties-sizes td { padding: 4px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.properties-sizes th { color: var(--muted); font-weight: normal; }
+.properties-muted { color: var(--muted); }

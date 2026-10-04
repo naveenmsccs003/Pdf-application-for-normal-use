@@ -11,8 +11,8 @@ public class LocalPdfException(string message) : Exception(message);
 /// <summary>A rectangle in page units at scale 1, top-left origin, as displayed (after /Rotate).</summary>
 public record TextRect(double X, double Y, double Width, double Height);
 
-/// <summary>One occurrence of the search text; it can span several lines, so several rectangles.</summary>
-public record SearchMatch(int Page, IReadOnlyList<TextRect> Rects);
+/// <summary>One occurrence of the search text (as found); it can span several lines, so several rectangles.</summary>
+public record SearchMatch(int Page, IReadOnlyList<TextRect> Rects, string Text);
 
 /// <summary>Matches found from the requested page on; <c>Next</c> is the page to continue from, or null at the end.</summary>
 public record SearchResult(IReadOnlyList<SearchMatch> Matches, int? Next);

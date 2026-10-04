@@ -21,6 +21,37 @@
                 legal: { label: 'Legal', width: 612, height: 1008 }
             };
 
+            // Paper sizes in mm (portrait) for naming page sizes: ISO A and B, US and architectural (ANSI / ARCH).
+            var PAPERS = [
+                ['A0', 841, 1189], ['A1', 594, 841], ['A2', 420, 594], ['A3', 297, 420], ['A4', 210, 297], ['A5', 148, 210],
+                ['B1', 707, 1000], ['B2', 500, 707], ['B3', 353, 500], ['B4', 250, 353], ['B5', 176, 250],
+                ['Letter', 215.9, 279.4], ['Legal', 215.9, 355.6], ['Tabloid / ANSI B', 279.4, 431.8],
+                ['ANSI C', 431.8, 558.8], ['ANSI D', 558.8, 863.6], ['ANSI E', 863.6, 1117.6],
+                ['ARCH A', 228.6, 304.8], ['ARCH B', 304.8, 457.2], ['ARCH C', 457.2, 609.6], ['ARCH D', 609.6, 914.4],
+                ['ARCH E1', 762, 1066.8], ['ARCH E', 914.4, 1219.2]
+            ];
+            var MM_PER_POINT = 25.4 / 72;
+
+            /**
+             * A page size (points) for people: { name ('A4' or ''), orientation, mm: '210 × 297 mm', inches: '8.27 × 11.69 in' }.
+             * A paper name is given within 2 mm, either way round.
+             */
+            function describeSize(width, height) {
+                var w = width * MM_PER_POINT, h = height * MM_PER_POINT;
+                var paper = PAPERS.find(function (p) {
+                    return (Math.abs(p[1] - Math.min(w, h)) <= 2 && Math.abs(p[2] - Math.max(w, h)) <= 2);
+                });
+                var mm = function (v) { return Math.round(v).toLocaleString('en-US'); };
+                var inch = function (v) { return (Math.round(v / 25.4 * 100) / 100).toLocaleString('en-US'); };
+                return {
+                    name: paper ? paper[0] : '',
+                    orientation: Math.abs(w - h) < 1 ? 'square' : w > h ? 'landscape' : 'portrait',
+                    mm: mm(w) + ' \u00d7 ' + mm(h) + ' mm',
+                    inches: inch(w) + ' \u00d7 ' + inch(h) + ' in',
+                    points: Math.round(width * 10) / 10 + ' \u00d7 ' + Math.round(height * 10) / 10 + ' pt'
+                };
+            }
+
             // ----- Page lists and layouts (no I/O) -----
 
             /** "1-3, 5" or "all" -> { pages: [1, 2, 3, 5] } (sorted, no repeats), or { error }. */
@@ -241,6 +272,7 @@
 
             return {
                 PAGE_SIZES: PAGE_SIZES,
+                describeSize: describeSize,
                 parsePages: parsePages,
                 formatPages: formatPages,
                 layoutFor: layoutFor,

@@ -65,6 +65,8 @@ function buildPdf(pages, extra = {}) {
         pageRefs.push(page);
     }
 
+    // Document information (title, author, …) when given.
+    const info = extra.info ? add(Buffer.from('<< ' + Object.entries(extra.info).map(([k, v]) => `/${k} (${v})`).join(' ') + ' >>')) : 0;
     objects[pagesObj - 1] = Buffer.from(`<< /Type /Pages /Kids [${pageRefs.map(r => r + ' 0 R').join(' ')}] /Count ${pageRefs.length} >>`);
     objects[catalog - 1] = Buffer.from(`<< /Type /Catalog /Pages ${pagesObj} 0 R` +
         (annotRefs.length ? ` /AcroForm << /Fields [${annotRefs.map(r => r + ' 0 R').join(' ')}] /DA (/F1 12 Tf 0 g) /DR << /Font << /F1 ${font} 0 R >> >> >>` : '') +
@@ -81,7 +83,7 @@ function buildPdf(pages, extra = {}) {
     });
     let xref = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
     for (const o of offsets) xref += String(o).padStart(10, '0') + ' 00000 n \n';
-    xref += `trailer\n<< /Size ${objects.length + 1} /Root ${catalog} 0 R >>\nstartxref\n${offset}\n%%EOF\n`;
+    xref += `trailer\n<< /Size ${objects.length + 1} /Root ${catalog} 0 R${info ? ` /Info ${info} 0 R` : ''} >>\nstartxref\n${offset}\n%%EOF\n`;
     chunks.push(Buffer.from(xref));
     return Buffer.concat(chunks);
 }
@@ -125,6 +127,19 @@ write('mixed-sizes.pdf', buildPdf([
 // A4 portrait pages with /Rotate: shown as landscape (90) and upside down (180).
 write('rotated.pdf', buildPdf([textPage(1, 595, 842, { rotate: 90 }), textPage(2, 595, 842, { rotate: 180 })]));
 write('image-based.pdf', buildPdf(range(3).map(n => ({ width: 595, height: 842, title: `Scanned page ${n}`, image: gradientImage(600, 850) }))));
+// A small structural drawing set: A3 landscape sheets with beam and column marks and a title block
+// (drawing number bottom right; page 1 also refers to another drawing near the top).
+const sheet = (n, marks, extra = '') => ({
+    width: 1191, height: 842, title: `General arrangement ${n}`,
+    drawing: marks.map(([text, x, y]) => `BT /F1 12 Tf ${x} ${y} Td (${text}) Tj ET`).join('\n') +
+        `\nBT /F1 10 Tf 960 70 Td (DRG NO) Tj ET\nBT /F2 16 Tf 1020 68 Td (S-10${n}) Tj ET\n1 w 940 40 230 60 re S` + extra
+});
+write('drawing-set.pdf', buildPdf([
+    sheet(1, [['SEE S-201', 60, 740], ['B1', 200, 500], ['B12', 400, 500], ['FB3', 600, 500], ['C1', 200, 300], ['C-2', 400, 300]]),
+    sheet(2, [['B12', 200, 500], ['B12', 400, 450], ['GB-4', 600, 500], ['C1', 200, 300]]),
+    sheet(3, [['SC3', 300, 300], ['Notes: all beams in M25 concrete', 60, 160]])
+], { info: { Title: 'Structural drawings', Author: 'Test Engineer', Subject: 'Ground floor', Keywords: 'beams, columns',
+             Creator: 'CAD Export', Producer: 'Fixture writer', CreationDate: "D:20240115093000+05'30'" } }));
 write('form.pdf', buildPdf([textPage(1, 595, 842, { lines: 5, textField: true })]));
 // ~45 MB valid PDF (uncompressed image), just under the 50 MB limit.
 write('large-45mb.pdf', buildPdf([{ width: 595, height: 842, title: 'Large file', image: gradientImage(3870, 3870) }, textPage(2)]));

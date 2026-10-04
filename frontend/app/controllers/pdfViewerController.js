@@ -210,6 +210,7 @@
                 closeRevisionWork();
                 revisionService.useDocument(null);
                 exitFullScreen();
+                vm.propertiesDialog = null;
                 vm.source = null;
                 vm.fileName = '';
                 vm.modified = false;
@@ -225,6 +226,7 @@
 
             function showDocument(fileName, pageCount, size, untitled) {
                 vm.modified = !!untitled;
+                vm.fileSize = size || 0;
                 highlightService.clear();
                 vm.selectedHighlightId = null;
                 vm.tool = 'pan';
@@ -313,6 +315,61 @@
                 if (!$document[0].fullscreenElement && vm.fullScreen && !vm.isDesktop) { $scope.$apply(exitFullScreen); }
             }
             $document[0].addEventListener('fullscreenchange', onFullscreenChange);
+
+            // ----- Document properties; the current page's size -----
+            vm.fileSize = 0;
+            vm.propertiesDialog = null; // { loading, error, general, description, application, sizes } while open
+            vm.pageSize = null;         // the current page's size, for the status bar (pagesService.describeSize)
+
+            $scope.$watchGroup([function () { return vm.currentPage; }, function () { return vm.docVersion; }], function () {
+                var page = vm.currentPage, version = vm.docVersion;
+                if (!vm.hasDocument() || !page) { vm.pageSize = null; return; }
+                pdfService.getPageSize(page).then(function (size) {
+                    if (vm.currentPage === page && vm.docVersion === version) { vm.pageSize = pagesService.describeSize(size.width, size.height); }
+                }, function () { vm.pageSize = null; });
+            });
+
+            /** "D:20240115093000+05'30'" (a PDF date) for people; the text as it is when it is not one. */
+            function pdfDate(value) {
+                var m = /^(?:D:)?(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(?:([Z+-])(\d{2})?'?(\d{2})?'?)?/.exec(value || '');
+                if (!m) { return value || ''; }
+                var utc = Date.UTC(+m[1], (+m[2] || 1) - 1, +m[3] || 1, +m[4] || 0, +m[5] || 0, +m[6] || 0);
+                if (m[7] === '+' || m[7] === '-') { utc -= (m[7] === '+' ? 1 : -1) * ((+m[8] || 0) * 60 + (+m[9] || 0)) * 60000; }
+                return new Date(utc).toLocaleString();
+            }
+
+            vm.openProperties = function () {
+                if (!vm.hasDocument()) { return; }
+                var d = vm.propertiesDialog = { loading: true, error: '', general: [], description: [], application: [], sizes: [] };
+                pdfService.getInfo(vm.source).then(function (info) {
+                    if (vm.propertiesDialog !== d) { return; }
+                    var meta = info.metadata || {};
+                    var none = '\u2014';
+                    d.general = [
+                        ['File name', vm.fileName + (vm.modified ? ' (page changes not saved)' : '')],
+                        ['File size', vm.fileSize ? formatSize(vm.fileSize) + ' (' + vm.fileSize.toLocaleString('en-US') + ' bytes)' : none],
+                        ['Pages', info.pageCount.toLocaleString('en-US')],
+                        ['PDF version', info.version || none],
+                        ['Security', info.encrypted ? 'Encrypted' + (info.restrictions.length ? '; not allowed: ' + info.restrictions.join(', ').toLowerCase() : '') : 'None'],
+                        ['Tagged (accessible)', info.tagged ? 'Yes' : 'No'],
+                        ['Bookmarks', info.hasBookmarks ? 'Yes' : 'No']
+                    ];
+                    d.description = [['Title', meta.Title], ['Author', meta.Author], ['Subject', meta.Subject], ['Keywords', meta.Keywords]]
+                        .map(function (row) { return [row[0], row[1] || none]; });
+                    d.application = [['Created', pdfDate(meta.CreationDate)], ['Modified', pdfDate(meta.ModDate)],
+                                     ['Application', meta.Creator], ['PDF producer', meta.Producer]]
+                        .map(function (row) { return [row[0], row[1] || none]; });
+                    d.sizes = (info.pageSizes || []).map(function (g) {
+                        var size = pagesService.describeSize(g.width, g.height);
+                        return angular.extend(size, { count: g.count, pages: pagesService.formatPages(g.pages) + (g.count > g.pages.length ? ', \u2026' : '') });
+                    });
+                    d.loading = false;
+                }, function (message) {
+                    if (vm.propertiesDialog !== d) { return; }
+                    d.loading = false;
+                    d.error = typeof message === 'string' ? message : 'Unable to read the document properties.';
+                });
+            };
 
             // ----- Page navigation -----
             vm.canGoPrevious = function () { return vm.hasDocument() && vm.currentPage > 1 && !vm.busy; };
@@ -463,7 +520,7 @@
             function onCustomZoomKey(event) {
                 if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog &&
                     !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog && !vm.unitsDialog &&
-                    !vm.stampDialog && !vm.customDialog && !vm.customSaveDialog) { return; }
+                    !vm.stampDialog && !vm.customDialog && !vm.customSaveDialog && !vm.propertiesDialog) { return; }
                 // The colour pop-up (Edit markup dialog) handles its own keys, Esc included.
                 var popover = $document[0].querySelector('.color-popover');
                 if (popover && popover.contains(event.target)) { return; }
@@ -474,7 +531,7 @@
                         vm.revisionsDialog = null; vm.reportDialog = null;
                         if (!vm.pagesDialog || !vm.pagesDialog.busy) { vm.pagesDialog = null; }
                         vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null; vm.unitsDialog = null;
-                        vm.stampDialog = null; vm.customDialog = null; vm.customSaveDialog = null;
+                        vm.stampDialog = null; vm.customDialog = null; vm.customSaveDialog = null; vm.propertiesDialog = null;
                     });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
@@ -772,6 +829,7 @@
                         scaleService.remap(map.map(function (entry) { return entry.page; }));
                         if (compareService.isOpen()) { vm.closeCompare(); }
                         vm.pageCount = pageCount;
+                        vm.fileSize = result.size || vm.fileSize;
                         vm.modified = true;
                         vm.selectedHighlightId = null;
                         vm.docVersion++;
@@ -1697,6 +1755,8 @@
                 var command = null;
                 if (key === 'o') {
                     command = vm.chooseFile;
+                } else if (key === 'd' && vm.hasDocument()) {
+                    command = vm.openProperties;
                 } else if (key === 'l' && vm.hasDocument()) {
                     command = vm.toggleFullScreen;
                 } else if (key === 's' && event.shiftKey) {

@@ -320,11 +320,25 @@
              */
             function searchLocal(query, options, from, to) {
                 return $http.get('api/local/' + localDocument.token + '/search', {
-                    params: { q: query, from: from, to: to, matchCase: !!options.matchCase, wholeWord: !!options.wholeWord }
+                    params: { q: query, from: from, to: to, matchCase: !!options.matchCase, wholeWord: !!options.wholeWord,
+                              pattern: options.pattern || undefined }
                 }).then(function (response) { return response.data; });
             }
 
+            /**
+             * Document properties from the host (PDFium): { version, pageCount, metadata, encrypted, restrictions,
+             * tagged, hasBookmarks, pageSizes: [{ width, height, count, pages }] }. `source` is the viewer's
+             * { kind: 'web', id } on the web.
+             */
+            function getInfo(source) {
+                var url = localDocument ? 'api/local/' + localDocument.token + '/info' : VIEWER_CONFIG.apiBase + '/' + source.id + '/info';
+                return $http.get(url).then(function (response) { return response.data; }, function (response) {
+                    return $q.reject((response.data && response.data.error) || 'Unable to read the document properties.');
+                });
+            }
+
             return {
+                getInfo: getInfo,
                 validateFile: validateFile,
                 upload: upload,
                 load: load,

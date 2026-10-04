@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PdfViewer.Api.Models;
 using PdfViewer.Api.Services;
+using PdfViewer.Tools;
 
 namespace PdfViewer.Api.Controllers;
 
@@ -25,6 +26,23 @@ public class PdfController(PdfService pdfService, ILogger<PdfController> logger)
             logger.LogError(ex, "PDF upload failed");
             return StatusCode(StatusCodes.Status500InternalServerError,
                 new { error = "Unable to upload this PDF. Please try again." });
+        }
+    }
+
+    /// <summary>Document properties: PDF version, metadata, security and page sizes.</summary>
+    [HttpGet("{id:guid}/info")]
+    public async Task<IActionResult> Info(Guid id, CancellationToken ct)
+    {
+        var path = pdfService.GetStoredPath(id);
+        if (path is null)
+            return NotFound(new { error = "The requested PDF was not found. Please open it again." });
+        try
+        {
+            return Ok(await Task.Run(() => PdfInfoReader.Read(path), ct));
+        }
+        catch (ToolException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
     }
 

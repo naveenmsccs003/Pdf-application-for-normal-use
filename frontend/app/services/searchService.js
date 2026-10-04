@@ -10,6 +10,9 @@
      * displayed orientation), the same units as highlights, so it lines up at any zoom.
      * Spaces and line breaks in the text and the query all count as a single space, so a phrase is
      * found across a line break.
+     *
+     * Besides plain text, drawing numbers, beam marks and column marks are found by pattern (patternFor): all of
+     * them, or one number however it is written (B12, B-12, FB12 for "12"). Each match has the `text` found.
      */
     angular.module('pdfViewerApp').factory('searchService', ['$q', 'pdfService', function ($q, pdfService) {
         var MAX_MATCHES = 1000;
@@ -24,6 +27,40 @@
         function lower(c) {
             var l = c.toLowerCase();
             return l.length === 1 ? l : c;   // keep positions 1:1 (e.g. 'İ' lowercases to 2 characters)
+        }
+
+        // Patterns for engineering drawings, valid both as JavaScript and .NET regular expressions.
+        //   drawing  S-101, A-201.1, STR-DR-001, M/101A (letters, a separator, 3-5 digits)
+        // Marks are capitals on drawings, so these searches match case (what is typed is made capitals).
+        //   beam     B1, B12, B-12, FB3, GB12A, RB4 (up to two letters before the B)
+        //   column   C1, C12, C-3, SC3, RC12
+        var KINDS = {
+            drawing: { label: 'Drawing no.', all: '\\b[A-Z]{1,5}(?:[-_/][A-Z0-9]{1,5}){0,3}[-_/]\\d{3,5}(?:\\.\\d{1,3})?[A-Z]?\\b',
+                       number: '[A-Z]{1,5}(?:[-_/][A-Z0-9]{1,5}){0,3}[-_/ ]?' },
+            beam: { label: 'Beam', all: '\\b[A-Z]{0,2}B[- ]?\\d{1,4}[A-Z]?\\b', number: '[A-Z]{0,2}B[- ]?' },
+            column: { label: 'Column', all: '\\b[A-Z]{0,2}C[- ]?\\d{1,4}[A-Z]?\\b', number: '[A-Z]{0,2}C[- ]?' }
+        };
+
+        function escapeRegex(text) { return text.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'); }
+
+        /**
+         * The pattern for a kind of mark and what was typed: nothing finds all of them; a number ("12") finds that
+         * number with any prefix of the kind (B12, B-12, FB12); a whole mark ("S-101", "FB3") finds it however it is
+         * separated (S101, S-101, S 101).
+         */
+        function patternFor(kind, input) {
+            var k = KINDS[kind];
+            var text = normalizeQuery(input).toUpperCase();
+            if (!k) { return null; }
+            if (!text) { return k.all; }
+            var number = /^0*(\d{1,5})([A-Za-z]?)$/.exec(text);
+            if (number) {
+                return '\\b' + k.number + '0*' + number[1] + (number[2] ? escapeRegex(number[2]) : '') + '\\b';
+            }
+            var parts = text.match(/[A-Za-z]+|\d+/g);
+            if (!parts) { return '\\b' + escapeRegex(text) + '\\b'; }
+            return '\\b' + parts.map(function (part) { return /^\d/.test(part) ? '0*' + part.replace(/^0+(?=\d)/, '') : part; })
+                .join('[-_/ .]?') + '\\b';
         }
 
         var WORD_CHAR = /[\p{L}\p{N}_]/u;
@@ -151,9 +188,21 @@
                 }
                 var rects = matchRects(index, pos, end);
                 if (rects.length) {
-                    found.push({ pageNumber: pageNumber, rects: rects });
+                    found.push({ pageNumber: pageNumber, rects: rects, text: index.text.slice(pos, end) });
                 }
                 pos = hay.indexOf(needle, end);
+            }
+            return found;
+        }
+
+        /** Pattern search (drawing / beam / column numbers) in the page's text. */
+        function findPatternInPage(index, regex, pageNumber, limit) {
+            var found = [], m;
+            regex.lastIndex = 0;
+            while (found.length < limit && (m = regex.exec(index.text)) !== null) {
+                if (!m[0].length) { regex.lastIndex++; continue; }
+                var rects = matchRects(index, m.index, m.index + m[0].length);
+                if (rects.length) { found.push({ pageNumber: pageNumber, rects: rects, text: m[0] }); }
             }
             return found;
         }
@@ -167,6 +216,13 @@
         function start(query, options, pageCount, startPage, onUpdate) {
             var text = normalizeQuery(query);
             var doc = pdfService.currentDocument();
+            var regex = options && options.pattern ? new RegExp(options.pattern, 'g') : null;
+            if (!regex && !text) {
+                // Nothing to look for (an empty needle would match everywhere).
+                onUpdate({ matches: [], wrapped: false, done: true });
+                return { cancel: angular.noop };
+            }
+            if (regex) { options = angular.extend({}, options, { matchCase: true }); }   // the host matches case too
             var cancelled = false;
             var total = 0;
             var parts = [{ from: startPage, to: pageCount, wrapped: false }];
@@ -198,7 +254,7 @@
             function searchLocalPart(part, from) {
                 pdfService.searchLocal(text, options, from, part.to).then(function (result) {
                     if (!current()) { return; }
-                    var matches = (result.matches || []).map(function (m) { return { pageNumber: m.page, rects: m.rects }; });
+                    var matches = (result.matches || []).map(function (m) { return { pageNumber: m.page, rects: m.rects, text: m.text }; });
                     var partDone = result.next === null || result.next === undefined || result.next > part.to;
                     if (!report(part, matches, partDone)) {
                         searchLocalPart(part, result.next);
@@ -220,7 +276,8 @@
                     }
                     pageIndex(pageNumber).then(function (index) {
                         var limit = MAX_MATCHES - total - batch.length + 1;   // one extra tells "1000+" from exactly 1000
-                        batch = batch.concat(findInPage(index, text, options, pageNumber, limit));
+                        batch = batch.concat(regex ? findPatternInPage(index, regex, pageNumber, limit)
+                                                   : findInPage(index, text, options, pageNumber, limit));
                     }, angular.noop /* a damaged page is skipped, like a page without text */).then(function () {
                         next(pageNumber + 1);
                     });
@@ -242,6 +299,8 @@
         return {
             MAX_MATCHES: MAX_MATCHES,
             MAX_QUERY_LENGTH: MAX_QUERY_LENGTH,
+            KINDS: KINDS,
+            patternFor: patternFor,
             normalizeQuery: normalizeQuery,
             start: start
         };

@@ -597,6 +597,45 @@ async function startHost() {
         await click('Single page'); await sleep(300);
         check('desktop view: back to single page', (await view()).slots.length === 0);
 
+        // ----- Search by drawing / beam / column number and document properties (on the host) -----
+        const results = () => page.evaluate(() => ({
+            count: (document.querySelector('.find-count') || {}).textContent || '',
+            groups: [...document.querySelectorAll('.find-results li')].map(li => li.textContent.replace(/\s+/g, ' ').trim())
+        }));
+        const searchDone = async () => {
+            await sleep(450);
+            await page.waitForFunction(() => !/Searching|…/.test((document.querySelector('.find-count') || {}).textContent || ''), { timeout: 20000 });
+            await sleep(200);
+        };
+        await open('drawing-set.pdf');
+        await page.click('#ribbon-tab-navigation'); await page.click('button[aria-label="Find drawing number"]'); await searchDone();
+        let sr = await results();
+        check('desktop search: drawing numbers of every page (PDFium text, pattern on the host)',
+            sr.groups.join('|') === 'Page 1 S-101 S-201|Page 2 S-102|Page 3 S-103', sr);
+        await page.click('button[aria-label="Find beam"]'); await searchDone(); sr = await results();
+        check('desktop search: every beam mark', sr.groups.join('|') === 'Page 1 B1 B12 FB3|Page 2 B12 ×2 GB-4', sr);
+        await page.type('#find-input', '12'); await searchDone(); sr = await results();
+        check('desktop search: beam 12', sr.groups.join('|') === 'Page 1 B12|Page 2 B12 ×2', sr);
+        await page.click('button[aria-label="Find column"]'); await searchDone(); sr = await results();
+        check('desktop search: every column mark', sr.groups.join('|') === 'Page 1 C1 C-2|Page 2 C1|Page 3 SC3', sr);
+        const badPattern = await page.evaluate(async () => {
+            const res = await fetch('/api/local/00000000-0000-0000-0000-000000000000/search?pattern=(');
+            return res.status;
+        });
+        check('desktop search: an invalid pattern is refused', badPattern === 400, badPattern);
+        await page.keyboard.press('Escape'); await sleep(100);
+        await page.keyboard.down('Control'); await page.keyboard.press('KeyD'); await page.keyboard.up('Control');
+        await page.waitForSelector('.properties-list', { timeout: 10000 }); await sleep(200);
+        const props = await page.evaluate(() => {
+            const rows = {};
+            document.querySelectorAll('.properties-list > div').forEach(d => { rows[d.querySelector('dt').textContent.trim()] = d.querySelector('dd').textContent.trim(); });
+            return rows;
+        });
+        check('desktop properties: metadata and PDF version from the host', props.Title === 'Structural drawings' && props.Author === 'Test Engineer' &&
+            props['PDF version'] === '1.7' && props.Pages === '3', props);
+        await page.keyboard.press('Escape'); await sleep(100);
+        check('desktop page size: shown in the status bar', (await page.$eval('.page-size', e => e.textContent.trim())) === 'A3 · 420 × 297 mm');
+
         // ----- Security: API only serves the opened file -----
         const probe = await page.evaluate(async () => {
             const bad = await fetch('/api/local/00000000-0000-0000-0000-000000000000/pages/1').then(r => r.status);

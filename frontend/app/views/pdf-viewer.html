@@ -69,6 +69,10 @@
     <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9 3h6l-1 7h3a2 2 0 0 1 2 2v3H5v-3a2 2 0 0 1 2-2h3z"/><path d="M5 18h14M7 21h10"/></symbol>
     <symbol id="i-custom" viewBox="0 0 24 24"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></symbol>
     <symbol id="i-custom-add" viewBox="0 0 24 24"><path d="M10 3l2.2 4.5 5 .7-3.6 3.5.9 5L10 14.3 5.5 16.7l.9-5L2.8 8.2l5-.7z"/><path d="M19 15v6M16 18h6"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></symbol>
+    <symbol id="i-find-drawing" viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="16" rx="1"/><path d="M9 16h8M9 16v4"/><circle cx="17.5" cy="9.5" r="3"/><path d="M19.7 11.7L22 14"/></symbol>
+    <symbol id="i-find-beam" viewBox="0 0 24 24"><path d="M2 8h14M2 13h14M4 8v5M14 8v5"/><circle cx="17.5" cy="16.5" r="3"/><path d="M19.7 18.7L22 21"/></symbol>
+    <symbol id="i-find-column" viewBox="0 0 24 24"><path d="M5 3h8M5 21h8M7 3v18M11 3v18"/><circle cx="17.5" cy="12.5" r="3"/><path d="M19.7 14.7L22 17"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -96,6 +100,8 @@
                     <svg class="icon icon-sm"><use href="#i-new"></use></svg><span>New PDF&hellip;</span></button>
                 <button type="button" class="menu-item" role="menuitem" ng-click="vm.chooseFile()" ng-disabled="vm.busy">
                     <svg class="icon icon-sm"><use href="#i-open"></use></svg><span>Open PDF&hellip;</span><kbd>{{ vm.modKey }}O</kbd></button>
+                <button type="button" class="menu-item" role="menuitem" ng-click="vm.openProperties()" ng-disabled="!vm.hasDocument()">
+                    <svg class="icon icon-sm"><use href="#i-info"></use></svg><span>Document properties&hellip;</span><kbd>{{ vm.modKey }}D</kbd></button>
                 <button type="button" class="menu-item" role="menuitem" ng-click="vm.closeDocument()" ng-disabled="!vm.hasDocument() || vm.busy">
                     <svg class="icon icon-sm"><use href="#i-close"></use></svg><span>Close PDF</span></button>
                 <div class="menu-separator" role="separator"></div>
@@ -218,6 +224,10 @@
                 <button type="button" class="tool tool-labelled" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
                         aria-label="Save copy" title="Save a copy of the PDF with the markups (the open PDF is not changed)" data-shortcut="{{ vm.modified ? '' : vm.modKey + 'S' }}">
                     <svg class="icon"><use href="#i-save"></use></svg><span>Save copy</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openProperties()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Document properties" title="Document properties: metadata, PDF version, page sizes" data-shortcut="{{ vm.modKey }}D">
+                    <svg class="icon"><use href="#i-info"></use></svg><span>Properties</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.closeDocument()" ng-disabled="!vm.hasDocument() || vm.busy"
                         aria-label="Close PDF" title="Close the open PDF">
@@ -401,6 +411,18 @@
                         ng-class="{'is-active': find.isOpen}" aria-pressed="{{ find.isOpen }}"
                         aria-label="Find" title="Find text ({{ vm.modKey }}F)" data-shortcut="{{ vm.modKey }}F">
                     <svg class="icon"><use href="#i-search"></use></svg><span>Find</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="find.show('drawing')" ng-disabled="!vm.hasDocument()"
+                        aria-label="Find drawing number" title="Find a drawing number (S-101), or list every page's drawing number">
+                    <svg class="icon"><use href="#i-find-drawing"></use></svg><span>Drawing no.</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="find.show('beam')" ng-disabled="!vm.hasDocument()"
+                        aria-label="Find beam" title="Find a beam mark (B12, FB3), or list every beam">
+                    <svg class="icon"><use href="#i-find-beam"></use></svg><span>Beam</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="find.show('column')" ng-disabled="!vm.hasDocument()"
+                        aria-label="Find column" title="Find a column mark (C3, SC1), or list every column">
+                    <svg class="icon"><use href="#i-find-column"></use></svg><span>Column</span>
                 </button>
             </div>
             <span class="ribbon-caption">Search</span>
@@ -835,14 +857,16 @@
             <!-- Find bar (keyboard: findController.js) -->
             <div class="find-bar" role="search" aria-label="Find in document" ng-if="find.isOpen">
                 <svg class="icon icon-sm find-icon"><use href="#i-search"></use></svg>
-                <input type="text" id="find-input" class="find-input" placeholder="Find in document" aria-label="Find in document"
+                <select class="find-kind" ng-model="find.kind" ng-change="find.setKind()" aria-label="Find what"
+                        ng-options="k.value as k.label for k in find.kinds"></select>
+                <input type="text" id="find-input" class="find-input" placeholder="{{ find.placeholder() }}" aria-label="Find in document"
                        autocomplete="off" spellcheck="false" maxlength="{{ find.maxLength }}"
                        ng-model="find.query" ng-change="find.onQueryChange()" ng-keydown="find.onInputKey($event)">
                 <span class="find-count" aria-live="polite">{{ find.countText() }}</span>
-                <button type="button" class="tool tool-sm find-option" ng-click="find.toggle('matchCase')"
+                <button type="button" class="tool tool-sm find-option" ng-click="find.toggle('matchCase')" ng-if="find.kind === 'text'"
                         ng-class="{'is-active': find.matchCase}" aria-pressed="{{ find.matchCase }}"
                         aria-label="Match case" title="Match case">Aa</button>
-                <button type="button" class="tool tool-sm find-option find-option-word" ng-click="find.toggle('wholeWord')"
+                <button type="button" class="tool tool-sm find-option find-option-word" ng-click="find.toggle('wholeWord')" ng-if="find.kind === 'text'"
                         ng-class="{'is-active': find.wholeWord}" aria-pressed="{{ find.wholeWord }}"
                         aria-label="Whole words" title="Whole words only"><span>ab</span></button>
                 <span class="find-separator" aria-hidden="true"></span>
@@ -854,9 +878,25 @@
                         aria-label="Next match" title="Next match (Enter)">
                     <svg class="icon icon-sm"><use href="#i-down"></use></svg>
                 </button>
+                <button type="button" class="tool tool-sm" ng-click="find.toggleList()" ng-class="{'is-active': find.showList}"
+                        aria-pressed="{{ find.showList }}" aria-label="Results list" title="List every result by page">
+                    <svg class="icon icon-sm"><use href="#i-list"></use></svg>
+                </button>
                 <button type="button" class="tool tool-sm" ng-click="find.close()" aria-label="Close find" title="Close (Esc)">
                     <svg class="icon icon-sm"><use href="#i-close"></use></svg>
                 </button>
+                <div class="find-results" ng-if="find.showList && find.searched" role="region" aria-label="Results">
+                    <p class="find-summary" ng-if="find.groups.length">{{ find.summary() }}{{ find.capped ? ' (first ' + find.matches.length + ' results)' : '' }}</p>
+                    <p class="find-summary" ng-if="!find.groups.length">{{ find.searching ? 'Searching…' : 'Nothing found.' }}</p>
+                    <ul>
+                        <li ng-repeat="g in find.groups track by g.page">
+                            <span class="find-page">Page {{ g.page }}</span>
+                            <button type="button" class="find-hit" ng-repeat="item in g.items track by $index" ng-click="find.goTo(item.match)"
+                                    ng-class="{'is-current': find.current === item.match}">
+                                {{ item.text }}<span class="find-hit-count" ng-if="item.count > 1"> ×{{ item.count }}</span></button>
+                        </li>
+                    </ul>
+                </div>
             </div>
 
             <div class="empty-state" ng-if="!vm.hasDocument()">
@@ -959,6 +999,8 @@
         </button>
     </div>
 
+    <span class="page-size" ng-if="vm.pageSize" title="Page {{ vm.currentPage }}: {{ vm.pageSize.inches }} · {{ vm.pageSize.points }} · {{ vm.pageSize.orientation }}"
+          ng-click="vm.openProperties()">{{ vm.pageSize.name ? vm.pageSize.name + ' · ' : '' }}{{ vm.pageSize.mm }}</span>
     <span class="status-text" ng-class="{'is-error': vm.error}" aria-live="polite">{{ vm.status }}</span>
 
     <div class="zoom-group" role="group" aria-label="Zoom">
@@ -1466,6 +1508,44 @@
         <div class="dialog-footer">
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.customSaveDialog = null">Cancel</button>
             <button type="submit" form="custom-save-form" class="tool tool-labelled tool-primary">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- Document properties (File > Document properties) -->
+<div class="dialog-backdrop" ng-if="vm.propertiesDialog" ng-click="vm.propertiesDialog = null">
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="properties-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="properties-title">Document properties</h2>
+            <button type="button" class="panel-close" ng-click="vm.propertiesDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body properties">
+            <p class="dialog-intro" ng-if="vm.propertiesDialog.loading"><span class="spinner spinner-sm"></span> Reading the document&hellip;</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.propertiesDialog.error">{{ vm.propertiesDialog.error }}</div>
+            <div ng-if="!vm.propertiesDialog.loading && !vm.propertiesDialog.error">
+                <h3>General</h3>
+                <dl class="properties-list"><div ng-repeat="row in vm.propertiesDialog.general"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></div></dl>
+                <h3>Description</h3>
+                <dl class="properties-list"><div ng-repeat="row in vm.propertiesDialog.description"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></div></dl>
+                <h3>Created with</h3>
+                <dl class="properties-list"><div ng-repeat="row in vm.propertiesDialog.application"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></div></dl>
+                <h3>Page sizes</h3>
+                <table class="properties-sizes">
+                    <thead><tr><th>Paper</th><th>Size</th><th>Inches</th><th>Pages</th></tr></thead>
+                    <tbody>
+                        <tr ng-repeat="size in vm.propertiesDialog.sizes">
+                            <td>{{ size.name || 'Custom' }} <span class="properties-muted">{{ size.orientation }}</span></td>
+                            <td>{{ size.mm }}</td><td>{{ size.inches }}</td>
+                            <td>{{ size.count }} <span class="properties-muted">({{ size.pages }})</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-primary" ng-click="vm.propertiesDialog = null">Close</button>
         </div>
     </div>
 </div>

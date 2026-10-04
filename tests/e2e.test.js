@@ -1707,6 +1707,70 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await shot('pages');
     await click('Close');
 
+    // ===== Search by drawing / beam / column number; page size; document properties =====
+    const results = () => page.evaluate(() => ({
+        count: (document.querySelector('.find-count') || {}).textContent || '',
+        summary: ((document.querySelector('.find-summary') || {}).textContent || '').trim(),
+        groups: [...document.querySelectorAll('.find-results li')].map(li => li.textContent.replace(/\s+/g, ' ').trim()),
+        kind: document.querySelector('.find-kind') ? document.querySelector('.find-kind').selectedOptions[0].textContent.trim() : '',
+        page: Number(document.querySelector('.page-input').value)
+    }));
+    const searchDone = async () => {
+        await sleep(450);   // typing starts the search after a short pause
+        await page.waitForFunction(() => !/Searching|…/.test((document.querySelector('.find-count') || {}).textContent || ''), { timeout: 20000 });
+        await sleep(200);
+    };
+    await open('drawing-set.pdf');
+    await page.click('#ribbon-tab-navigation'); await sleep(100);
+    await page.click('button[aria-label="Find drawing number"]'); await searchDone(); let sr = await results();
+    check('search: drawing numbers of every page, the title block one first', sr.kind === 'Drawing no.' &&
+        sr.groups.join('|') === 'Page 1 S-101 S-201|Page 2 S-102|Page 3 S-103' && sr.summary === '4 drawing numbers on 3 pages', sr);
+    await page.type('#find-input', 's102'); await searchDone(); sr = await results(); await settle();
+    check('search: a drawing number however it is typed (s102 finds S-102) goes to its page',
+        sr.groups.join('|') === 'Page 2 S-102' && sr.count === '1 of 1' && sr.page === 2, sr);
+    await page.click('button[aria-label="Find beam"]'); await searchDone(); sr = await results();
+    check('search: every beam mark, by page', sr.groups.join('|') === 'Page 1 B1 B12 FB3|Page 2 B12 ×2 GB-4' &&
+        sr.summary === '4 beam marks on 2 pages', sr);
+    await page.type('#find-input', '12'); await searchDone(); sr = await results();
+    check('search: beam number 12 (B12 on two pages, not B1)', sr.groups.join('|') === 'Page 1 B12|Page 2 B12 ×2' && sr.count.endsWith('of 3'), sr);
+    await page.click('#find-input', { clickCount: 3 }); await page.keyboard.press('Backspace'); await page.type('#find-input', 'gb4'); await searchDone(); sr = await results();
+    check('search: a beam mark however it is separated (gb4 finds GB-4)', sr.groups.join('|') === 'Page 2 GB-4', sr);
+    await page.click('button[aria-label="Find column"]'); await searchDone(); sr = await results();
+    check('search: every column mark', sr.groups.join('|') === 'Page 1 C1 C-2|Page 2 C1|Page 3 SC3', sr);
+    await page.type('#find-input', '2'); await searchDone(); sr = await results(); await settle();
+    check('search: column 2 finds C-2', sr.groups.join('|') === 'Page 1 C-2' && sr.page === 1, sr);
+    await page.click('.find-hit'); await sleep(200);
+    check('search: a result in the list shows its page', (await results()).page === 1);
+    await page.select('.find-kind', 'string:text'); await page.click('#find-input', { clickCount: 3 }); await page.keyboard.press('Backspace');
+    await page.type('#find-input', 'concrete'); await searchDone(); sr = await results();
+    check('search: back to plain text', sr.groups.join('|') === 'Page 3 concrete' && sr.count === '1 of 1', sr);
+    await page.click('button[aria-label="Results list"]'); await sleep(100);
+    check('search: the list can be hidden', (await results()).groups.length === 0);
+    await page.keyboard.press('Escape'); await sleep(100); await goTo(3);
+    const sizeText = await page.$eval('.page-size', e => ({ text: e.textContent.trim(), title: e.title }));
+    check('page size: the status bar shows the paper and size', sizeText.text === 'A3 · 420 × 297 mm' &&
+        /16\.54 × 11\.69 in/.test(sizeText.title) && /landscape/.test(sizeText.title), sizeText);
+    await shortcut('KeyD'); await page.waitForSelector('.properties-list'); await sleep(200);
+    const props = await page.evaluate(() => {
+        const rows = {};
+        document.querySelectorAll('.properties-list > div').forEach(d => { rows[d.querySelector('dt').textContent.trim()] = d.querySelector('dd').textContent.trim(); });
+        return { rows, sizes: [...document.querySelectorAll('.properties-sizes tbody tr')].map(r => [...r.cells].map(c => c.textContent.replace(/\s+/g, ' ').trim()).join(' | ')) };
+    });
+    check('properties: Ctrl+D shows the metadata', props.rows.Title === 'Structural drawings' && props.rows.Author === 'Test Engineer' &&
+        props.rows.Subject === 'Ground floor' && props.rows.Keywords === 'beams, columns' && props.rows.Application === 'CAD Export' &&
+        props.rows['PDF producer'] === 'Fixture writer', props.rows);
+    check('properties: file, PDF version, pages and security', props.rows['File name'] === 'drawing-set.pdf' && props.rows['PDF version'] === '1.7' &&
+        props.rows.Pages === '3' && props.rows.Security === 'None' && /bytes\)$/.test(props.rows['File size']), props.rows);
+    check('properties: the creation date (with its time zone) is shown as a date',
+        props.rows.Created === new Date(Date.UTC(2024, 0, 15, 4, 0, 0)).toLocaleString('en-US') || /2024/.test(props.rows.Created), props.rows.Created);
+    check('properties: page sizes with paper names', props.sizes.join('|') === 'A3 landscape | 420 × 297 mm | 16.54 × 11.69 in | 3 (1-3)', props.sizes);
+    await page.keyboard.press('Escape'); await sleep(100);
+    await open('mixed-sizes.pdf'); await shortcut('KeyD'); await page.waitForSelector('.properties-sizes tbody tr'); await sleep(200);
+    const mixed = await page.$$eval('.properties-sizes tbody tr td:first-child', tds => tds.map(t => t.textContent.replace(/\s+/g, ' ').trim()));
+    check('properties: every page size of a mixed set (Letter, A4, A3, custom)', mixed.join('|') ===
+        'Letter portrait|A4 landscape|A3 portrait|Custom landscape|Custom landscape', mixed);
+    await page.keyboard.press('Escape'); await sleep(100);
+
     // ===== Drawing navigation: single page / continuous scrolling, full screen, pan =====
     const view = () => page.evaluate(() => {
         const scroll = document.querySelector('.viewer-scroll');

@@ -190,8 +190,29 @@ One key picks a tool (when not typing in a box); pressing it again goes back to 
 | Shift+S | Stamp | Shift+C | My markups | | |
 
 Also (Cmd on macOS): ← / → previous / next page, **Home** / **End** first / last page, **Ctrl+O** open,
-**Ctrl+S** save, **Ctrl+Shift+S** save as, **Ctrl+F** find (**F3** next), **Ctrl+L** full screen,
+**Ctrl+S** save, **Ctrl+Shift+S** save as, **Ctrl+F** find (**F3** next), **Ctrl+D** document properties, **Ctrl+L** full screen,
 **Ctrl+=** / **Ctrl+−** zoom, **Ctrl+0** actual size, **Delete** removes the selected markup, **Space** (hold) pans.
+
+## Search and document information
+
+- **Find** (**Ctrl+F**, Navigation tab or Edit menu): searches every page as you type; **Enter** / **Shift+Enter**
+  (or **F3** / **Shift+F3**) go to the next / previous match; Match case and Whole words. The list button shows
+  every result grouped by page; click one to go there.
+- **Drawing no.**, **Beam** and **Column** (Navigation tab, or the Find menu in the find bar) look for marks on
+  drawings instead of plain text:
+  - nothing typed: every mark of that kind, by page. For drawing numbers this is a sheet index: each page's own
+    number (the one nearest the title block, bottom right) comes first, references to other drawings after it;
+  - a number (`12`): that number with any prefix of the kind (`B12`, `B-12`, `FB12` for beams);
+  - a whole mark (`S-101`, `fb3`): however it is written (`S101`, `S-101`, `S 101`).
+
+  Drawing numbers are letters, a separator and 3–5 digits (`S-101`, `A-201.1`, `STR-DR-001`); beams are up to two
+  letters and `B` with a number (`B12`, `FB3`, `GB-4`); columns the same with `C` (`C3`, `SC1`). Marks are matched in
+  capitals, as drawn. On desktop the host searches with PDFium's text and a time limit per page.
+- The **page size** of the current page is in the status bar (`A3 · 420 × 297 mm`; hover for inches, points and
+  orientation; click for the properties). ISO A/B, Letter, Legal, ANSI and ARCH sizes are named.
+- **Document properties** (**Ctrl+D**, File tab or File menu): file name and size, page count, PDF version,
+  security (and what is not allowed), tagged, bookmarks; title, author, subject, keywords; created / modified dates,
+  application and PDF producer; and every page size with how many pages and which.
 
 ## Drawing navigation
 
@@ -311,6 +332,7 @@ Notes:
 | --- | --- | --- |
 | POST | `/api/pdf/upload` | Upload a PDF (multipart field `file`). Returns `{ id, fileName, size }` |
 | GET | `/api/pdf/{id}` | Download an uploaded PDF (supports range requests) |
+| GET | `/api/pdf/{id}/info` | Document properties: PDF version, metadata, security, page sizes |
 | POST | `/api/tools/merge` | `items` (`id:{guid}` or `file:{n}`, in order) + `files` |
 | POST | `/api/tools/split` | `id` or `file`, `mode` (`pages`/`chunks`/`ranges`), `pagesPerFile`, `ranges` |
 | POST | `/api/tools/compress` | `id` or `file`, `level` (`small`/`medium`/`high`) |
@@ -364,6 +386,7 @@ shared/PdfViewer.Tools/          PDF tools used by both apps
   OfficeExport.cs                 text-only Word and Excel files (Open XML SDK)
   Ghostscript.cs                  compression via Ghostscript
   PageRanges.cs                   "1-3, 5" parsing, chunks
+  PdfInfo.cs                      document properties (version, metadata, security, page sizes)
   PageEditor.cs                   blank PDFs; rebuild a document's pages (delete, insert, move, copy, rotate, replace)
   Pdfium.cs                       shared PDFium lock, open and save helpers
   PngEncoder.cs                   small PNG writer
@@ -374,7 +397,8 @@ desktop/
   FileDialogs.cs                  native dialogs (and preset answers for tests)
   LinuxEnvironment.cs             fixes snap environment leaks (e.g. VS Code snap terminal) for WebKit
   Controllers/LocalPdfController.cs  page sizes and rendered page images for the opened file
-  Controllers/LocalSearchController.cs  text search in the opened file, in steps
+  Controllers/LocalSearchController.cs  text search in the opened file, in steps (also by pattern)
+  Controllers/LocalInfoController.cs    document properties of the opened file
   Services/PdfiumService.cs       open with PDFium, render pages, find text, working copy after page edits
   Services/PdfPreflight.cs        detects files PDFium cannot read before trying
   Services/RecentFiles.cs         recent file paths (JSON in the user's app data folder)
