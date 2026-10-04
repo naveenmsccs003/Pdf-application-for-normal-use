@@ -31,7 +31,7 @@
             if (name.length > 60) { return 'Keep the name under 60 characters.'; }
             if (items.length >= MAX) { return 'My markups holds up to ' + MAX + ' markups; delete one first.'; }
             var copy = angular.copy(markup);
-            ['id', 'pageNumber', 'createdAt', 'revision'].forEach(function (k) { delete copy[k]; });
+            ['id', 'pageNumber', 'createdAt', 'revision', 'locked', 'groupId'].forEach(function (k) { delete copy[k]; });
             var b = markupGeometry.bounds(copy);
             copy = markupGeometry.translate(copy, -b.x, -b.y);
             var item = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name, markup: copy };

@@ -13,11 +13,13 @@ public sealed record MarkupLine(string Text, double X, double Y, double Size = 0
 /// displayed orientation (after /Rotate). <c>X, Y, Width, Height</c> is the highlight / shape / note box;
 /// <c>Strokes</c> are the lines it is drawn with as polylines [x0, y0, x1, y1, ...] (curves already flattened).
 /// Measurements send their value label as the note box and text, and an area its outline as <c>Fill</c>.
-/// A markup without a type is a highlight.
+/// A markup without a type is a highlight. <c>Opacity</c> (0.05-1) applies to the whole markup; <c>Font</c>
+/// (helvetica, times or courier), <c>Bold</c> and <c>Italic</c> to the text of notes, labels and stamps.
 /// </summary>
 public sealed record Markup(int PageNumber, string? Type, double X, double Y, double Width, double Height,
                             string? Color = null, double StrokeWidth = 0, double[][]? Strokes = null,
-                            string? Text = null, double FontSize = 0, MarkupLine[]? Lines = null, double[]? Fill = null);
+                            string? Text = null, double FontSize = 0, MarkupLine[]? Lines = null, double[]? Fill = null,
+                            double Opacity = 1, string? Font = null, bool Bold = false, bool Italic = false);
 
 /// <summary>
 /// Writes markups as standard PDF annotations that other viewers show, print and can edit:
@@ -130,7 +132,7 @@ internal static partial class MarkupWriter
         var annot = Create(page, subtype);
         try
         {
-            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, color.R, color.G, color.B, 255);
+            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, color.R, color.G, color.B, Alpha(m));
             fpdf_annot.FPDFAnnotAppendAttachmentPoints(annot, new FS_QUADPOINTSF
             {
                 X1 = (float)ul.X, Y1 = (float)ul.Y, X2 = (float)ur.X, Y2 = (float)ur.Y,
@@ -156,7 +158,7 @@ internal static partial class MarkupWriter
         var annot = Create(page, AnnotText);
         try
         {
-            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, r, g, b, 255);
+            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, r, g, b, Alpha(m));
             SetRect(annot, Corners(map, m.X, m.Y, m.Width, m.Height), 0);
             Finish(annot);
             return fpdf_annot.FPDFPageGetAnnotIndex(page, annot);
@@ -176,7 +178,7 @@ internal static partial class MarkupWriter
         var annot = Create(page, subtype);
         try
         {
-            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, r, g, b, 255);
+            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, r, g, b, Alpha(m));
             fpdf_annot.FPDFAnnotSetBorder(annot, 0, 0, (float)width);
             // The appearance is drawn inside /Rect, so widen it by half the line width: the line then
             // runs along the edge the user drew.
@@ -198,7 +200,7 @@ internal static partial class MarkupWriter
         var annot = Create(page, AnnotInk);
         try
         {
-            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, r, g, b, 255);
+            fpdf_annot.FPDFAnnotSetColor(annot, FPDFANNOT_COLORTYPE.FPDFANNOT_COLORTYPE_Color, r, g, b, Alpha(m));
             fpdf_annot.FPDFAnnotSetBorder(annot, 0, 0, (float)width);
             var all = new List<(double X, double Y)>();
             foreach (var stroke in strokes)
@@ -253,6 +255,9 @@ internal static partial class MarkupWriter
         var strokes = CheckStrokes(m.Strokes, required: false);
         var (r, g, b) = ParseColor(m.Color);
         var width = CheckStrokeWidth(m.StrokeWidth);
+        var alpha = Alpha(m);
+        var opacity = alpha / 255.0;
+        FontName(m.Font, false, false);   // checks the font before anything is added
         // Notes have a framed box; measurement values and corrections sit on a plain white box.
         var isMeasure = MeasureTypes.Contains(m.Type!);
         var framed = m.Type is "text" or "callout";
@@ -271,7 +276,7 @@ internal static partial class MarkupWriter
             {
                 var area = NewPath(Points(map, fill).ToList());
                 fpdf_edit.FPDFPathClose(area);
-                fpdf_edit.FPDFPageObjSetFillColor(area, r, g, b, AreaFillAlpha);
+                fpdf_edit.FPDFPageObjSetFillColor(area, r, g, b, (uint)Math.Round(AreaFillAlpha * opacity));
                 fpdf_edit.FPDFPathSetDrawMode(area, FillModeAlternate, 0);
                 Append(annot, area);
             }
@@ -279,7 +284,7 @@ internal static partial class MarkupWriter
             foreach (var stroke in strokes)
             {
                 var path = NewPath(Points(map, stroke).ToList());
-                Stroke(path, r, g, b, width, FillModeNone);
+                Stroke(path, r, g, b, alpha, width, FillModeNone);
                 Append(annot, path);
             }
 
@@ -288,9 +293,9 @@ internal static partial class MarkupWriter
             {
                 var frame = NewPath(box);
                 fpdf_edit.FPDFPathClose(frame);
-                fpdf_edit.FPDFPageObjSetFillColor(frame, 255, 255, 255, framed ? 255u : 230u);
+                fpdf_edit.FPDFPageObjSetFillColor(frame, 255, 255, 255, (uint)Math.Round((framed ? 255 : 230) * opacity));
                 if (framed)
-                    Stroke(frame, r, g, b, width, FillModeAlternate);
+                    Stroke(frame, r, g, b, alpha, width, FillModeAlternate);
                 else
                     fpdf_edit.FPDFPathSetDrawMode(frame, FillModeAlternate, 0);
                 Append(annot, frame);
@@ -298,12 +303,12 @@ internal static partial class MarkupWriter
 
             foreach (var line in lines.Where(l => l.Text.Length > 0))
             {
-                var text = fpdf_edit.FPDFPageObjNewTextObj(document, line.Bold ? "Helvetica-Bold" : "Helvetica",
+                var text = fpdf_edit.FPDFPageObjNewTextObj(document, FontName(m.Font, line.Bold || m.Bold, m.Italic),
                                (float)(line.Size > 0 ? line.Size : m.FontSize))
                            ?? throw new ToolException("Could not add a note to the PDF.");
                 var utf16 = line.Text.Select(c => (ushort)c).Append((ushort)0).ToArray();
                 fpdf_edit.FPDFTextSetText(text, ref utf16[0]);
-                fpdf_edit.FPDFPageObjSetFillColor(text, r, g, b, 255);
+                fpdf_edit.FPDFPageObjSetFillColor(text, r, g, b, alpha);
                 // Text runs along the page's displayed x axis and stands upright on screen, also on rotated pages.
                 var (origin, right, down) = map.Axes(line.X, line.Y);
                 fpdf_edit.FPDFPageObjTransform(text, right.X, right.Y, -down.X, -down.Y, origin.X, origin.Y);
@@ -345,9 +350,9 @@ internal static partial class MarkupWriter
         return path;
     }
 
-    private static void Stroke(FpdfPageobjectT path, uint r, uint g, uint b, double width, int fillMode)
+    private static void Stroke(FpdfPageobjectT path, uint r, uint g, uint b, uint alpha, double width, int fillMode)
     {
-        fpdf_edit.FPDFPageObjSetStrokeColor(path, r, g, b, 255);
+        fpdf_edit.FPDFPageObjSetStrokeColor(path, r, g, b, alpha);
         fpdf_edit.FPDFPageObjSetStrokeWidth(path, (float)width);
         fpdf_edit.FPDFPageObjSetLineCap(path, LineCapRound);
         fpdf_edit.FPDFPageObjSetLineJoin(path, LineJoinRound);
@@ -391,6 +396,21 @@ internal static partial class MarkupWriter
             throw new ToolException("A markup has invalid lines.");
         return strokes;
     }
+
+    /// <summary>The markup's opacity as a colour alpha (0-255).</summary>
+    private static uint Alpha(Markup m) =>
+        double.IsFinite(m.Opacity) && m.Opacity >= 0.05 && m.Opacity <= 1
+            ? (uint)Math.Round(m.Opacity * 255)
+            : throw new ToolException("A markup has an invalid opacity.");
+
+    /// <summary>The PDF standard font for a note's text.</summary>
+    private static string FontName(string? font, bool bold, bool italic) => (font ?? "helvetica") switch
+    {
+        "helvetica" => "Helvetica" + (bold && italic ? "-BoldOblique" : bold ? "-Bold" : italic ? "-Oblique" : ""),
+        "times" => bold && italic ? "Times-BoldItalic" : bold ? "Times-Bold" : italic ? "Times-Italic" : "Times-Roman",
+        "courier" => "Courier" + (bold && italic ? "-BoldOblique" : bold ? "-Bold" : italic ? "-Oblique" : ""),
+        _ => throw new ToolException("A note has an invalid font.")
+    };
 
     private static (uint R, uint G, uint B) ParseColor(string? color)
     {

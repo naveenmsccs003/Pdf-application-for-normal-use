@@ -1277,6 +1277,85 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }
     await click('Fit Page');
 
+    // ===== Manage markups: multi-select, group, copy / paste, resize, lock, properties =====
+    const selectedRows = () => page.$$eval('.markup-row.is-selected', l => l.length);
+    const rowCount = () => page.$$eval('.markup-row', l => l.length);
+    const shapeAttrs = () => page.$$eval('.markup-layer g.markup', l => l.map(g => ({
+        type: g.dataset.type, d: g.querySelector('path') ? g.querySelector('path').getAttribute('d') : '',
+        opacity: g.getAttribute('opacity'), width: g.getAttribute('stroke-width'),
+        font: g.querySelector('text') ? g.querySelector('text').getAttribute('font-family') : null,
+        weight: g.querySelector('text') ? g.querySelector('text').getAttribute('font-weight') : null })));
+    const withKeys = async (keys, fn) => {
+        for (const k of keys) { await page.keyboard.down(k); }
+        await fn();
+        for (const k of keys.slice().reverse()) { await page.keyboard.up(k); }
+        await sleep(150);
+    };
+    const handles = () => page.$$eval('.resize-handle', l => l.map(h => h.dataset.handle));
+    await open('one-page.pdf'); await click('Actual size'); await click('Clear Markups');
+    await page.click('#ribbon-tab-markup'); await sleep(100);
+    await click('Rectangle'); await drag(100, 100, 200, 160); await drag(250, 100, 350, 160);
+    await page.keyboard.press('Escape'); await sleep(100);
+    await clickAt(150, 100);
+    check('manage: one rectangle selected shows 8 resize handles', (await selectedRows()) === 1 && (await handles()).length === 8, await handles());
+    await withKeys(['Control'], () => clickAt(300, 100));
+    check('manage: Ctrl+click adds a markup to the selection, no resize handles', (await selectedRows()) === 2 && (await handles()).length === 0);
+    await shortcut('KeyG'); s = await state();
+    check('manage: Ctrl+G groups them', /^2 markups grouped/.test(s.status) &&
+        (await page.$$eval('.markup-meta', l => l.filter(e => /Grouped/.test(e.textContent)).length)) === 2, s.status);
+    await clickAt(300, 300); await clickAt(150, 100);
+    check('manage: clicking one grouped markup selects the group', (await selectedRows()) === 2);
+    let mBefore = await shapeAttrs();
+    await drag(150, 100, 170, 130); let mAfter = await shapeAttrs();
+    check('manage: dragging moves the whole group', mBefore.every((b, i) => b.d !== mAfter[i].d), [mBefore, mAfter]);
+    await shortcut('KeyC'); await shortcut('KeyV'); s = await state();
+    check('manage: copy and paste adds the copies, selected', (await rowCount()) === 4 && (await selectedRows()) === 2 && /2 markups pasted/.test(s.status), s.status);
+    await page.keyboard.press('Delete'); await sleep(150);
+    check('manage: Delete removes the pasted copies', (await rowCount()) === 2);
+    await clickAt(170, 130); await withKeys(['Control', 'Shift'], () => page.keyboard.press('KeyG'));
+    await clickAt(300, 300); await clickAt(170, 130);
+    check('manage: Ctrl+Shift+G ungroups', (await selectedRows()) === 1 && (await handles()).length === 8);
+    let sel = await selectionBox();
+    const se = await (await page.$('.resize-handle[data-handle="se"]')).boundingBox();
+    await page.mouse.move(se.x + se.width / 2, se.y + se.height / 2); await page.mouse.down();
+    await page.mouse.move(se.x + se.width / 2 + 40, se.y + se.height / 2 + 20, { steps: 5 }); await page.mouse.up(); await sleep(150);
+    let sel2 = await selectionBox();
+    check('manage: dragging a corner handle resizes the markup', sel && sel2 && near(sel2.w - sel.w, 40) && near(sel2.h - sel.h, 20), [sel, sel2]);
+    await withKeys(['Control', 'Shift'], () => page.keyboard.press('KeyL'));
+    check('manage: Ctrl+Shift+L locks: lock badge, no handles, no ×', !!(await page.$('.markup-lock-badge')) && (await handles()).length === 0 &&
+        !(await page.$('.markup-selection .highlight-remove')));
+    await page.keyboard.press('Delete'); await sleep(150); s = await state();
+    check('manage: a locked markup is not deleted', (await rowCount()) === 2 && /locked markup kept/.test(s.status), s.status);
+    mBefore = await shapeAttrs(); await drag(170, 130, 220, 180); mAfter = await shapeAttrs();
+    check('manage: a locked markup is not moved', JSON.stringify(mBefore) === JSON.stringify(mAfter));
+    await withKeys(['Control', 'Shift'], () => page.keyboard.press('KeyL'));
+    check('manage: Ctrl+Shift+L again unlocks', !(await page.$('.markup-lock-badge')) && (await handles()).length === 8);
+    await shortcut('KeyE');
+    check('manage: Ctrl+E opens Properties', !!(await page.$('#edit-opacity')) && !!(await page.$('#edit-stroke')) && !(await page.$('#edit-font-family')));
+    await page.$eval('#edit-opacity', e => { e.value = '50'; e.dispatchEvent(new Event('input')); e.dispatchEvent(new Event('change')); });
+    await page.$eval('#edit-stroke', e => e.select()); await page.keyboard.type('4'); await okDialog();
+    let attrs = (await shapeAttrs()).filter(a => a.opacity === '0.5');
+    check('manage: Properties sets opacity and line thickness', attrs.length === 1 && attrs[0].width === '4', await shapeAttrs());
+    await click('Text note'); await clickAt(100, 400); await page.keyboard.type('Beam B12'); await okDialog();
+    await page.keyboard.press('Escape'); await sleep(100);
+    await clickAt(110, 410); await shortcut('KeyE');
+    await page.select('#edit-font-family', 'times'); await page.click('.edit-style input[type=checkbox]'); await okDialog();
+    attrs = (await shapeAttrs()).find(a => a.type === 'text');
+    check('manage: Properties sets the font of a note', attrs && /Times/.test(attrs.font) && attrs.weight === 'bold', attrs);
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('manage: opacity and fonts save into the PDF copy', /with 3 markups/.test(s.status), s.status);
+    if (canCheckDownloads) {
+        await sleep(500);
+        const saved = fs.readdirSync(DOWNLOADS).filter(f => /^one-page-highlighted.*\.pdf$/.test(f))
+            .map(f => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+        const raw = saved ? fs.readFileSync(saved).toString('latin1') : '';
+        check('manage: the copy uses Times-Bold for the note', raw.includes('Times-Bold'), saved);
+    }
+    await click('Clear Markups'); await click('Fit Page');
+
     // ===== Revision: compare, overlay, revision tracking, markup report =====
     const revisionState = () => page.evaluate(() => ({
         status: document.querySelector('.status-text').textContent.trim(),
@@ -1784,8 +1863,39 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     let printed = await page.evaluate(() => window.__printed);
     check('print: the chosen pages are drawn and sent to the print dialog', os === 'Sent 3 pages to the print dialog.' &&
         printed.length === 1 && printed[0].length === 3 && printed[0].every(Boolean), [os, printed]);
+    await sleep(100);
     check('print: the prepared pages are removed afterwards', !(await page.$('.print-sheets')) &&
         !(await page.evaluate(() => document.body.classList.contains('is-printing'))));
+
+    // WebKitGTK (the desktop app) returns from print() when its dialog closes but never fires afterprint:
+    // the app's dialog must still close at once, and the pages go with the next print.
+    await page.evaluate(() => {
+        window.__printAfterprint = window.print;
+        window.print = () => { window.__printed.push([...document.querySelectorAll('.print-sheets img')].length); };
+        window.__printed = [];
+    });
+    await shortcut('KeyP'); await sleep(200);
+    await page.click('[aria-labelledby="print-dialog-title"] .tool-primary');
+    const printClosed = () => page.waitForFunction(() => !document.querySelector('#print-dialog-title'), { timeout: 20000 }).catch(() => {});
+    await printClosed();
+    os = (await state()).status;
+    check('print: without afterprint, the dialog still closes when print() returns', /^Sent \d+ pages? to the print dialog\.$/.test(os) &&
+        !(await page.$('#print-dialog-title')), os);
+    await shortcut('KeyP'); await sleep(200);
+    await page.click('[aria-labelledby="print-dialog-title"] .tool-primary');
+    await printClosed();
+    check('print: a new print removes the previous pages first', (await page.$$('.print-sheets')).length === 1, await page.$$eval('.print-sheets', l => l.length));
+
+    // Cancel while the pages are being prepared: Cancel is enabled and nothing is printed.
+    await page.evaluate(() => { window.__printed = []; });
+    await shortcut('KeyP'); await sleep(200);
+    await page.click('[aria-labelledby="print-dialog-title"] .tool-primary');
+    const cancelEnabled = await page.$eval('[aria-labelledby="print-dialog-title"] .tool-outline', b => !b.disabled);
+    await page.click('[aria-labelledby="print-dialog-title"] .tool-outline');
+    await sleep(1500);
+    check('print: Cancel works while the pages are prepared, and nothing prints', cancelEnabled && !(await page.$('#print-dialog-title')) &&
+        (await page.evaluate(() => window.__printed.length)) === 0, [cancelEnabled, await page.evaluate(() => window.__printed)]);
+    await page.evaluate(() => { window.print = window.__printAfterprint; window.dispatchEvent(new Event('afterprint')); });
     await page.evaluate(() => {
         const s = [...document.styleSheets].flatMap(sh => { try { return [...sh.cssRules]; } catch { return []; } })
             .filter(r => r.media && /print/.test(r.media.mediaText)).map(r => r.cssText).join(' ');

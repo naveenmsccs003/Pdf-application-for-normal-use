@@ -69,6 +69,14 @@
     <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9 3h6l-1 7h3a2 2 0 0 1 2 2v3H5v-3a2 2 0 0 1 2-2h3z"/><path d="M5 18h14M7 21h10"/></symbol>
     <symbol id="i-custom" viewBox="0 0 24 24"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></symbol>
     <symbol id="i-custom-add" viewBox="0 0 24 24"><path d="M10 3l2.2 4.5 5 .7-3.6 3.5.9 5L10 14.3 5.5 16.7l.9-5L2.8 8.2l5-.7z"/><path d="M19 15v6M16 18h6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><path d="M9 4h6v3H9z"/><path d="M15 5.5h2.5A1.5 1.5 0 0 1 19 7v12.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19.5V7a1.5 1.5 0 0 1 1.5-1.5H9"/><path d="M9 12h6M9 16h4"/></symbol>
+    <symbol id="i-duplicate" viewBox="0 0 24 24"><rect x="4" y="4" width="11" height="11" rx="1.5"/><rect x="9" y="9" width="11" height="11" rx="1.5"/><path d="M14.5 12.5v4M12.5 14.5h4"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 7.7-1.5"/><path d="M12 15v2"/></symbol>
+    <symbol id="i-group" viewBox="0 0 24 24"><path d="M3 7V3h4M17 3h4v4M21 17v4h-4M7 21H3v-4"/><rect x="6.5" y="6.5" width="6" height="6" rx="1"/><circle cx="14.5" cy="14.5" r="3"/></symbol>
+    <symbol id="i-ungroup" viewBox="0 0 24 24"><path d="M3 7V3h4M17 21h4v-4" stroke-dasharray="2 2"/><rect x="4" y="5" width="7" height="7" rx="1"/><circle cx="16.5" cy="16" r="3.5"/></symbol>
+    <symbol id="i-properties" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.1"/></symbol>
     <symbol id="i-find-drawing" viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="16" rx="1"/><path d="M9 16h8M9 16v4"/><circle cx="17.5" cy="9.5" r="3"/><path d="M19.7 11.7L22 14"/></symbol>
     <symbol id="i-find-beam" viewBox="0 0 24 24"><path d="M2 8h14M2 13h14M4 8v5M14 8v5"/><circle cx="17.5" cy="16.5" r="3"/><path d="M19.7 18.7L22 21"/></symbol>
@@ -598,14 +606,45 @@
             </div>
             <span class="ribbon-caption">Colour</span>
         </div>
-        <div class="ribbon-group" role="group" aria-label="Markup actions">
+        <div class="ribbon-group" role="group" aria-label="Manage markups">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
-                        aria-label="Remove" title="Remove selected markup (Delete)" data-shortcut="Delete">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openEditDialog()" ng-disabled="!vm.canEditSelected()"
+                        aria-label="Markup properties" data-shortcut="{{ vm.modKey }}E"
+                        title="Properties: text, colour, opacity, line thickness, font and lock of the selected markups (or double-click one)">
+                    <svg class="icon"><use href="#i-properties"></use></svg><span>Properties</span>
+                </button>
+                <button type="button" class="tool" ng-click="vm.copyMarkups()" ng-disabled="!vm.canEditSelected()"
+                        aria-label="Copy markup" title="Copy the selected markups" data-shortcut="{{ vm.modKey }}C">
+                    <svg class="icon"><use href="#i-copy"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.pasteMarkups()" ng-disabled="!vm.canPaste()"
+                        aria-label="Paste markup" title="Paste the copied markups on the current page" data-shortcut="{{ vm.modKey }}V">
+                    <svg class="icon"><use href="#i-paste"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.duplicateMarkups()" ng-disabled="!vm.canEditSelected()"
+                        aria-label="Duplicate markup" title="Duplicate the selected markups, a little below and to the right" data-shortcut="{{ vm.modKey }}Shift+D">
+                    <svg class="icon"><use href="#i-duplicate"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.groupMarkups()" ng-disabled="!vm.canGroup()"
+                        aria-label="Group markups" title="Group the selected markups (pick several with Ctrl or Shift + click, or Ctrl+A)" data-shortcut="{{ vm.modKey }}G">
+                    <svg class="icon"><use href="#i-group"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.ungroupMarkups()" ng-disabled="!vm.canUngroup()"
+                        aria-label="Ungroup markups" title="Ungroup the selected markups" data-shortcut="{{ vm.modKey }}Shift+G">
+                    <svg class="icon"><use href="#i-ungroup"></use></svg>
+                </button>
+                <button type="button" class="tool" ng-click="vm.toggleLock()" ng-disabled="!vm.canEditSelected()"
+                        ng-class="{'is-active': vm.selectionLocked()}" aria-pressed="{{ vm.selectionLocked() }}"
+                        aria-label="Lock markup" data-shortcut="{{ vm.modKey }}Shift+L"
+                        title="{{ vm.selectionLocked() ? 'Unlock the selected markups' : 'Lock the selected markups: they cannot be moved, resized, changed or deleted' }}">
+                    <svg class="icon"><use ng-attr-href="{{ vm.selectionLocked() ? '#i-lock' : '#i-unlock' }}"></use></svg>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="!vm.selectedIds.length"
+                        aria-label="Remove" title="Remove the selected markups (Delete); locked ones stay" data-shortcut="Delete">
                     <svg class="icon"><use href="#i-trash"></use></svg><span>Remove</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
-                        aria-label="Clear Markups" title="Clear all markups">
+                        aria-label="Clear Markups" title="Clear all markups (locked ones stay)">
                     <svg class="icon"><use href="#i-clear"></use></svg><span>Clear all</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
@@ -613,7 +652,7 @@
                     <svg class="icon"><use href="#i-save"></use></svg><span>Save copy</span>
                 </button>
             </div>
-            <span class="ribbon-caption">Edit</span>
+            <span class="ribbon-caption">Manage</span>
         </div>
     </div>
 
@@ -730,10 +769,10 @@
         <div class="ribbon-group" role="group" aria-label="Manage markups">
             <div class="ribbon-tools">
                 <button type="button" class="tool tool-labelled" ng-click="vm.openEditDialog()" ng-disabled="!vm.canEditSelected()"
-                        aria-label="Edit markup" title="Edit markup: change the selected markup's text or colour (or double-click it; drag it to move)">
+                        aria-label="Edit markup" title="Edit markup: text, colour, opacity, line thickness and font (or double-click it; drag it to move, drag a handle to resize)">
                     <svg class="icon"><use href="#i-edit"></use></svg><span>Edit</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
+                <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="!vm.selectedIds.length"
                         aria-label="Delete markup" title="Delete markup: remove the selected annotation (Delete)" data-shortcut="Delete">
                     <svg class="icon"><use href="#i-trash"></use></svg><span>Delete</span>
                 </button>
@@ -870,6 +909,7 @@
                         markup-color="vm.markupColor"
                         highlights="vm.highlights"
                         selected-id="vm.selectedHighlightId"
+                        selected-ids="vm.selectedIds"
                         search-matches="find.matches"
                         active-match="find.current"
                         api="vm.viewer"
@@ -880,8 +920,9 @@
                         on-place-tag="vm.placeTag(pageNumber, at)"
                         revision="vm.revisionView"
                         on-calibrate="vm.onCalibrate(pageNumber, length)"
-                        on-select-highlight="vm.selectHighlight(id)"
+                        on-select-highlight="vm.selectHighlight(id, additive)"
                         on-remove-highlight="vm.removeHighlight(id)"
+                        on-remove-selected="vm.removeSelectedHighlight()"
                         on-resize="vm.onViewerResize()"
                         on-rendered="vm.onPageRendered()"
                         on-render-error="vm.onRenderError()"></pdf-viewer>
@@ -999,13 +1040,13 @@
         </div>
         <ul class="markup-list" ng-if="vm.highlights.length">
             <li class="markup-row" ng-repeat="h in vm.highlights | orderBy:['pageNumber', 'id'] track by h.id"
-                ng-class="{'is-selected': h.id === vm.selectedHighlightId}">
+                ng-class="{'is-selected': vm.selectedIds.indexOf(h.id) >= 0}">
                 <button type="button" class="markup-main" ng-click="vm.goToHighlight(h)"
                         aria-label="{{ vm.markupLabel(h) }} on page {{ h.pageNumber }}">
                     <span class="markup-swatch" ng-class="{'is-shape': h.type !== 'highlight'}" ng-attr-style="{{ h.color ? '--swatch: ' + h.color : undefined }}"></span>
                     <span class="markup-text">
                         <span class="markup-title">{{ vm.markupLabel(h) }}</span>
-                        <span class="markup-meta">Page {{ h.pageNumber }}<span ng-if="h.revision"> &middot; Rev {{ h.revision }}</span> &middot; {{ h.createdAt | date:'HH:mm:ss' }}</span>
+                        <span class="markup-meta">Page {{ h.pageNumber }}<span ng-if="h.revision"> &middot; Rev {{ h.revision }}</span> &middot; {{ h.createdAt | date:'HH:mm:ss' }}<span ng-if="h.groupId"> &middot; Grouped</span><span ng-if="h.locked" class="markup-locked" title="Locked"> &middot; <svg class="icon icon-xs"><use href="#i-lock"></use></svg> Locked</span></span>
                     </span>
                 </button>
                 <button type="button" class="markup-delete" ng-click="vm.removeHighlight(h.id)"
@@ -1237,11 +1278,11 @@
 </div>
 
 <!-- Print (Output tab, Ctrl+P) -->
-<div class="dialog-backdrop" ng-if="vm.printDialog" ng-click="!vm.printDialog.busy && (vm.printDialog = null)">
+<div class="dialog-backdrop" ng-if="vm.printDialog" ng-click="vm.printDialog = null">
     <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="print-dialog-title" ng-click="$event.stopPropagation()">
         <div class="dialog-header">
             <h2 id="print-dialog-title">Print</h2>
-            <button type="button" class="panel-close" ng-click="vm.printDialog = null" ng-disabled="vm.printDialog.busy" aria-label="Close dialog">
+            <button type="button" class="panel-close" ng-click="vm.printDialog = null" aria-label="Close dialog">
                 <svg class="icon icon-sm"><use href="#i-close"></use></svg>
             </button>
         </div>
@@ -1263,13 +1304,13 @@
             <div class="dialog-message is-error" role="alert" ng-if="vm.printDialog.error">{{ vm.printDialog.error }}</div>
         </form>
         <div class="dialog-footer">
-            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.printDialog = null" ng-disabled="vm.printDialog.busy">Cancel</button>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.printDialog = null">Cancel</button>
             <button type="submit" form="print-form" class="tool tool-labelled tool-primary" ng-disabled="vm.printDialog.busy">Print&hellip;</button>
         </div>
     </div>
 </div>
 
-<!-- Edit markup dialog (Review > Edit, or double-click a markup) -->
+<!-- Markup properties (Markup > Properties, Review > Edit, Ctrl+E, or double-click a markup) -->
 <div class="dialog-backdrop" ng-if="vm.editDialog" ng-click="vm.closeEditDialog()">
     <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="edit-dialog-title" ng-click="$event.stopPropagation()">
         <div class="dialog-header">
@@ -1279,22 +1320,62 @@
             </button>
         </div>
         <form class="dialog-body" novalidate ng-submit="vm.applyEditDialog()" id="edit-form">
-            <p class="dialog-intro">On page {{ vm.editDialog.pageNumber }}. Drag a selected markup with the Pan tool to move it.</p>
-            <label for="edit-text-input" ng-if="vm.editDialog.hasText">Text</label>
-            <textarea id="edit-text-input" class="note-text" rows="4" maxlength="1000" ng-if="vm.editDialog.hasText"
-                      ng-model="vm.editDialog.text" ng-change="vm.editDialog.error = ''"></textarea>
-            <div class="edit-colour" ng-if="vm.editDialog.hasColor">
-                <span>Colour</span>
-                <div class="color-swatches" role="radiogroup" aria-label="Markup colour">
-                    <button type="button" class="color-swatch" ng-repeat="c in vm.markupColors" role="radio"
-                            ng-click="vm.setEditColor(c.value)" ng-class="{'is-active': vm.editDialog.color === c.value}"
-                            aria-checked="{{ vm.editDialog.color === c.value }}" aria-label="Edit colour {{ c.name }}" title="{{ c.name }}"
-                            ng-attr-style="--swatch: {{ c.value }}"></button>
+            <p class="dialog-intro">
+                <span ng-if="vm.editDialog.single">On page {{ vm.editDialog.pageNumber }}, added {{ vm.editDialog.createdAt | date:'HH:mm:ss' }}<span ng-if="vm.editDialog.grouped">, in a group</span>.</span>
+                <span ng-if="!vm.editDialog.single">Only the settings you change are applied, each to the markups it fits.</span>
+                Drag a selected markup to move it, a handle to resize it.
+            </p>
+            <label class="choice edit-lock"><input type="checkbox" ng-model="vm.editDialog.locked" aria-label="Locked">
+                <span>Locked: cannot be moved, resized, changed or deleted</span></label>
+            <fieldset class="edit-fields" ng-disabled="vm.editDialog.locked">
+                <label for="edit-text-input" ng-if="vm.editDialog.hasText">Text</label>
+                <textarea id="edit-text-input" class="note-text" rows="4" maxlength="1000" ng-if="vm.editDialog.hasText"
+                          ng-model="vm.editDialog.text" ng-change="vm.editDialog.error = ''"></textarea>
+                <div class="edit-colour" ng-if="vm.editDialog.hasColor">
+                    <span class="edit-label">Colour</span>
+                    <div class="color-swatches" role="radiogroup" aria-label="Markup colour">
+                        <button type="button" class="color-swatch" ng-repeat="c in vm.markupColors" role="radio"
+                                ng-click="vm.setEditColor(c.value)" ng-class="{'is-active': vm.editDialog.color === c.value}"
+                                aria-checked="{{ vm.editDialog.color === c.value }}" aria-label="Edit colour {{ c.name }}" title="{{ c.name }}"
+                                ng-attr-style="--swatch: {{ c.value }}"></button>
+                    </div>
+                    <markup-color-picker color="vm.editDialog.color" basics="vm.markupColors" disabled="vm.editDialog.locked"
+                                         on-pick="vm.setEditColor(color)"></markup-color-picker>
+                    <span class="edit-colour-value" ng-attr-style="--swatch: {{ vm.editDialog.color }}">{{ vm.editDialog.color }}</span>
                 </div>
-                <markup-color-picker color="vm.editDialog.color" basics="vm.markupColors" on-pick="vm.setEditColor(color)"></markup-color-picker>
-                <span class="edit-colour-value" ng-attr-style="--swatch: {{ vm.editDialog.color }}">{{ vm.editDialog.color }}</span>
-            </div>
-            <p class="dialog-note" ng-if="!vm.editDialog.hasColor && !vm.editDialog.hasText">Highlights are always yellow; you can move or delete them.</p>
+                <div class="edit-row">
+                    <label class="edit-label" for="edit-opacity">Opacity</label>
+                    <input type="range" id="edit-opacity" min="10" max="100" step="5" ng-model="vm.editDialog.opacity" ng-change="vm.editDialog.error = ''">
+                    <input type="number" class="edit-number" min="10" max="100" step="5" ng-model="vm.editDialog.opacity"
+                           aria-label="Opacity in percent" ng-change="vm.editDialog.error = ''"><span class="edit-unit">%</span>
+                </div>
+                <div class="edit-row" ng-if="vm.editDialog.hasStroke">
+                    <label class="edit-label" for="edit-stroke">Line thickness</label>
+                    <input type="range" min="{{ vm.STROKE_WIDTH.min }}" max="10" step="0.25" ng-model="vm.editDialog.strokeWidth"
+                           aria-label="Line thickness slider" ng-change="vm.editDialog.error = ''">
+                    <input type="number" id="edit-stroke" class="edit-number" min="{{ vm.STROKE_WIDTH.min }}" max="{{ vm.STROKE_WIDTH.max }}" step="0.25"
+                           ng-model="vm.editDialog.strokeWidth" ng-change="vm.editDialog.error = ''"><span class="edit-unit">pt</span>
+                </div>
+                <div class="edit-font" ng-if="vm.editDialog.hasFont">
+                    <div class="edit-row">
+                        <label class="edit-label" for="edit-font-family">Font</label>
+                        <select id="edit-font-family" ng-model="vm.editDialog.fontFamily">
+                            <option ng-repeat="(key, f) in vm.FONTS" value="{{ key }}">{{ f.name }}</option>
+                        </select>
+                    </div>
+                    <div class="edit-row">
+                        <label class="edit-label" for="edit-font-size">Font size</label>
+                        <input type="number" id="edit-font-size" class="edit-number" min="{{ vm.FONT_SIZE.min }}" max="{{ vm.FONT_SIZE.max }}" step="1"
+                               ng-model="vm.editDialog.fontSize" ng-change="vm.editDialog.error = ''"><span class="edit-unit">pt</span>
+                        <label class="choice edit-style"><input type="checkbox" ng-model="vm.editDialog.bold"> <strong>Bold</strong></label>
+                        <label class="choice edit-style"><input type="checkbox" ng-model="vm.editDialog.italic"> <em>Italic</em></label>
+                    </div>
+                    <p class="edit-font-preview" ng-style="{'font-family': vm.FONTS[vm.editDialog.fontFamily].css,
+                       'font-weight': vm.editDialog.bold ? 'bold' : 'normal', 'font-style': vm.editDialog.italic ? 'italic' : 'normal',
+                       color: vm.editDialog.color, opacity: vm.editDialog.opacity / 100}">AaBb 123 &mdash; Beam B12</p>
+                </div>
+                <p class="dialog-note" ng-if="vm.editDialog.single && !vm.editDialog.hasColor">Highlights are always yellow; set how strongly they show with Opacity.</p>
+            </fieldset>
             <div class="dialog-message is-error" role="alert" ng-if="vm.editDialog.error">{{ vm.editDialog.error }}</div>
         </form>
         <div class="dialog-footer">

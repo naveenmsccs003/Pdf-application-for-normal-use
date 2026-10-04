@@ -10,13 +10,17 @@
         var MAX_PAGES = 300;
         var DPI = 150;
         var MAX_PIXELS = 8000000;   // per page; larger sheets (A0 at 150 dpi) are drawn a little coarser
+        var pendingCleanup = null;  // the previous printout's pages, kept until its print job has surely read them
 
         /**
-         * Draws `blob` (a PDF) and prints it. onProgress(done, total) while drawing. Resolves with the number of
-         * pages once the print dialog has been opened (and closed, where the browser waits); rejects with a message.
+         * Draws `blob` (a PDF) and prints it. onProgress(done, total) while drawing; isCancelled() is checked between
+         * pages and stops before the print dialog opens. Resolves with the number of pages once print() has returned
+         * (null when cancelled); rejects with a message.
          */
-        function print(blob, onProgress) {
+        function print(blob, onProgress, isCancelled) {
             var task = null, container = null, urls = [];
+            var cancelled = function () { return !!(isCancelled && isCancelled()); };
+            if (pendingCleanup) { pendingCleanup(); }
 
             function cleanup() {
                 if (container) { container.remove(); container = null; }
@@ -43,6 +47,7 @@
                 return chain.then(function () { return doc.numPages; });
 
                 function drawPage(document, number) {
+                    if (cancelled()) { return $q.reject(null); }
                     return $q.when(document.getPage(number)).then(function (page) {
                         var base = page.getViewport({ scale: 1 });
                         var scale = Math.min(DPI / 72, Math.sqrt(MAX_PIXELS / (base.width * base.height)));
@@ -71,17 +76,27 @@
                     });
                 }
             }).then(function (count) {
+                if (cancelled()) { cleanup(); return null; }
                 $window.document.body.appendChild(container);
                 $window.document.body.classList.add('is-printing');
                 $window.print();
-                // Most browsers wait in print() until the dialog closes; afterprint covers those that do not.
-                return $q(function (resolve) {
-                    var done = function () { $window.removeEventListener('afterprint', done); cleanup(); resolve(count); };
-                    $window.addEventListener('afterprint', done);
-                    setTimeout(done, 60000);   // a print preview that never says it closed
-                });
+                // print() returns once the dialog closes in most browsers, but the job may still read the pages, and
+                // some (WebKitGTK in the desktop app) never fire afterprint: the pages stay (hidden) until afterprint,
+                // the next print, or a minute later, while the caller carries on straight away.
+                var timer = null;
+                var done = function () {
+                    $window.removeEventListener('afterprint', done);
+                    clearTimeout(timer);
+                    if (pendingCleanup === done) { pendingCleanup = null; }
+                    cleanup();
+                };
+                $window.addEventListener('afterprint', done);
+                timer = setTimeout(done, 60000);
+                pendingCleanup = done;
+                return count;
             }, function (error) {
                 cleanup();
+                if (error === null) { return null; }   // cancelled while drawing
                 return $q.reject(typeof error === 'string' ? error : 'Unable to prepare the pages for printing.');
             });
         }

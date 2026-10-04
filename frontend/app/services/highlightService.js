@@ -9,6 +9,7 @@
     angular.module('pdfViewerApp').factory('highlightService', function () {
         var highlights = [];
         var nextId = 1;
+        var nextGroup = 1;
 
         /** Adds a markup; `fields` holds its shape (a plain rectangle is a highlight). */
         function add(pageNumber, fields) {
@@ -68,6 +69,17 @@
             Array.prototype.push.apply(highlights, result);
         }
 
+        /** A new id for a group of markups (markup field `groupId`). */
+        function newGroupId() {
+            return 'g' + nextGroup++;
+        }
+
+        /** The markups grouped with `m` (on its page), including m; just m when it is not grouped. */
+        function groupOf(m) {
+            if (!m.groupId) { return [m]; }
+            return highlights.filter(function (h) { return h.groupId === m.groupId && h.pageNumber === m.pageNumber; });
+        }
+
         // Mutate in place so views bound to the array stay in sync.
         function clear() {
             highlights.length = 0;
@@ -80,6 +92,8 @@
             update: update,
             find: find,
             rearrange: rearrange,
+            newGroupId: newGroupId,
+            groupOf: groupOf,
             clear: clear
         };
     });

@@ -132,6 +132,7 @@ html, body {
     stroke-linejoin: round;
 }
 .icon-sm { width: 13px; height: 13px; }
+.icon-xs { width: 11px; height: 11px; vertical-align: -1px; }
 
 /* ----- Title bar ----- */
 .titlebar {
@@ -828,7 +829,8 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     pointer-events: none;   /* input is handled by the interaction layer underneath */
 }
 .markup-layer .markup path, .slot-markups .markup path { stroke-linecap: round; stroke-linejoin: round; }
-.markup-layer text, .slot-markups text { font-family: Helvetica, Arial, sans-serif; white-space: pre; }
+.markup-layer text, .slot-markups text { white-space: pre; }   /* the font comes from each markup (font-family attribute) */
+.markup-draft-label text { font-family: Helvetica, Arial, sans-serif; }
 .markup-selection {
     position: absolute;
     z-index: 3;
@@ -836,7 +838,37 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     border-radius: 3px;
     pointer-events: none;
 }
-.markup-selection .highlight-remove { pointer-events: auto; }
+.markup-selection .highlight-remove { pointer-events: auto; top: -26px; right: -26px; }   /* clear of the corner resize handle */
+.markup-selection.is-locked { border-color: var(--muted); }
+.markup-lock-badge {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--surface, #fff);
+    border: 1px solid var(--muted);
+    color: var(--muted);
+}
+/* Resize handles of the selected markup, centred on the corners and sides of its frame */
+.resize-handle {
+    position: absolute;
+    z-index: 4;
+    width: 9px;
+    height: 9px;
+    margin: -5px 0 0 -5px;
+    background: #fff;
+    border: 1.5px solid var(--highlight-selected);
+    border-radius: 2px;
+    touch-action: none;
+}
+.resize-handle[data-handle="nw"], .resize-handle[data-handle="se"] { cursor: nwse-resize; }
+.resize-handle[data-handle="ne"], .resize-handle[data-handle="sw"] { cursor: nesw-resize; }
+.resize-handle[data-handle="n"], .resize-handle[data-handle="s"] { cursor: ns-resize; }
+.resize-handle[data-handle="e"], .resize-handle[data-handle="w"] { cursor: ew-resize; }
 .interaction-layer.is-text { cursor: text; }
 .interaction-layer.is-pan.is-over-selected { cursor: move; }
 /* Review: the selected comment's text beside its icon */
@@ -890,6 +922,18 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 
 .edit-colour { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
 .edit-colour .color-swatches { margin: 0; }
+.edit-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.edit-label { min-width: 92px; }
+.edit-colour .edit-label { min-width: 0; }
+.edit-row input[type=range] { flex: 1; min-width: 100px; }
+.edit-row select { height: 26px; flex: 1; }
+.edit-number { width: 64px; height: 26px; }
+.edit-unit { color: var(--muted); font-size: 12px; }
+.edit-row .edit-style { padding: 2px 6px; align-items: center; }
+.edit-lock { margin: 4px 0 2px; }
+.edit-fields[disabled] { opacity: 0.55; }
+.edit-font-preview { margin: 10px 0 0; padding: 6px 10px; border: 1px dashed var(--border, #ccc); border-radius: 4px; font-size: 16px; }
+.markup-locked { color: var(--muted); }
 .edit-colour-value { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); }
 /* Measurements: value labels on a white box (the page stays white in dark mode too), area fill */
 .markup-label { fill: #ffffff; fill-opacity: 0.9; }

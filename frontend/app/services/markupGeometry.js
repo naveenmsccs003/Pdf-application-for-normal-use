@@ -22,7 +22,10 @@
      *   replace                           as strikeout, plus text (the correction) and fontSize
      *   comment                           x, y, width, height (the icon), text
      *   revtag                            x, y, width, height (the triangle), text (revision label), fontSize
-     * Any markup may have `revision`: the label of the revision it was made in (revisionService).
+     * Any markup may have `revision`: the label of the revision it was made in (revisionService); `opacity` (0.1-1,
+ * none = 1); `locked` (cannot be moved, resized, changed or deleted until unlocked); `groupId` (selected, moved,
+ * copied and deleted together with the other markups of its page with the same id). Markups with visible text
+ * (hasFont) may have `fontFamily` (a key of FONTS, none = helvetica), `bold` and `italic`.
      * Measurement values come from the page's scale (scaleService), so they follow a new calibration.
      */
     angular.module('pdfViewerApp').factory('markupGeometry', ['scaleService', function (scaleService) {
@@ -40,6 +43,25 @@
         var PADDING = 0.4;          // text box padding, times the font size
         var ASCENT = 0.8;           // first baseline below the padding, times the font size
         var FONT = 'Helvetica, Arial, sans-serif';
+        // The PDF standard fonts, so a saved copy uses the same font; css is the closest font on screen.
+        var FONTS = {
+            helvetica: { name: 'Sans-serif (Helvetica)', css: FONT },
+            times: { name: 'Serif (Times)', css: '"Times New Roman", Times, "Liberation Serif", serif' },
+            courier: { name: 'Monospace (Courier)', css: '"Courier New", Courier, "Liberation Mono", monospace' }
+        };
+        var FONT_SIZE = { min: 4, max: 300 };
+        var STROKE_WIDTH = { min: 0.25, max: 50 };
+        var NO_STROKE = { highlight: true, comment: true, strikeout: true, underline: true };   // drawn without a set line width
+        var KEEP_ASPECT = { text: true, callout: true, stamp: true, comment: true, revtag: true };   // resized evenly
+
+        /** CSS font family of a markup's text. */
+        function fontFamily(m) { return (FONTS[m && m.fontFamily] || FONTS.helvetica).css; }
+
+        // Canvas font for measuring `size` px text in the markup's font (`bold` forces bold).
+        function cssFont(size, font, bold) {
+            font = font || {};
+            return (font.italic ? 'italic ' : '') + (bold || font.bold ? 'bold ' : '') + size + 'px ' + fontFamily(font);
+        }
 
         /** Line width and text size for a page: readable at Fit Page on anything from A4 to A0. */
         function sizesFor(pageWidth, pageHeight) {
@@ -267,7 +289,7 @@
         /** The value label: a box centred on the anchor, with its text laid out like a note. */
         function measureLabel(m) {
             var text = measureText(m);
-            var box = textBox(text, m.fontSize);
+            var box = textBox(text, m.fontSize, m);
             var anchor = labelAnchor(m);
             var label = { text: text, fontSize: m.fontSize, width: box.width, height: box.height,
                           x: anchor[0] - box.width / 2, y: anchor[1] - box.height / 2 };
@@ -414,7 +436,7 @@
 
         /** The correction of a Replace text mark: a label just above the struck text (below it at the page top). */
         function replaceLabel(m) {
-            var box = textBox(m.text, m.fontSize);
+            var box = textBox(m.text, m.fontSize, m);
             var gap = m.fontSize * 0.2;
             var y = m.y - gap - box.height;
             if (y < 0) { y = m.y + m.height + gap; }
@@ -425,22 +447,22 @@
 
         /** The revision label centred in the lower part of a revision tag's triangle. */
         function revtagLines(m) {
-            return [{ text: m.text, x: m.x + m.width / 2 - textWidth(m.text, m.fontSize) / 2, y: m.y + m.height * 0.82 }];
+            return [{ text: m.text, x: m.x + m.width / 2 - textWidth(m.text, m.fontSize, m) / 2, y: m.y + m.height * 0.82 }];
         }
 
         // ----- Stamp: a framed, bold word with an optional smaller line (name and date) -----
         var STAMP_SUB = 0.45;       // second line, times the font size
 
-        function boldWidth(text, fontSize) {
+        function boldWidth(text, fontSize, font) {
             if (!measureContext) { measureContext = document.createElement('canvas').getContext('2d'); }
-            measureContext.font = 'bold ' + fontSize + 'px ' + FONT;
+            measureContext.font = cssFont(fontSize, font, true);
             return measureContext.measureText(text).width;
         }
 
         /** Size of a stamp's box for its text and second line. */
-        function stampSize(text, sub, fontSize) {
+        function stampSize(text, sub, fontSize, font) {
             var pad = fontSize * 0.45, side = fontSize * 0.75;
-            var width = Math.max(boldWidth(text, fontSize), sub ? textWidth(sub, fontSize * STAMP_SUB) : 0);
+            var width = Math.max(boldWidth(text, fontSize, font), sub ? textWidth(sub, fontSize * STAMP_SUB, font) : 0);
             return { width: Math.ceil(width + 2 * side), height: Math.ceil(fontSize * (sub ? 1.05 + STAMP_SUB * 1.25 : 1.05) + 2 * pad) };
         }
 
@@ -454,10 +476,10 @@
         /** Its text lines, centred: the word in bold, the second line smaller (size set). */
         function stampLines(m) {
             var pad = m.fontSize * 0.45, cx = m.x + m.width / 2;
-            var lines = [{ text: m.text, bold: true, x: cx - boldWidth(m.text, m.fontSize) / 2, y: m.y + pad + m.fontSize * 0.82 }];
+            var lines = [{ text: m.text, bold: true, x: cx - boldWidth(m.text, m.fontSize, m) / 2, y: m.y + pad + m.fontSize * 0.82 }];
             if (m.sub) {
                 var size = Math.round(m.fontSize * STAMP_SUB * 10) / 10;
-                lines.push({ text: m.sub, size: size, x: cx - textWidth(m.sub, size) / 2, y: m.y + pad + m.fontSize * 1.05 + size * 0.95 });
+                lines.push({ text: m.sub, size: size, x: cx - textWidth(m.sub, size, m) / 2, y: m.y + pad + m.fontSize * 1.05 + size * 0.95 });
             }
             return lines;
         }
@@ -518,18 +540,88 @@
 
         function hasText(m) { return TEXT_TYPES[m.type] === true; }
 
+        /** Whether the markup shows text in a font that can be set (a comment's text is only in its pop-up). */
+        function hasFont(m) { return typeof m.fontSize === 'number' && m.type !== 'comment'; }
+
+        /** Whether the markup is drawn with a line whose thickness can be set. */
+        function hasStroke(m) { return !NO_STROKE[m.type] && typeof m.strokeWidth === 'number'; }
+
+        /** Whether resizing keeps the markup's proportions (boxes sized by their text or icon). */
+        function keepsAspect(m) { return KEEP_ASPECT[m.type] === true; }
+
+        /** The box the resize handles work on: the shape itself, without a measurement's or correction's label. */
+        function frame(m) {
+            if (m.points) { return boundsOf([m.points]); }
+            if (typeof m.x1 === 'number') { return boundsOf([[m.x1, m.y1, m.x2, m.y2]]); }
+            if (m.type === 'replace') { return { x: m.x, y: m.y, width: m.width, height: m.height }; }
+            return bounds(m);
+        }
+
+        /**
+         * The markup's fields after its box fits its text again (text, font or size changed): a note's box
+         * grows from its top-left corner, a stamp's around its centre. Other markups: no changes.
+         */
+        function refit(m) {
+            if (m.type === 'text' || m.type === 'callout') {
+                var box = textBox(m.text, m.fontSize, m);
+                return { width: box.width, height: box.height };
+            }
+            if (m.type === 'stamp') {
+                var s = stampSize(m.text, m.sub, m.fontSize, m);
+                return { x: round(m.x + (m.width - s.width) / 2), y: round(m.y + (m.height - s.height) / 2), width: s.width, height: s.height };
+            }
+            return {};
+        }
+
+        /**
+         * A copy of the markup stretched from the box `from` (its frame) to `to`. Lines and points follow the box;
+         * boxes sized by their text or icon (keepsAspect) scale evenly, their text size with them.
+         */
+        function resize(m, from, to) {
+            var sx = from.width > 0.01 ? to.width / from.width : 1, sy = from.height > 0.01 ? to.height / from.height : 1;
+            var X = function (v) { return round(to.x + (v - from.x) * sx); };
+            var Y = function (v) { return round(to.y + (v - from.y) * sy); };
+            var r = angular.extend({}, m);
+            ['x1', 'x2', 'tipX'].forEach(function (k) { if (typeof m[k] === 'number') { r[k] = X(m[k]); } });
+            ['y1', 'y2', 'tipY'].forEach(function (k) { if (typeof m[k] === 'number') { r[k] = Y(m[k]); } });
+            if (m.points) { r.points = m.points.map(function (v, i) { return i % 2 ? Y(v) : X(v); }); }
+            if (typeof m.x === 'number' && typeof m.width === 'number') {
+                r.x = X(m.x);
+                r.y = Y(m.y);
+                if (keepsAspect(m)) {
+                    var k = Math.sqrt(sx * sy);
+                    if (typeof m.fontSize === 'number') {
+                        r.fontSize = Math.min(Math.max(Math.round(m.fontSize * k * 10) / 10, FONT_SIZE.min), FONT_SIZE.max);
+                        k = r.fontSize / m.fontSize;
+                    }
+                    if (m.type === 'text' || m.type === 'callout' || m.type === 'stamp') {
+                        var box = m.type === 'stamp' ? stampSize(m.text, m.sub, r.fontSize, m) : textBox(m.text, r.fontSize, m);
+                        r.width = box.width;
+                        r.height = box.height;
+                    } else {
+                        r.width = round(Math.max(2, m.width * k));
+                        r.height = round(Math.max(2, m.height * k));
+                    }
+                } else {
+                    r.width = round(Math.max(1, m.width * sx));
+                    r.height = round(Math.max(1, m.height * sy));
+                }
+            }
+            return r;
+        }
+
         // ----- Text boxes -----
         var measureContext = null;
-        function textWidth(text, fontSize) {
+        function textWidth(text, fontSize, font) {
             if (!measureContext) { measureContext = document.createElement('canvas').getContext('2d'); }
-            measureContext.font = fontSize + 'px ' + FONT;
+            measureContext.font = cssFont(fontSize, font);
             return measureContext.measureText(text).width;
         }
 
-        /** Size of the box for a note: lines as typed, no wrapping. */
-        function textBox(text, fontSize) {
+        /** Size of the box for a note: lines as typed, no wrapping. `font`: { fontFamily, bold, italic } (a markup). */
+        function textBox(text, fontSize, font) {
             var lines = textLines(text);
-            var widest = Math.max.apply(null, lines.map(function (l) { return textWidth(l, fontSize); }));
+            var widest = Math.max.apply(null, lines.map(function (l) { return textWidth(l, fontSize, font); }));
             var pad = fontSize * PADDING;
             return { width: Math.ceil(widest + 2 * pad), height: Math.ceil(lines.length * fontSize * LINE_HEIGHT + 2 * pad - fontSize * (LINE_HEIGHT - 1)) };
         }
@@ -550,6 +642,17 @@
 
         /** What the host needs to write the markup into a PDF copy. */
         function toSaved(m) {
+            var saved = savedShape(m);
+            if (typeof m.opacity === 'number' && m.opacity < 1) { saved.opacity = m.opacity; }
+            if (saved.lines && ((m.fontFamily && m.fontFamily !== 'helvetica') || m.bold || m.italic)) {
+                saved.font = FONTS[m.fontFamily] ? m.fontFamily : 'helvetica';
+                saved.bold = !!m.bold;
+                saved.italic = !!m.italic;
+            }
+            return saved;
+        }
+
+        function savedShape(m) {
             var saved = { type: m.type, pageNumber: m.pageNumber };
             if (isMeasure(m)) {
                 // Saved like a note: the value label is the box and text, the dimension lines are the strokes.
@@ -629,6 +732,16 @@
         return {
             LABELS: LABELS,
             FONT: FONT,
+            FONTS: FONTS,
+            FONT_SIZE: FONT_SIZE,
+            STROKE_WIDTH: STROKE_WIDTH,
+            fontFamily: fontFamily,
+            hasFont: hasFont,
+            hasStroke: hasStroke,
+            keepsAspect: keepsAspect,
+            frame: frame,
+            refit: refit,
+            resize: resize,
             sizesFor: sizesFor,
             path: path,
             bounds: bounds,

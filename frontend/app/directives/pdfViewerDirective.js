@@ -10,7 +10,9 @@
         '        <path ng-if="shape(m).leader" ng-attr-d="{{ shape(m).leader }}" fill="none"></path>' +
         '        <rect ng-if="shape(m).label" class="markup-label" ng-attr-x="{{ shape(m).label.x }}" ng-attr-y="{{ shape(m).label.y }}"' +
         '              ng-attr-width="{{ shape(m).label.width }}" ng-attr-height="{{ shape(m).label.height }}" stroke="none"></rect>' +
-        '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none">' +
+        '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none"' +
+        '              ng-attr-font-family="{{ fontFamily(m) }}" ng-attr-font-weight="{{ m.bold ? \'bold\' : undefined }}"' +
+        '              ng-attr-font-style="{{ m.italic ? \'italic\' : undefined }}">' +
         '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}"' +
         '                 ng-attr-font-size="{{ l.size || undefined }}" ng-attr-font-weight="{{ l.bold ? \'bold\' : undefined }}">{{ l.text }}</tspan>' +
         '        </text>';
@@ -43,6 +45,7 @@
             var PLACE_TOOLS = { revtag: true, stamp: true, custom: true };         // a click places a ready-made markup
             var TEXT_MARK_TOOLS = { strikeout: true, underline: true, replace: true };   // drawn over text like a highlight
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
+            var MIN_RESIZE_PX = 6;          // a markup is not resized smaller than this on screen
             var RESIZE_DEBOUNCE_MS = 150;
             var PAGE_GAP = 12;              // continuous view: px between pages
             var WINDOW_PAGES = 100;         // continuous view: pages laid out before and after the current one
@@ -62,18 +65,20 @@
                     markupColor: '<',
                     highlights: '<',        // all markups
                     selectedId: '<',
+                    selectedIds: '<',       // all selected markups (a group, or several picked with Ctrl / Shift)
                     searchMatches: '<',
                     activeMatch: '<',
                     api: '=',
                     onCreateMarkup: '&',
                     onRequestText: '&',     // text note / callout: the host asks for the text
                     onCalibrate: '&',       // scale calibration: a line of known length was drawn
-                    onMoveMarkup: '&',      // the selected markup was dragged: (id, markup) is the moved copy
+                    onMoveMarkup: '&',      // the selected markup was dragged or resized: (id, markup) is the changed copy
                     onEditMarkup: '&',      // a markup was double-clicked
                     onPlaceTag: '&',        // revision tag, stamp, custom markup: (pageNumber, at) where the page was clicked
                     revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay', url, regions, active }
-                    onSelectHighlight: '&',
+                    onSelectHighlight: '&',  // (id, additive): additive (Ctrl / Shift click) adds or takes it from the selection
                     onRemoveHighlight: '&',
+                    onRemoveSelected: '&',
                     onResize: '&',
                     onRendered: '&',
                     onPageChange: '&',      // continuous view: (page) now fills most of the view, or was clicked
@@ -87,10 +92,10 @@
                     '    <div class="slot-canvas"></div>' +
                     '    <div class="slot-highlight" ng-repeat="h in highlights | filter:{pageNumber: slot.page, type: \'highlight\'}:true track by h.id"' +
                     '         ng-style="{left: h.x / slot.pw * 100 + \'%\', top: h.y / slot.ph * 100 + \'%\',' +
-                    '                    width: h.width / slot.pw * 100 + \'%\', height: h.height / slot.ph * 100 + \'%\'}"></div>' +
+                    '                    width: h.width / slot.pw * 100 + \'%\', height: h.height / slot.ph * 100 + \'%\', opacity: h.opacity}"></div>' +
                     '    <svg class="slot-markups" ng-attr-view_box="0 0 {{ slot.pw }} {{ slot.ph }}" preserveAspectRatio="none">' +
                     '      <g class="markup" ng-repeat="m in highlights | filter:{pageNumber: slot.page}:true track by m.id" ng-if="m.type !== \'highlight\'"' +
-                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' + MARKUP_SHAPE + '</g>' +
+                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}" ng-attr-opacity="{{ m.opacity }}">' + MARKUP_SHAPE + '</g>' +
                     '    </svg>' +
                     '  </div>' +
                     '  <div class="pdf-page" ng-show="rendered.page && (!continuous || pagePlace())" ng-style="pageStyle()"' +
@@ -111,10 +116,10 @@
                     '    <div class="interaction-layer" ng-class="{\'is-drawing\': drawing() && !spacePan, \'is-text\': (tool === \'text\') && !spacePan, \'is-pan\': !drawing() || spacePan}"></div>' +
                     '    <div class="highlight-layer">' +
                     '      <div class="highlight" ng-repeat="h in highlights | filter:{pageNumber: rendered.page, type: \'highlight\'}:true track by h.id"' +
-                    '           ng-class="{\'is-selected\': h.id === selectedId}"' +
+                    '           ng-class="{\'is-selected\': isSelected(h.id)}"' +
                     '           ng-style="{left: h.x * rendered.scale + \'px\', top: h.y * rendered.scale + \'px\',' +
-                    '                      width: h.width * rendered.scale + \'px\', height: h.height * rendered.scale + \'px\'}">' +
-                    '        <button type="button" class="highlight-remove" ng-if="h.id === selectedId"' +
+                    '                      width: h.width * rendered.scale + \'px\', height: h.height * rendered.scale + \'px\', opacity: h.opacity}">' +
+                    '        <button type="button" class="highlight-remove" ng-if="h.id === selectedId && !h.locked && !selectedBox()"' +
                     '                title="Remove highlight" aria-label="Remove highlight"' +
                     '                ng-click="onRemoveHighlight({id: h.id})">&times;</button>' +
                     '      </div>' +
@@ -123,16 +128,20 @@
                     '    <svg class="markup-layer" ng-attr-width="{{ rendered.width }}" ng-attr-height="{{ rendered.height }}"' +
                     '         ng-attr-view_box="0 0 {{ rendered.width / rendered.scale }} {{ rendered.height / rendered.scale }}">' +
                     '      <g class="markup" ng-repeat="m in highlights | filter:isShapeOnPage track by m.id" data-type="{{ m.type }}"' +
-                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' + MARKUP_SHAPE +
+                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}" ng-attr-opacity="{{ m.opacity }}">' + MARKUP_SHAPE +
                     '      </g>' +
                     '      <path class="markup-draft" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>' +
                     '      <g class="markup-draft-label" display="none"><rect class="markup-label" stroke="none"></rect><text stroke="none"></text></g>' +
                     '    </svg>' +
                     '    <div class="comment-popup" ng-if="commentPopup()" ng-style="commentPopup().style">{{ commentPopup().text }}</div>' +
-                    '    <div class="markup-selection" ng-if="selectedBox()" ng-style="selectedBox()">' +
+                    '    <div class="markup-selection" ng-if="selectedBox()" ng-style="selectedBox().style" ng-class="{\'is-locked\': selectedBox().locked}">' +
                     '      <button type="button" class="highlight-remove" title="Remove markup" aria-label="Remove markup"' +
-                    '              ng-click="onRemoveHighlight({id: selectedId})">&times;</button>' +
+                    '              ng-if="!selectedBox().locked" ng-click="onRemoveSelected()">&times;</button>' +
+                    '      <span class="markup-lock-badge" ng-if="selectedBox().locked" title="Locked: unlock it to move, resize, change or delete it">' +
+                    '        <svg class="icon icon-sm"><use href="#i-lock"></use></svg></span>' +
                     '    </div>' +
+                    '    <div class="resize-handle" ng-repeat="h in resizeHandles() track by h.key" data-handle="{{ h.key }}" ng-style="h.style"' +
+                    '         title="Drag to resize (Shift keeps the proportions)"></div>' +
                     '  </div>' +
                     ' </div>' +
                     '</div>' +
@@ -658,20 +667,62 @@
                         return cached;
                     };
 
-                    // Dashed box around the selected markup (highlights show their own). The same object is
-                    // returned while the box is unchanged: watchers compare by reference.
+                    scope.fontFamily = markupGeometry.fontFamily;
+
+                    scope.isSelected = function (id) {
+                        return id === scope.selectedId || (!!scope.selectedIds && scope.selectedIds.indexOf(id) >= 0);
+                    };
+
+                    // Dashed box around the selected markups of this page (a single highlight shows its own), with
+                    // { style, locked }. The same object is returned while unchanged: watchers compare by reference.
                     var lastBox = null;
                     scope.selectedBox = function () {
-                        var m = selectedMarkup();
-                        if (!m || m.type === 'highlight') { lastBox = null; return null; }
-                        var b = markupGeometry.bounds(m), s = scope.rendered.scale, pad = 4;
-                        var box = { left: b.x * s - pad + 'px', top: b.y * s - pad + 'px',
-                                    width: b.width * s + 2 * pad + 'px', height: b.height * s + 2 * pad + 'px' };
-                        if (!lastBox || lastBox.left !== box.left || lastBox.top !== box.top ||
-                            lastBox.width !== box.width || lastBox.height !== box.height) {
-                            lastBox = box;
+                        var list = selectedOnPage();
+                        if (!list.length || (list.length === 1 && list[0].type === 'highlight')) { lastBox = null; return null; }
+                        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, locked = true;
+                        list.forEach(function (m) {
+                            var r = markupGeometry.bounds(m);
+                            minX = Math.min(minX, r.x); minY = Math.min(minY, r.y);
+                            maxX = Math.max(maxX, r.x + r.width); maxY = Math.max(maxY, r.y + r.height);
+                            locked = locked && !!m.locked;
+                        });
+                        var s = scope.rendered.scale, pad = 4;
+                        var style = { left: minX * s - pad + 'px', top: minY * s - pad + 'px',
+                                      width: (maxX - minX) * s + 2 * pad + 'px', height: (maxY - minY) * s + 2 * pad + 'px' };
+                        if (!lastBox || lastBox.locked !== locked || lastBox.style.left !== style.left || lastBox.style.top !== style.top ||
+                            lastBox.style.width !== style.width || lastBox.style.height !== style.height) {
+                            lastBox = { style: style, locked: locked };
                         }
                         return lastBox;
+                    };
+
+                    // Resize handles around the frame of a single selected, unlocked markup: corners, and the sides for
+                    // markups that can be stretched one way. Same array while unchanged (see selectedBox).
+                    var HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+                    var lastHandles = [], lastHandlesKey = '';
+                    scope.resizeHandles = function () {
+                        var list = selectedOnPage();
+                        var m = list.length === 1 && !list[0].locked && (!scope.drawing() || scope.spacePan) ? list[0] : null;
+                        if (!m) { lastHandles = []; lastHandlesKey = ''; return lastHandles; }
+                        var f = markupGeometry.frame(m), s = scope.rendered.scale;
+                        var x0 = f.x * s, y0 = f.y * s, x1 = (f.x + f.width) * s, y1 = (f.y + f.height) * s;
+                        var flatX = x1 - x0 < 1, flatY = y1 - y0 < 1;   // a level or upright line: no handles across it
+                        var key = [m.id, x0, y0, x1, y1].join(',');
+                        if (key === lastHandlesKey) { return lastHandles; }
+                        lastHandlesKey = key;
+                        lastHandles = HANDLES.filter(function (h) {
+                            if (h.length === 1 && markupGeometry.keepsAspect(m)) { return false; }
+                            if (flatX && /[ew]/.test(h) && h.length === 2) { return false; }
+                            if (flatY && /[ns]/.test(h) && h.length === 2) { return false; }
+                            if (flatX && (h === 'n' || h === 's')) { return false; }
+                            if (flatY && (h === 'e' || h === 'w')) { return false; }
+                            return true;
+                        }).map(function (h) {
+                            var x = /w/.test(h) ? x0 : /e/.test(h) ? x1 : (x0 + x1) / 2;
+                            var y = /n/.test(h) ? y0 : /s/.test(h) ? y1 : (y0 + y1) / 2;
+                            return { key: h, style: { left: x + 'px', top: y + 'px' } };
+                        });
+                        return lastHandles;
                     };
 
                     function polylinePath(p) {
@@ -690,6 +741,14 @@
                         }
                         return lastPopup;
                     };
+
+                    function selectedOnPage() {
+                        var list = scope.highlights || [], out = [];
+                        for (var i = 0; i < list.length; i++) {
+                            if (list[i].pageNumber === scope.rendered.page && scope.isSelected(list[i].id)) { out.push(list[i]); }
+                        }
+                        return out;
+                    }
 
                     function selectedMarkup() {
                         var list = scope.highlights || [];
@@ -741,6 +800,61 @@
                         return null;
                     }
 
+                    // ----- Resize: drag a handle of the selected markup -----
+                    var pageEl = element[0].querySelector('.pdf-page');
+                    var resizing = null;    // { handle, origin, frame, x, y } while dragging a handle
+
+                    pageEl.addEventListener('pointerdown', function (event) {
+                        var handle = event.target.closest && event.target.closest('.resize-handle');
+                        if (!handle || event.button !== 0) { return; }
+                        var m = selectedOnPage()[0];
+                        if (!m || m.locked) { return; }
+                        resizing = { handle: handle.getAttribute('data-handle'), origin: m, frame: markupGeometry.frame(m),
+                                     x: event.clientX, y: event.clientY };
+                        handle.setPointerCapture(event.pointerId);
+                        event.preventDefault();
+                        event.stopPropagation();
+                    });
+
+                    pageEl.addEventListener('pointermove', function (event) {
+                        if (!resizing) { return; }
+                        var r = resizing, s = scope.rendered.scale, f = r.frame, h = r.handle;
+                        var dx = (event.clientX - r.x) / s, dy = (event.clientY - r.y) / s;
+                        var left = f.x, top = f.y, right = f.x + f.width, bottom = f.y + f.height;
+                        if (/w/.test(h)) { left += dx; }
+                        if (/e/.test(h)) { right += dx; }
+                        if (/n/.test(h)) { top += dy; }
+                        if (/s/.test(h)) { bottom += dy; }
+                        var min = MIN_RESIZE_PX / s;
+                        // Never turned inside out: the dragged side stops short of the opposite one.
+                        if (/w/.test(h)) { left = Math.min(left, right - min); }
+                        if (/e/.test(h)) { right = Math.max(right, left + min); }
+                        if (/n/.test(h)) { top = Math.min(top, bottom - min); }
+                        if (/s/.test(h)) { bottom = Math.max(bottom, top + min); }
+                        if (h.length === 2 && (event.shiftKey || markupGeometry.keepsAspect(r.origin)) && f.width > 0.01 && f.height > 0.01) {
+                            // Same proportions: the larger change wins, the corner opposite the handle stays.
+                            var k = Math.max((right - left) / f.width, (bottom - top) / f.height);
+                            var w = f.width * k, hh = f.height * k;
+                            if (/w/.test(h)) { left = right - w; } else { right = left + w; }
+                            if (/n/.test(h)) { top = bottom - hh; } else { bottom = top + hh; }
+                        }
+                        var to = { x: left, y: top, width: right - left, height: bottom - top };
+                        if (f.width <= 0.01) { to.width = 0; }
+                        if (f.height <= 0.01) { to.height = 0; }
+                        scope.$apply(function () {
+                            scope.onMoveMarkup({ id: r.origin.id, markup: markupGeometry.resize(r.origin, f, to) });
+                        });
+                        event.stopPropagation();
+                    });
+
+                    function endResize(event) {
+                        if (!resizing) { return; }
+                        resizing = null;
+                        event.stopPropagation();
+                    }
+                    pageEl.addEventListener('pointerup', endResize);
+                    pageEl.addEventListener('pointercancel', endResize);
+
                     // ----- Pan: drag the page with the mouse to move around a zoomed-in drawing -----
                     // Pan is the default tool. With a markup tool, hold Space or use the middle button.
                     // Touch keeps the browser's own finger scrolling.
@@ -769,20 +883,22 @@
                     document.addEventListener('keyup', onSpace);
                     window.addEventListener('blur', onBlur);
 
-                    // ----- Move: drag the selected markup with the Pan tool -----
-                    var move = null;    // { id, origin, x, y, moved } while dragging a markup
+                    // ----- Move: drag the selected markups with the Pan tool (locked ones stay) -----
+                    var move = null;    // { origins, x, y, moved } while dragging markups
 
                     function selectedUnder(event) {
                         if (scope.selectedId === null || scope.selectedId === undefined || scope.drawing()) { return null; }
+                        if (event.ctrlKey || event.metaKey || event.shiftKey) { return null; }   // picking more markups
                         var hit = highlightAt(pointFromEvent(event));
-                        return hit && hit.id === scope.selectedId ? hit : null;
+                        return hit && scope.isSelected(hit.id) && !hit.locked ? hit : null;
                     }
 
                     interactionLayer.addEventListener('pointerdown', function (event) {
                         if (!scope.rendered.page || event.button !== 0 || scope.spacePan) { return; }
                         var hit = selectedUnder(event);
                         if (!hit) { return; }
-                        move = { id: hit.id, origin: hit, x: event.clientX, y: event.clientY, moved: false };
+                        var origins = selectedOnPage().filter(function (m) { return !m.locked; });
+                        move = { origins: origins, x: event.clientX, y: event.clientY, moved: false };
                         interactionLayer.setPointerCapture(event.pointerId);
                         event.preventDefault();
                         event.stopImmediatePropagation();
@@ -800,7 +916,9 @@
                         move.moved = true;
                         var s = scope.rendered.scale, m = move;
                         scope.$apply(function () {
-                            scope.onMoveMarkup({ id: m.id, markup: markupGeometry.translate(m.origin, dx / s, dy / s) });
+                            m.origins.forEach(function (origin) {
+                                scope.onMoveMarkup({ id: origin.id, markup: markupGeometry.translate(origin, dx / s, dy / s) });
+                            });
                         });
                     });
 
@@ -842,7 +960,8 @@
                         if (!cancelled && p.click && !p.moved) {
                             // A click without moving still selects a markup (or clears the selection).
                             var hit = highlightAt(pointFromEvent(event));
-                            scope.$apply(function () { scope.onSelectHighlight({ id: hit ? hit.id : null }); });
+                            var additive = event.ctrlKey || event.metaKey || event.shiftKey;
+                            scope.$apply(function () { scope.onSelectHighlight({ id: hit ? hit.id : null, additive: additive }); });
                         }
                     }
                     interactionLayer.addEventListener('pointerup', function (event) { if (pan) { endPan(event, false); } });

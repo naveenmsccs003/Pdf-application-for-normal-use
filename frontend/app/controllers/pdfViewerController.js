@@ -27,7 +27,8 @@
             ];
             vm.markupColor = vm.markupColors[0].value;
             vm.highlights = highlightService.all;   // all markups
-            vm.selectedHighlightId = null;
+            vm.selectedHighlightId = null;    // the markup clicked last (the one Edit and the pop-ups show)
+            vm.selectedIds = [];              // every selected markup: its group, or several picked with Ctrl / Shift
             vm.busy = false;
             vm.error = '';
             vm.status = 'Open a PDF to get started.';
@@ -534,7 +535,7 @@
                         vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null; vm.unitsDialog = null;
                         vm.stampDialog = null; vm.customDialog = null; vm.customSaveDialog = null; vm.propertiesDialog = null;
                         if (!vm.saveAnnotatedDialog || !vm.saveAnnotatedDialog.busy) { vm.saveAnnotatedDialog = null; }
-                        if (!vm.printDialog || !vm.printDialog.busy) { vm.printDialog = null; }
+                        vm.printDialog = null;
                     });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
@@ -1098,25 +1099,215 @@
                          y: Math.min(Math.max(note.at.y - icon / 2, 0), page.height - icon) };
             }
 
-            // ----- Edit / move / delete markups (Review tab, double-click, drag with Pan) -----
-            vm.editDialog = null;   // { id, label, hasText, text, hasColor, color, error } while open
+            // ----- Markup management: select, properties, move / resize, copy / paste, lock, group, delete -----
+            // Selecting a grouped markup selects its whole group. Code that sets selectedHighlightId directly (a new
+            // markup, a page change) gets the selection from here.
+            $scope.$watch(function () { return vm.selectedHighlightId; }, function (id) {
+                if (id === null || id === undefined) { vm.selectedIds = []; return; }
+                if (vm.selectedIds.indexOf(id) < 0) {
+                    var m = highlightService.find(id);
+                    vm.selectedIds = m ? highlightService.groupOf(m).map(function (g) { return g.id; }) : [id];
+                }
+            });
 
-            vm.canEditSelected = function () { return vm.selectedHighlightId !== null && !!highlightService.find(vm.selectedHighlightId); };
+            /** The selected markups that still exist. */
+            vm.selectedMarkups = function () {
+                return vm.selectedIds.map(highlightService.find).filter(Boolean);
+            };
+
+            function setSelection(markups) {
+                vm.selectedIds = markups.map(function (m) { return m.id; });
+                vm.selectedHighlightId = markups.length ? markups[markups.length - 1].id : null;
+            }
+
+            function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+
+            vm.canEditSelected = function () { return vm.selectedMarkups().length > 0; };
+
+            /** Whether every selected markup is locked (the Lock button then unlocks). */
+            vm.selectionLocked = function () {
+                var list = vm.selectedMarkups();
+                return list.length > 0 && list.every(function (m) { return m.locked; });
+            };
+
+            vm.canGroup = function () {
+                var list = vm.selectedMarkups();
+                if (list.length < 2) { return false; }
+                var groups = {};
+                list.forEach(function (m) { groups[m.groupId || ('#' + m.id)] = true; });
+                return Object.keys(groups).length > 1 && list.every(function (m) { return m.pageNumber === list[0].pageNumber; });
+            };
+
+            vm.canUngroup = function () { return vm.selectedMarkups().some(function (m) { return !!m.groupId; }); };
+
+            /** Ctrl+A: every markup on the current page. */
+            vm.selectAllMarkups = function () {
+                var list = vm.highlights.filter(function (m) { return m.pageNumber === vm.currentPage; });
+                setSelection(list);
+                vm.status = list.length ? plural(list.length, 'markup') + ' selected.' : 'No markups on this page.';
+            };
+
+            vm.toggleLock = function () {
+                var list = vm.selectedMarkups();
+                if (!list.length) { return; }
+                var lock = !vm.selectionLocked();
+                list.forEach(function (m) { highlightService.update(m.id, { locked: lock }); });
+                vm.status = plural(list.length, 'markup') + (lock ? ' locked: they cannot be moved, resized, changed or deleted.' : ' unlocked.');
+            };
+
+            vm.groupMarkups = function () {
+                if (!vm.canGroup()) { return; }
+                var groupId = highlightService.newGroupId();
+                var list = vm.selectedMarkups().map(function (m) { return highlightService.update(m.id, { groupId: groupId }); });
+                setSelection(list);
+                vm.status = plural(list.length, 'markup') + ' grouped: they are selected, moved, copied and deleted together.';
+            };
+
+            vm.ungroupMarkups = function () {
+                var list = vm.selectedMarkups();
+                if (!vm.canUngroup()) { return; }
+                list = list.map(function (m) { return highlightService.update(m.id, { groupId: undefined }); });
+                setSelection(list);
+                vm.status = plural(list.length, 'markup') + ' ungrouped.';
+            };
+
+            // Copy / paste: the copies keep their look, text and groups (as new groups); they are unlocked and
+            // belong to the current revision. A paste on the page they came from is offset so it can be seen.
+            var clipboard = null;   // { pageNumber, markups, pastes: { page: count } }
+
+            function copiesOf(list) {
+                return list.map(function (m) {
+                    var copy = angular.copy(m);
+                    ['id', 'pageNumber', 'createdAt', 'revision', 'locked'].forEach(function (k) { delete copy[k]; });
+                    return copy;
+                });
+            }
+
+            /** Adds `copies` to the page, moved `steps` offsets down and right (kept on the page), and selects them. */
+            function placeCopies(copies, pageNumber, steps) {
+                return pdfService.getPageSize(pageNumber).then(function (size) {
+                    var step = markupGeometry.sizesFor(size.width, size.height).fontSize * steps;
+                    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    copies.forEach(function (c) {
+                        var b = markupGeometry.bounds(c);
+                        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+                        maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
+                    });
+                    var dx = Math.max(Math.min(step, size.width - maxX), -minX);
+                    var dy = Math.max(Math.min(step, size.height - maxY), -minY);
+                    var groups = {};
+                    var added = copies.map(function (c) {
+                        var m = markupGeometry.translate(c, dx, dy);
+                        if (m.groupId) { m.groupId = groups[m.groupId] || (groups[m.groupId] = highlightService.newGroupId()); }
+                        return vm.addMarkup(pageNumber, m);
+                    });
+                    setSelection(added);
+                    return added;
+                });
+            }
+
+            vm.copyMarkups = function () {
+                var list = vm.selectedMarkups();
+                if (!list.length) { return; }
+                clipboard = { pageNumber: list[0].pageNumber, markups: copiesOf(list), pastes: {} };
+                vm.status = plural(list.length, 'markup') + ' copied. Paste (' + vm.modKey + 'V) puts them on the current page.';
+            };
+
+            vm.cutMarkups = function () {
+                var list = vm.selectedMarkups();
+                if (!list.length) { return; }
+                vm.copyMarkups();
+                clipboard.pastes[clipboard.pageNumber] = -1;   // the first paste goes back where they were
+                var kept = removeMarkups(list);
+                vm.status = plural(list.length - kept, 'markup') + ' cut' + (kept ? '; ' + plural(kept, 'locked markup') + ' copied only' : '') + '.';
+            };
+
+            vm.canPaste = function () { return !!clipboard && vm.hasDocument(); };
+
+            vm.pasteMarkups = function () {
+                if (!vm.canPaste()) { return; }
+                var page = vm.currentPage, c = clipboard;
+                var count = (c.pastes[page] || 0) + 1;
+                c.pastes[page] = count;
+                var steps = page === c.pageNumber ? count : count - 1;
+                placeCopies(angular.copy(c.markups), page, steps).then(function (added) {
+                    vm.status = plural(added.length, 'markup') + ' pasted on page ' + page + '.';
+                }, function () {
+                    vm.status = 'Unable to paste on this page.';
+                });
+            };
+
+            vm.duplicateMarkups = function () {
+                var list = vm.selectedMarkups();
+                if (!list.length) { return; }
+                placeCopies(copiesOf(list), list[0].pageNumber, 1).then(function (added) {
+                    vm.status = plural(added.length, 'markup') + ' duplicated.';
+                });
+            };
+
+            /** Removes the markups that are not locked; returns how many were kept. */
+            function removeMarkups(list) {
+                var kept = 0;
+                list.forEach(function (m) {
+                    if (m.locked) { kept++; return; }
+                    highlightService.remove(m.id);
+                });
+                var left = vm.selectedMarkups();
+                setSelection(left);
+                return kept;
+            }
+
+            // Properties (Edit): text, colour, opacity, line thickness, font and lock of the selected markups.
+            // With several selected, only the settings changed in the dialog are applied, each to the markups it fits.
+            vm.editDialog = null;   // { ids, label, values, initial, has*, ... , error } while open
+            vm.FONTS = markupGeometry.FONTS;
+            vm.FONT_SIZE = markupGeometry.FONT_SIZE;
+            vm.STROKE_WIDTH = markupGeometry.STROKE_WIDTH;
 
             vm.openEditDialog = function (id) {
-                var m = highlightService.find(id === undefined ? vm.selectedHighlightId : id);
-                if (!m) { return; }
-                vm.selectedHighlightId = m.id;
-                vm.editDialog = {
-                    id: m.id,
-                    label: markupGeometry.label(m),
-                    pageNumber: m.pageNumber,
-                    hasText: markupGeometry.hasText(m),
+                var list;
+                if (id !== undefined) {
+                    var one = highlightService.find(id);
+                    if (!one) { return; }
+                    if (vm.selectedIds.indexOf(one.id) < 0) { vm.selectedHighlightId = one.id; }
+                    list = [one];
+                } else {
+                    list = vm.selectedMarkups();
+                    // The markup clicked last first: its settings fill the dialog.
+                    list.sort(function (a, b) { return (b.id === vm.selectedHighlightId) - (a.id === vm.selectedHighlightId); });
+                }
+                if (!list.length) { return; }
+                var m = list[0], single = list.length === 1;
+                var withColor = list.filter(function (x) { return x.type !== 'highlight'; });
+                var withStroke = list.filter(markupGeometry.hasStroke);
+                var withFont = list.filter(markupGeometry.hasFont);
+                var font = withFont[0] || {};
+                var values = {
                     text: m.text || '',
-                    hasColor: m.type !== 'highlight',
-                    color: m.color,
-                    error: ''
+                    color: (withColor[0] || {}).color || vm.markupColor,
+                    opacity: Math.round((typeof m.opacity === 'number' ? m.opacity : 1) * 100),
+                    strokeWidth: (withStroke[0] || {}).strokeWidth,
+                    fontFamily: font.fontFamily || 'helvetica',
+                    fontSize: font.fontSize,
+                    bold: !!font.bold,
+                    italic: !!font.italic,
+                    locked: list.every(function (x) { return x.locked; })
                 };
+                vm.editDialog = angular.extend({
+                    ids: list.map(function (x) { return x.id; }),
+                    label: single ? markupGeometry.label(m) : plural(list.length, 'markup'),
+                    single: single,
+                    pageNumber: m.pageNumber,
+                    createdAt: single ? m.createdAt : null,
+                    grouped: list.some(function (x) { return !!x.groupId; }),
+                    someLocked: list.some(function (x) { return x.locked; }),
+                    hasText: single && markupGeometry.hasText(m),
+                    hasColor: withColor.length > 0,
+                    hasStroke: withStroke.length > 0,
+                    hasFont: withFont.length > 0,
+                    initial: angular.copy(values),
+                    error: ''
+                }, values);
                 $timeout(function () {
                     var input = $document[0].getElementById('edit-text-input');
                     if (input) { input.focus(); }
@@ -1124,41 +1315,67 @@
             };
 
             vm.closeEditDialog = function () { vm.editDialog = null; };
-            vm.setEditColor = function (color) { if (vm.editDialog) { vm.editDialog.color = color; } };
+            vm.setEditColor = function (color) { if (vm.editDialog && !vm.editDialog.locked) { vm.editDialog.color = color; } };
 
             vm.applyEditDialog = function () {
                 var d = vm.editDialog;
                 if (!d) { return; }
-                var m = highlightService.find(d.id);
-                if (!m) { vm.editDialog = null; return; }
-                var changes = {};
-                if (d.hasText) {
-                    var text = String(d.text || '').replace(/\s+$/, '').replace(/^\s*\n/, '');
+                var changed = function (key) { return d[key] !== d.initial[key]; };
+                var text = null;
+                if (d.hasText && changed('text')) {
+                    text = String(d.text || '').replace(/\s+$/, '').replace(/^\s*\n/, '');
                     if (!text.trim()) { d.error = 'The text cannot be empty.'; return; }
                     if (text.length > MAX_NOTE_LENGTH) { d.error = 'Keep the text under ' + MAX_NOTE_LENGTH + ' characters.'; return; }
-                    changes.text = text;
-                    if (m.type === 'text' || m.type === 'callout') {
-                        // The note box fits the new text.
-                        var box = markupGeometry.textBox(text, m.fontSize);
-                        changes.width = box.width;
-                        changes.height = box.height;
-                    }
-                    if (m.type === 'stamp') {
-                        // One line; the box fits it, around the same centre.
-                        changes.text = text.replace(/\s*\n\s*/g, ' ');
-                        var stampBox = markupGeometry.stampSize(changes.text, m.sub, m.fontSize);
-                        changes.x = m.x + (m.width - stampBox.width) / 2;
-                        changes.width = stampBox.width;
-                        changes.height = stampBox.height;
-                    }
                 }
-                if (d.hasColor) { changes.color = d.color; }
-                var updated = highlightService.update(d.id, changes);
+                var opacity = Number(d.opacity), strokeWidth = Number(d.strokeWidth), fontSize = Number(d.fontSize);
+                if (changed('opacity') && !(opacity >= 10 && opacity <= 100)) { d.error = 'Opacity goes from 10 to 100 %.'; return; }
+                if (d.hasStroke && changed('strokeWidth') && !(strokeWidth >= vm.STROKE_WIDTH.min && strokeWidth <= vm.STROKE_WIDTH.max)) {
+                    d.error = 'Line thickness goes from ' + vm.STROKE_WIDTH.min + ' to ' + vm.STROKE_WIDTH.max + ' pt.';
+                    return;
+                }
+                if (d.hasFont && changed('fontSize') && !(fontSize >= vm.FONT_SIZE.min && fontSize <= vm.FONT_SIZE.max)) {
+                    d.error = 'Font size goes from ' + vm.FONT_SIZE.min + ' to ' + vm.FONT_SIZE.max + ' pt.';
+                    return;
+                }
+                var updated = 0;
+                d.ids.forEach(function (id) {
+                    var m = highlightService.find(id);
+                    if (!m) { return; }
+                    var changes = {};
+                    if (changed('locked')) { changes.locked = d.locked; }
+                    if (!d.locked) {
+                        if (text !== null) { changes.text = m.type === 'stamp' ? text.replace(/\s*\n\s*/g, ' ') : text; }
+                        if (changed('color') && m.type !== 'highlight') { changes.color = d.color; }
+                        if (changed('opacity')) { changes.opacity = opacity < 100 ? opacity / 100 : undefined; }
+                        if (changed('strokeWidth') && markupGeometry.hasStroke(m)) { changes.strokeWidth = Math.round(strokeWidth * 100) / 100; }
+                        if (markupGeometry.hasFont(m)) {
+                            if (changed('fontFamily')) { changes.fontFamily = d.fontFamily === 'helvetica' ? undefined : d.fontFamily; }
+                            if (changed('fontSize')) { changes.fontSize = Math.round(fontSize * 10) / 10; }
+                            if (changed('bold')) { changes.bold = d.bold || undefined; }
+                            if (changed('italic')) { changes.italic = d.italic || undefined; }
+                        }
+                        if ('text' in changes || 'fontFamily' in changes || 'fontSize' in changes || 'bold' in changes || 'italic' in changes) {
+                            // The box fits the new text or font.
+                            angular.extend(changes, markupGeometry.refit(angular.extend({}, m, changes)));
+                        }
+                    }
+                    if (Object.keys(changes).length) {
+                        highlightService.update(id, changes);
+                        updated++;
+                    }
+                });
                 vm.editDialog = null;
-                vm.status = vm.markupLabel(updated) + ' changed.';
+                if (d.single) {
+                    var after = highlightService.find(d.ids[0]);
+                    vm.status = after ? vm.markupLabel(after) + (updated ? ' changed.' : ': nothing changed.') : vm.status;
+                } else {
+                    vm.status = updated ? plural(updated, 'markup') + ' changed.' : 'Nothing changed.';
+                }
             };
 
             vm.moveMarkup = function (id, markup) {
+                var current = highlightService.find(id);
+                if (current && current.locked) { return; }
                 var updated = highlightService.update(id, markup);
                 if (updated && updated.type === 'count') { vm.status = vm.markupLabel(updated) + '.'; }
             };
@@ -1646,12 +1863,17 @@
                 d.error = '';
                 d.progress = 'Preparing the pages…';
                 // The printout is the annotated copy, flattened, so it looks exactly like the screen.
+                // Closing the dialog (Close, Cancel, Esc) while the pages are prepared cancels the print.
+                var cancelled = function () { return vm.printDialog !== d; };
                 toolsService.annotatedPdf(vm.source, d.withMarkups ? vm.highlights : [], { flatten: true, pages: pages }).then(function (blob) {
-                    return printService.print(blob, function (done, total) { d.progress = 'Preparing page ' + done + ' of ' + total + '…'; });
+                    if (cancelled()) { return null; }
+                    return printService.print(blob, function (done, total) { d.progress = 'Preparing page ' + done + ' of ' + total + '…'; }, cancelled);
                 }).then(function (printed) {
+                    if (printed === null) { vm.status = 'Print cancelled.'; return; }
                     vm.status = 'Sent ' + printed + ' page' + (printed === 1 ? '' : 's') + ' to the print dialog.';
                     if (vm.printDialog === d) { vm.printDialog = null; }
                 }, function (message) {
+                    if (cancelled()) { return; }
                     d.error = typeof message === 'string' ? message : 'Unable to print.';
                 }).finally(function () {
                     d.busy = false;
@@ -1809,35 +2031,67 @@
                 return label;
             };
 
-            vm.selectHighlight = function (id) {
-                vm.selectedHighlightId = id;
+            /** A click on the page: selects the markup (and its group); with Ctrl / Shift adds it or takes it away. */
+            vm.selectHighlight = function (id, additive) {
+                var m = id === null || id === undefined ? null : highlightService.find(id);
+                if (!additive) {
+                    setSelection(m ? highlightService.groupOf(m) : []);
+                    if (m) { vm.selectedHighlightId = m.id; }
+                    return;
+                }
+                if (!m) { return; }
+                var group = highlightService.groupOf(m);
+                var list = vm.selectedMarkups();
+                if (vm.selectedIds.indexOf(m.id) >= 0) {
+                    list = list.filter(function (x) { return group.indexOf(x) < 0; });
+                } else {
+                    list = list.filter(function (x) { return group.indexOf(x) < 0; }).concat(group);
+                }
+                setSelection(list);
+                if (list.length > 1) { vm.status = plural(list.length, 'markup') + ' selected.'; }
             };
 
             /** From the markups list: shows the highlight's page and selects it. */
             vm.goToHighlight = function (highlight) {
                 if (highlight.pageNumber === vm.currentPage) {
-                    vm.selectedHighlightId = highlight.id;
+                    vm.selectHighlight(highlight.id, false);
                 } else if (!vm.busy) {
                     goToPage(highlight.pageNumber, highlight.id);
                 }
             };
 
             vm.removeHighlight = function (id) {
+                var m = highlightService.find(id);
+                if (m && m.locked) {
+                    vm.status = vm.markupLabel(m) + ' is locked; unlock it to delete it.';
+                    return;
+                }
                 highlightService.remove(id);
-                if (vm.selectedHighlightId === id) {
-                    vm.selectedHighlightId = null;
+                if (vm.selectedIds.indexOf(id) >= 0 || vm.selectedHighlightId === id) {
+                    setSelection(vm.selectedMarkups());
                 }
             };
 
+            /** Deletes the selected markups (Delete key); locked ones stay. */
             vm.removeSelectedHighlight = function () {
-                if (vm.selectedHighlightId !== null) {
-                    vm.removeHighlight(vm.selectedHighlightId);
+                var list = vm.selectedMarkups();
+                if (!list.length) { return; }
+                var kept = removeMarkups(list);
+                if (list.length > 1 || kept) {
+                    vm.status = plural(list.length - kept, 'markup') + ' deleted' + (kept ? '; ' + plural(kept, 'locked markup') + ' kept' : '') + '.';
                 }
             };
 
+            /** Clear all: every markup that is not locked. */
             vm.clearHighlights = function () {
-                highlightService.clear();
-                vm.selectedHighlightId = null;
+                var locked = vm.highlights.filter(function (m) { return m.locked; });
+                if (!locked.length) {
+                    highlightService.clear();
+                    vm.selectedHighlightId = null;
+                    return;
+                }
+                removeMarkups(vm.highlights.slice());
+                vm.status = 'Markups cleared; ' + plural(locked.length, 'locked markup') + ' kept.';
             };
 
             // ----- Status and errors -----
@@ -1882,8 +2136,10 @@
             function onShortcut(event) {
                 if (!(event.ctrlKey || event.metaKey) || event.altKey) { return false; }
                 var key = event.key.toLowerCase();
-                var command = null;
-                if (key === 'o') {
+                var command = markupShortcut(event, key);
+                if (command) {
+                    // handled below
+                } else if (key === 'o') {
                     command = vm.chooseFile;
                 } else if (key === 'p' && vm.hasDocument()) {
                     command = vm.openPrintDialog;   // the browser would print the app, not the document
@@ -1909,6 +2165,25 @@
                 return true;
             }
 
+            // Markup management keys; not while typing in a box or with text selected (the browser copies that).
+            function markupShortcut(event, key) {
+                var target = event.target, tag = target && target.tagName;
+                if (!vm.hasDocument() || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (target && target.isContentEditable)) { return null; }
+                if (vm.editDialog || vm.noteDialog) { return null; }
+                var textSelected = String($window.getSelection ? $window.getSelection() : '').length > 0;
+                var selected = vm.selectedMarkups().length > 0;
+                if (key === 'c' && !event.shiftKey && selected && !textSelected) { return vm.copyMarkups; }
+                if (key === 'x' && !event.shiftKey && selected && !textSelected) { return vm.cutMarkups; }
+                if (key === 'v' && !event.shiftKey && vm.canPaste()) { return vm.pasteMarkups; }
+                if (key === 'd' && event.shiftKey && selected) { return vm.duplicateMarkups; }
+                if (key === 'g' && !event.shiftKey && vm.canGroup()) { return vm.groupMarkups; }
+                if (key === 'g' && event.shiftKey && vm.canUngroup()) { return vm.ungroupMarkups; }
+                if (key === 'l' && event.shiftKey && selected) { return vm.toggleLock; }
+                if (key === 'e' && !event.shiftKey && selected) { return function () { vm.openEditDialog(); }; }
+                if (key === 'a' && !event.shiftKey && !textSelected) { return vm.selectAllMarkups; }
+                return null;
+            }
+
             function onKeyDown(event) {
                 if (onShortcut(event)) {
                     return;
@@ -1926,7 +2201,7 @@
                     return;
                 }
                 $scope.$apply(function () {
-                    if ((event.key === 'Delete' || event.key === 'Backspace') && vm.selectedHighlightId !== null) {
+                    if ((event.key === 'Delete' || event.key === 'Backspace') && vm.selectedIds.length) {
                         vm.removeSelectedHighlight();
                         event.preventDefault();
                     } else if (event.key === 'Escape' && vm.fullScreen) {
