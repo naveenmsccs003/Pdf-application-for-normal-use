@@ -515,9 +515,13 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await dismissError();
 
     if (hasFixture('password.pdf')) {
-        await open('password.pdf'); s = await state();
-        check('password-protected PDF shows friendly error', s.error === 'This PDF is password-protected and cannot be opened.', s.error);
-        await dismissError();
+        const before = (await state()).fileName;
+        await (await page.$('.toolbar input[type=file]')).uploadFile(path.join(FIXTURES, 'password.pdf'));
+        await page.waitForSelector('#open-password', { timeout: 10000 }).catch(() => {});
+        check('password-protected PDF asks for its password', !!(await page.$('#open-password')), (await state()).status);
+        await page.keyboard.press('Escape'); await sleep(200); s = await state();
+        check('cancelling the password prompt keeps the open document', !(await page.$('#open-password')) && s.fileName === before &&
+            (before ? !/password/.test(s.status) : s.status === 'Not opened: the PDF needs its password.') && !s.error, [before, s.fileName, s.status, s.error]);
     } else skip('password-protected PDF', 'fixture needs Ghostscript');
 
     if (hasFixture('tracemonkey.pdf')) {
@@ -794,7 +798,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }));
     await open('ten-pages.pdf'); await click('Actual size');
     await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
-    check('ribbon: File, Pages, Output, Zoom, Navigation, Markup, Measure, Review, Revision, OCR tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Output|Zoom|Navigation|Markup|Measure|Review|Revision|OCR' &&
+    check('ribbon: File, Pages, Output, Zoom, Navigation, Markup, Measure, Review, Revision, OCR, Security tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Output|Zoom|Navigation|Markup|Measure|Review|Revision|OCR|Security' &&
         rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
     await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
     check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
@@ -807,7 +811,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.keyboard.press('ArrowRight'); await settle(); rb = await ribbon(); s = await state();
     check('ribbon: arrow keys on the tabs move to the next tab, not the next page',
         rb.selected === 'Markup' && rb.focused === 'ribbon-tab-markup' && rb.visible.join() === 'ribbon-markup' && rb.page === 'Page 2 of 10', rb);
-    for (let i = 0; i < 5; i++) { await page.keyboard.press('ArrowRight'); await sleep(100); }
+    for (let i = 0; i < 6; i++) { await page.keyboard.press('ArrowRight'); await sleep(100); }
     rb = await ribbon();
     check('ribbon: arrow keys wrap around', rb.selected === 'File' && rb.focused === 'ribbon-tab-file', rb);
     await page.click('#ribbon-tab-markup'); await sleep(100);
@@ -2006,12 +2010,13 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await click('Fit Page'); side = await sideState();
     check('side by side: Fit Page fits both pages in the view', side && side.sideLeft >= side.viewLeft && side.pageRight <= side.viewRight + 1, side);
     let sl = await page.$eval('.viewer-scroll', e => e.scrollTop);
-    await click('Actual size'); await page.$eval('.viewer-scroll', e => { e.scrollTop = 200; }); side = await sideState();
+    // An A4 page at Actual size scrolls about 230 px: start low so the 100 px drag stays within it.
+    await click('Actual size'); await page.$eval('.viewer-scroll', e => { e.scrollTop = 50; }); side = await sideState();
     const sideBox = await (await page.$('.side-page')).boundingBox();
     await page.mouse.move(sideBox.x + 100, sideBox.y + 300); await page.mouse.down();
     await page.mouse.move(sideBox.x + 100, sideBox.y + 200, { steps: 4 }); await page.mouse.up(); await sleep(100);
     sl = await page.$eval('.viewer-scroll', e => e.scrollTop);
-    check('side by side: dragging the compared page pans both together', near(sl, 300, 3), sl);
+    check('side by side: dragging the compared page pans both together', near(sl, 150, 3), sl);
     await click('Continuous'); await sleep(300);
     check('side by side: with continuous scrolling on, pages still show one pair at a time',
         !!(await sideState()) && !(await page.$('.viewer-scroll.is-continuous')));
@@ -2077,7 +2082,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     const props = await page.evaluate(() => {
         const rows = {};
         document.querySelectorAll('.properties-list > div').forEach(d => { rows[d.querySelector('dt').textContent.trim()] = d.querySelector('dd').textContent.trim(); });
-        return { rows, sizes: [...document.querySelectorAll('.properties-sizes tbody tr')].map(r => [...r.cells].map(c => c.textContent.replace(/\s+/g, ' ').trim()).join(' | ')) };
+        return { rows, sizes: [...document.querySelectorAll('.properties-sizes:not(.properties-fonts) tbody tr')].map(r => [...r.cells].map(c => c.textContent.replace(/\s+/g, ' ').trim()).join(' | ')) };
     });
     check('properties: Ctrl+D shows the metadata', props.rows.Title === 'Structural drawings' && props.rows.Author === 'Test Engineer' &&
         props.rows.Subject === 'Ground floor' && props.rows.Keywords === 'beams, columns' && props.rows.Application === 'CAD Export' &&
@@ -2088,8 +2093,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         props.rows.Created === new Date(Date.UTC(2024, 0, 15, 4, 0, 0)).toLocaleString('en-US') || /2024/.test(props.rows.Created), props.rows.Created);
     check('properties: page sizes with paper names', props.sizes.join('|') === 'A3 landscape | 420 × 297 mm | 16.54 × 11.69 in | 3 (1-3)', props.sizes);
     await page.keyboard.press('Escape'); await sleep(100);
-    await open('mixed-sizes.pdf'); await shortcut('KeyD'); await page.waitForSelector('.properties-sizes tbody tr'); await sleep(200);
-    const mixed = await page.$$eval('.properties-sizes tbody tr td:first-child', tds => tds.map(t => t.textContent.replace(/\s+/g, ' ').trim()));
+    await open('mixed-sizes.pdf'); await shortcut('KeyD'); await page.waitForSelector('.properties-sizes:not(.properties-fonts) tbody tr'); await sleep(200);
+    const mixed = await page.$$eval('.properties-sizes:not(.properties-fonts) tbody tr td:first-child', tds => tds.map(t => t.textContent.replace(/\s+/g, ' ').trim()));
     check('properties: every page size of a mixed set (Letter, A4, A3, custom)', mixed.join('|') ===
         'Letter portrait|A4 landscape|A3 portrait|Custom landscape|Custom landscape', mixed);
     await page.keyboard.press('Escape'); await sleep(100);
@@ -2175,6 +2180,124 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         await page.click('button[aria-label="Detect dimensions"]'); await searchDone(); sr = await results();
         check('OCR: dimensions are also found in a PDF\'s own text', /^Page 3 6000 12['\u2019]-6"$/.test(sr.groups.join('|')), sr);
         await page.keyboard.press('Escape'); await sleep(100);
+    }
+
+    // ===== Security: open with a password, protect, remove password, sign, check signatures =====
+    if (!hasFixture('password.pdf')) {
+        skip('Security', 'password.pdf missing (needs Ghostscript)');
+    } else {
+        const statusText = () => page.$eval('.status-text', e => e.textContent.trim());
+        const dialogError = () => page.$eval('.dialog .is-error', e => e.textContent.trim()).catch(() => '');
+        const askPassword = async file => {
+            await (await page.$('.toolbar input[type=file]')).uploadFile(path.isAbsolute(file) ? file : path.join(FIXTURES, file));
+            await page.waitForSelector('#open-password', { timeout: 10000 }).catch(() => {});
+            return !!(await page.$('#open-password'));
+        };
+        const openDownload = async name => {
+            await (await page.$('.toolbar input[type=file]')).uploadFile(path.join(DOWNLOADS, name));
+            await sleep(300); await settle();
+        };
+        const enterPassword = async password => {
+            await page.$eval('#open-password', e => { e.value = ''; });
+            await page.type('#open-password', password); await page.keyboard.press('Enter'); await sleep(300);
+        };
+        check('security: a protected PDF asks for its password', await askPassword('password.pdf'), await statusText());
+        await enterPassword('nope');
+        await page.waitForFunction(() => document.querySelector('#open-password') && document.querySelector('.dialog .is-error'), { timeout: 10000 }).catch(() => {});
+        check('security: a wrong password asks again', await dialogError() === 'The password is not correct. Try again.', await dialogError());
+        await enterPassword('secret'); await settle(); s = await state();
+        check('security: the right password opens it', s.fileName === 'password.pdf' && s.pageStatus === 'Page: 1 / 1' && s.canvasW > 0, s);
+
+        await page.keyboard.down('Control'); await page.keyboard.press('KeyD'); await page.keyboard.up('Control');
+        await page.waitForFunction(() => document.querySelector('.properties-list') && !document.querySelector('.properties .spinner'), { timeout: 15000 });
+        const security = await page.$$eval('.properties-list div', d => d.map(x => x.textContent.replace(/\s+/g, ' ').trim()).find(t => /^Security/.test(t)));
+        check('security: properties show the PDF is encrypted', /^Security ?Encrypted/.test(security || ''), security);
+        await page.keyboard.press('Escape'); await sleep(200);
+
+        await page.click('#ribbon-tab-security'); await sleep(100);
+        await page.click('button[aria-label="Remove password"]'); await sleep(200);
+        await page.click('button[form="unprotect-form"]');
+        await page.waitForFunction(() => document.querySelector('.dialog .is-error'), { timeout: 15000 }).catch(() => {});
+        check('security: Remove password needs the permissions password', /permissions \(owner\) password/.test(await dialogError()), await dialogError());
+        await page.type('#unprotect-password', 'owner'); await page.click('button[form="unprotect-form"]');
+        await page.waitForFunction(() => !document.querySelector('#unprotect-form'), { timeout: 15000 }).catch(() => {});
+        check('security: Remove password saves a copy without it', /password-unlocked\.pdf/.test(await statusText()), await statusText());
+        if (canCheckDownloads) {
+            const unlocked = await waitForDownload('password-unlocked.pdf');
+            if (unlocked) { await openDownload('password-unlocked.pdf'); }
+            s = await state();
+            check('security: the unlocked copy opens without a password', !!unlocked && !(await page.$('#open-password')) && s.fileName === 'password-unlocked.pdf', s);
+        }
+
+        await open('one-page.pdf'); await page.click('#ribbon-tab-security');
+        await page.click('button[aria-label="Protect with password"]'); await sleep(200);
+        await page.type('#protect-user', 'abc123'); await page.type('#protect-confirm', 'abc12');
+        await page.click('button[form="protect-form"]'); await sleep(200);
+        check('security: Protect checks the two passwords match', await dialogError() === 'The two open passwords are not the same.', await dialogError());
+        await page.type('#protect-confirm', '3'); await page.type('#protect-owner', 'boss');
+        await page.click('button[form="protect-form"]');
+        await page.waitForFunction(() => !document.querySelector('#protect-form'), { timeout: 15000 }).catch(() => {});
+        check('security: Protect saves an AES-256 protected copy', await statusText() === 'Downloaded one-page-protected.pdf (protected with AES-256).', await statusText());
+        if (canCheckDownloads) {
+            const protectedCopy = await waitForDownload('one-page-protected.pdf');
+            check('security: the protected copy asks for the new password', !!protectedCopy && await askPassword(path.join(DOWNLOADS, 'one-page-protected.pdf')));
+            if (await page.$('#open-password')) { await enterPassword('abc123'); await settle(); }
+            s = await state();
+            check('security: the protected copy opens with it', s.fileName === 'one-page-protected.pdf' && s.canvasW > 0, s);
+        }
+
+        if (!hasFixture('signer.pfx')) {
+            skip('security: signing', 'signer.pfx missing (needs OpenSSL)');
+        } else {
+            await open('ten-pages.pdf'); await page.click('#ribbon-tab-security');
+            check('security: an unsigned PDF has no signature badge', !(await page.$('.signature-badge')));
+            await page.click('button[aria-label="Sign"]'); await sleep(200);
+            await (await page.$('.dialog input[type=file]')).uploadFile(path.join(FIXTURES, 'signer.pfx'));
+            await page.type('#sign-cert-password', 'wrong'); await page.click('button[form="sign-form"]');
+            await page.waitForFunction(() => document.querySelector('.dialog .is-error'), { timeout: 15000 }).catch(() => {});
+            check('security: a wrong certificate password is reported', /could not be opened: check its password/.test(await dialogError()), await dialogError());
+            await page.$eval('#sign-cert-password', e => { e.value = ''; });
+            await page.type('#sign-cert-password', 'certpass'); await page.type('#sign-reason', 'Approved for construction');
+            await page.click('button[form="sign-form"]');
+            await page.waitForFunction(() => !document.querySelector('#sign-form'), { timeout: 30000 }).catch(() => {});
+            check('security: Sign saves a signed copy', await statusText() === 'Signed by Test Signer: downloaded ten-pages-signed.pdf.', await statusText());
+            if (canCheckDownloads) {
+                const signed = await waitForDownload('ten-pages-signed.pdf');
+                await openDownload('ten-pages-signed.pdf');
+                await page.waitForSelector('.signature-badge', { timeout: 15000 }).catch(() => {});
+                const badge = await page.$eval('.signature-badge', e => e.dataset.status).catch(() => 'none');
+                check('security: a signed PDF gets a badge (self-signed: warning)', !!signed && badge === 'warning', badge);
+                await page.click('.signature-badge').catch(() => {});
+                await page.waitForSelector('.signature-card', { timeout: 10000 }).catch(() => {});
+                const card = await page.$eval('.signature-card', e => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
+                check('security: the signature is intact, covers the document, signer and reason shown', /^Valid, with warnings Signature 1 by Test Signer/.test(card) &&
+                    /The document has not been changed since it was signed/.test(card) && /the certificate is self-signed/.test(card) &&
+                    /signer@example\.com/.test(card) && /Approved for construction/.test(card) && /The whole document/.test(card), card);
+                await page.keyboard.press('Escape'); await sleep(100);
+
+                // Change one character inside the signed bytes: the signature no longer matches.
+                const tampered = path.join(DOWNLOADS, 'ten-pages-tampered.pdf');
+                const bytes = fs.readFileSync(path.join(DOWNLOADS, 'ten-pages-signed.pdf'));
+                const at = bytes.indexOf('Page 7');
+                bytes[at + 5] = '8'.charCodeAt(0);
+                fs.writeFileSync(tampered, bytes);
+                await openDownload('ten-pages-tampered.pdf');
+                await page.waitForSelector('.signature-badge', { timeout: 15000 }).catch(() => {});
+                const broken = await page.$eval('.signature-badge', e => e.dataset.status).catch(() => 'none');
+                check('security: a change after signing makes the signature invalid', at > 0 && broken === 'invalid', [at, broken]);
+
+                // Bytes added after the signature (an incremental update): the signed revision is still intact.
+                const extended = path.join(DOWNLOADS, 'ten-pages-extended.pdf');
+                fs.writeFileSync(extended, Buffer.concat([fs.readFileSync(path.join(DOWNLOADS, 'ten-pages-signed.pdf')), Buffer.from('\n% added later\n')]));
+                await openDownload('ten-pages-extended.pdf');
+                await page.waitForSelector('.signature-badge', { timeout: 15000 }).catch(() => {});
+                await page.click('.signature-badge').catch(() => {});
+                await page.waitForSelector('.signature-card', { timeout: 10000 }).catch(() => {});
+                const later = await page.$eval('.signature-card', e => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
+                check('security: changes after signing are reported, the signed part still intact', /changed or added to after this signature/.test(later), later);
+                await page.keyboard.press('Escape'); await sleep(100);
+            }
+        }
     }
 
     // ===== Drawing navigation: single page / continuous scrolling, full screen, pan =====

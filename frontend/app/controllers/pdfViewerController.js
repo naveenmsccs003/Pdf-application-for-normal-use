@@ -5,10 +5,10 @@
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
         'recentFilesService', 'markupGeometry', 'scaleService', 'compareService', 'revisionService', 'reportService',
-        'toolsService', 'pagesService', 'customMarkupService', 'printService', 'VIEWER_CONFIG', '$q',
+        'toolsService', 'pagesService', 'customMarkupService', 'printService', 'securityService', 'VIEWER_CONFIG', '$q',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
                   recentFilesService, markupGeometry, scaleService, compareService, revisionService, reportService,
-                  toolsService, pagesService, customMarkupService, printService, VIEWER_CONFIG, $q) {
+                  toolsService, pagesService, customMarkupService, printService, securityService, VIEWER_CONFIG, $q) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -85,7 +85,11 @@
 
                 pdfService.upload(file).then(function (uploaded) {
                     vm.status = 'Opening ' + uploaded.fileName + '…';
-                    return pdfService.load(VIEWER_CONFIG.apiBase + '/' + uploaded.id).then(function (pageCount) {
+                    var askPassword = function (wrong) {
+                        vm.status = (wrong ? 'Wrong password. ' : '') + 'Enter the password of ' + uploaded.fileName + '.';
+                        return securityService.askPassword(uploaded.fileName, wrong);
+                    };
+                    return pdfService.load(VIEWER_CONFIG.apiBase + '/' + uploaded.id, askPassword).then(function (pageCount) {
                         vm.source = { kind: 'web', id: uploaded.id };
                         recentFilesService.add(file).then(refreshWebRecent);
                         return showDocument(uploaded.fileName, pageCount, uploaded.size);
@@ -161,7 +165,18 @@
                     vm.error = '';
                     vm.status = 'Opening ' + message.fileName + '\u2026';
                 });
+                desktopService.on('password-required', function (message) {
+                    vm.busy = false;    // not opening while the prompt waits; the host sends "opening" again with the password
+                    vm.status = (message.wrong ? 'Wrong password. ' : '') + 'Enter the password of ' + message.fileName + '.';
+                    securityService.askPassword(message.fileName, message.wrong).then(function (password) {
+                        desktopService.send('open-password', { password: password });
+                    }, function () {
+                        desktopService.send('open-password-cancelled');
+                        vm.status = vm.hasDocument() ? pageStatus() : 'Not opened: the PDF needs its password.';
+                    });
+                });
                 desktopService.on('opened', function (message) {
+                    vm.openedWithPassword = !!message.encrypted;
                     pdfService.loadLocal(message).then(function (pageCount) {
                         vm.source = { kind: 'desktop' };
                         return showDocument(message.fileName, pageCount, message.size, message.untitled);
@@ -245,6 +260,10 @@
             }
 
             function openFailed(message) {
+                if (message === 'cancelled') {     // the password prompt was cancelled
+                    vm.status = vm.hasDocument() ? pageStatus() : 'Not opened: the PDF needs its password.';
+                    return;
+                }
                 showError(typeof message === 'string' ? message : 'Unable to open this PDF.');
             }
 
@@ -341,7 +360,18 @@
 
             vm.openProperties = function () {
                 if (!vm.hasDocument()) { return; }
-                var d = vm.propertiesDialog = { loading: true, error: '', general: [], description: [], application: [], sizes: [] };
+                var d = vm.propertiesDialog = { loading: true, error: '', general: [], description: [], application: [], sizes: [],
+                                                fonts: null, fontsNote: '', fontsLoading: true };
+                pdfService.getFonts(vm.source).then(function (result) {
+                    if (vm.propertiesDialog !== d) { return; }
+                    d.fonts = result.fonts || [];
+                    d.fontsNote = result.pagesScanned < result.pageCount
+                        ? 'Fonts on the first ' + result.pagesScanned.toLocaleString('en-US') + ' of ' + result.pageCount.toLocaleString('en-US') + ' pages.' : '';
+                }, function (message) {
+                    if (vm.propertiesDialog !== d) { return; }
+                    d.fonts = [];
+                    d.fontsNote = typeof message === 'string' ? message : 'Unable to read the fonts.';
+                }).finally(function () { d.fontsLoading = false; });
                 pdfService.getInfo(vm.source).then(function (info) {
                     if (vm.propertiesDialog !== d) { return; }
                     var meta = info.metadata || {};
@@ -899,7 +929,7 @@
                 { id: 'file', label: 'File' }, { id: 'pages', label: 'Pages' }, { id: 'output', label: 'Output' }, { id: 'zoom', label: 'Zoom' },
                 { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' },
                 { id: 'measure', label: 'Measure' }, { id: 'review', label: 'Review' }, { id: 'revision', label: 'Revision' },
-                { id: 'ocr', label: 'OCR' }
+                { id: 'ocr', label: 'OCR' }, { id: 'security', label: 'Security' }
             ];
             vm.ribbonTab = 'file';
 

@@ -27,6 +27,7 @@ public sealed class PdfiumService : IDisposable
     private string? _name;          // file name shown in the viewer
     private string? _savePath;      // where Save writes; null for a new document that was never saved
     private bool _pathIsTemp;
+    private string? _password;      // the open document's password (in memory only), for tools that reopen the file
     private FpdfDocumentT? _compare;
     private Guid _compareToken;
 
@@ -60,6 +61,19 @@ public sealed class PdfiumService : IDisposable
             lock (_gate)
                 return _path is null ? null : (_path, _name!);
         }
+    }
+
+    /// <summary>The password the viewer's document was opened with (null: none).</summary>
+    public string? PasswordFor(Guid token)
+    {
+        lock (_gate)
+            return _document != null && token == _token ? _password : null;
+    }
+
+    /// <summary>The password of the document open in the viewer, for tools working on it.</summary>
+    public string? CurrentPassword
+    {
+        get { lock (_gate) return _password; }
     }
 
     /// <summary>The file PDFium reads for the viewer's document with this token, or null.</summary>
@@ -118,14 +132,17 @@ public sealed class PdfiumService : IDisposable
         }
     }
 
-    /// <summary>Opens a PDF (closing the previous one and any comparison). Throws <see cref="LocalPdfException"/>.</summary>
-    public LocalPdfInfo Open(string path)
+    /// <summary>
+    /// Opens a PDF (closing the previous one and any comparison), with its password if it has one. Throws
+    /// <see cref="LocalPdfException"/> (<see cref="LocalPdfException.NeedsPassword"/> when a password is needed).
+    /// </summary>
+    public LocalPdfInfo Open(string path, string? password = null)
     {
         PdfPreflight.Check(path);
 
         lock (_gate)
         {
-            var (document, pageCount) = LoadDocument(path);
+            var (document, pageCount) = LoadDocument(path, password);
             CloseCurrent();
             CloseCompareDocument();
             _document = document;
@@ -134,6 +151,7 @@ public sealed class PdfiumService : IDisposable
             _name = Path.GetFileName(path);
             _savePath = path;
             _pathIsTemp = false;
+            _password = string.IsNullOrEmpty(password) ? null : password;
             return new LocalPdfInfo(_token, _name, new FileInfo(path).Length, pageCount);
         }
     }
@@ -199,11 +217,17 @@ public sealed class PdfiumService : IDisposable
             CloseCompareDocument();
     }
 
-    private static (FpdfDocumentT Document, int PageCount) LoadDocument(string path)
+    private static (FpdfDocumentT Document, int PageCount) LoadDocument(string path, string? password = null)
     {
-        var document = fpdfview.FPDF_LoadDocument(path, null);
+        var document = fpdfview.FPDF_LoadDocument(path, string.IsNullOrEmpty(password) ? null : password);
         if (document == null)
-            throw new LocalPdfException(Pdfium.ErrorMessage(fpdfview.FPDF_GetLastError()));
+        {
+            var code = fpdfview.FPDF_GetLastError();
+            if (code == Pdfium.PasswordError)
+                throw new LocalPdfException(string.IsNullOrEmpty(password) ? "This PDF is password-protected." : "The password is not correct.")
+                    { NeedsPassword = true };
+            throw new LocalPdfException(Pdfium.ErrorMessage(code));
+        }
 
         var pageCount = fpdfview.FPDF_GetPageCount(document);
         if (pageCount < 1)
@@ -470,7 +494,7 @@ public sealed class PdfiumService : IDisposable
                 try { File.Delete(_path!); }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* left in the temp folder */ }
             }
-            _path = _name = _savePath = null;
+            _path = _name = _savePath = _password = null;
             _pathIsTemp = false;
         }
     }

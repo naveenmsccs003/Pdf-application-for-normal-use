@@ -6,13 +6,14 @@ using PdfViewer.Tools;
 namespace PdfViewer.Desktop;
 
 /// <summary>
-/// Merge, split, compress and convert for the desktop app. Inputs and outputs are chosen with
+/// Merge, split, compress, convert, protect, remove a password and sign for the desktop app. Inputs and outputs are chosen with
 /// native dialogs and processed straight on disk. The UI only ever sees opaque ids for picked files,
 /// never paths, and can only use files the user picked or the document open in the viewer.
 /// </summary>
 public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
 {
     private static readonly (string, string[])[] PdfFilter = [("PDF files", ["*.pdf"])];
+    private static readonly (string, string[])[] CertificateFilter = [("Certificates", ["*.pfx", "*.p12"])];
     private const int MaxReportLength = 20_000_000;
     private readonly Dictionary<string, string> _picked = new();
 
@@ -96,6 +97,51 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                         return 0;
                     });
                     return Done($"Saved {Path.GetFileName(output)} (text only).");
+                }
+                case "protect":
+                {
+                    var (path, name) = Single(inputs);
+                    var output = AskSaveFile(dialogs, "Save protected PDF", path, ".pdf", inputs, $"{BaseName(name)}-protected");
+                    if (output is null) return Cancelled;
+                    var protect = new ProtectOptions(Text(options, "userPassword"), Text(options, "ownerPassword"),
+                        Flag(options, "allowPrint"), Flag(options, "allowCopy"), Flag(options, "allowModify"),
+                        Flag(options, "allowAnnotate"), Flag(options, "allowForms"), Flag(options, "allowAssemble"));
+                    var password = PasswordOf(path);
+                    await WriteFileAsync(output, stream => { PdfSecurity.Protect(path, password, stream, protect); return 0; });
+                    return Done($"Saved {Path.GetFileName(output)} (protected with AES-256).");
+                }
+                case "unprotect":
+                {
+                    var (path, name) = Single(inputs);
+                    // The password typed in the dialog, else the one the document was opened with.
+                    var password = Text(options, "password") ?? PasswordOf(path);
+                    await Task.Run(() => { if (!Pdfium.IsEncrypted(path, password)) throw new ToolException("This PDF has no password."); });
+                    var output = AskSaveFile(dialogs, "Save PDF without password", path, ".pdf", inputs, $"{BaseName(name)}-unlocked");
+                    if (output is null) return Cancelled;
+                    await WriteFileAsync(output, stream => { PdfSecurity.RemovePassword(path, password, stream); return 0; });
+                    return Done($"Saved {Path.GetFileName(output)} without a password.");
+                }
+                case "sign":
+                {
+                    var (path, name) = Single(inputs);
+                    var certificates = dialogs.OpenFiles("Choose your certificate (.pfx or .p12)", false, CertificateFilter);
+                    if (certificates is not { Length: > 0 } || string.IsNullOrEmpty(certificates[0])) return Cancelled;
+                    var certificate = new FileInfo(certificates[0]);
+                    if (!certificate.Exists || certificate.Length > PdfSecurity.MaxCertificateBytes)
+                        throw new ToolException("Choose a certificate file (.pfx or .p12).");
+                    var certificateBytes = await File.ReadAllBytesAsync(certificate.FullName);
+                    var output = AskSaveFile(dialogs, "Save signed PDF", path, ".pdf", inputs, $"{BaseName(name)}-signed");
+                    if (output is null) return Cancelled;
+                    var sign = new SignOptions(Text(options, "reason"), Text(options, "location"), Text(options, "contact"),
+                        options.TryGetProperty("page", out var pg) && pg.TryGetInt32(out var page) ? page : 0, Text(options, "corner"));
+                    SignResult? result = null;
+                    await WriteFileAsync(output, stream =>
+                    {
+                        result = PdfSecurity.SignAsync(path, stream, certificateBytes, Text(options, "certificatePassword"), sign).GetAwaiter().GetResult();
+                        return 0;
+                    });
+                    return Done($"Signed by {result!.Signer}: saved {Path.GetFileName(output)}" +
+                                (sign.Page > 0 && !result.Visible ? " (invisible: no font to draw the signature was found on this computer)." : "."));
                 }
                 case "save-report":
                 {
@@ -318,6 +364,16 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
     }
 
     private static (string Path, string Name) Single(List<(string Path, string Name)> inputs) => inputs[0];
+
+    /// <summary>The password the viewer's document was opened with, when <paramref name="path"/> is that document.</summary>
+    private string? PasswordOf(string path) => pdfium.Current?.Path == path ? pdfium.CurrentPassword : null;
+
+    private static string? Text(JsonElement options, string name) =>
+        options.ValueKind == JsonValueKind.Object && options.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
+            && v.GetString() is { Length: > 0 } text ? text : null;
+
+    private static bool Flag(JsonElement options, string name) =>
+        options.ValueKind == JsonValueKind.Object && options.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.True;
 
     private static List<PageRange> SplitRanges(string path, JsonElement options)
     {

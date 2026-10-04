@@ -256,6 +256,30 @@ again afterwards. OCR is never perfect: check important values on the drawing. T
 very small text on large sheets are often missed. Tesseract and tesseract.js are Apache 2.0 licensed (fine to
 distribute with the app).
 
+## Security (passwords and digital signatures)
+
+On the **Security** tab (web and desktop). The work is done with [PDFsharp](https://www.pdfsharp.com/) (MIT) on the
+server / desktop host, which reads the whole document into memory, so these work on files up to 1 GB.
+
+- **Opening a protected PDF** asks for its password (again, with a message, when it is wrong; **Esc** cancels). The
+  password stays in memory while the document is open and is never stored. Properties (**Ctrl+D**) show the security.
+- **Protect with password**: saves a copy encrypted with AES-256 (readable by Acrobat 9 and later and every current
+  viewer), with an open password, a permissions (owner) password, or both, and what readers may do without the
+  permissions password: print, copy, comment, fill in forms, change the document, insert / delete / rotate pages.
+  Without a permissions password a random one is used, so nobody can lift the restrictions.
+- **Remove password**: saves a copy without encryption. It needs the permissions password when the PDF has one,
+  otherwise the password it was opened with.
+- **Sign**: signs a copy with your certificate and its private key from a `.pfx` / `.p12` file (SHA-256,
+  `adbe.pkcs7.detached`), with a reason, location and contact, shown in a box in a corner of a page or invisible.
+  A visible signature needs a common font on the computer (Arial, Segoe UI, DejaVu Sans, Liberation Sans or Noto
+  Sans). Web: the certificate is sent with the request and not kept. A password-protected PDF cannot be signed: remove
+  the password first.
+- **Signatures**: every signature is checked when a document opens; a signed document gets a badge on its tab
+  (green: valid, amber: valid with warnings, red: invalid). The dialog shows for each signature who signed and when, the
+  reason, and what was checked: the signed bytes are unchanged (*intact*), the signature covers the whole file (if not,
+  the document was changed or added to after signing), and the signer's certificate chains to a root this computer
+  trusts (a self-signed certificate does not). Revocation is not checked (no internet lookups).
+
 ## Drawing navigation
 
 On the **Navigation** tab (web and desktop):
@@ -375,17 +399,23 @@ Notes:
 | POST | `/api/pdf/upload` | Upload a PDF (multipart field `file`). Returns `{ id, fileName, size }` |
 | GET | `/api/pdf/{id}` | Download an uploaded PDF (supports range requests) |
 | GET | `/api/pdf/{id}/info` | Document properties: PDF version, metadata, security, page sizes |
+| GET | `/api/pdf/{id}/fonts` | Fonts of the document's text (embedded or not), as many pages as fit in 3 s |
+| GET | `/api/pdf/{id}/signatures` | Digital signatures, each checked (intact, whole file, trusted) |
 | POST | `/api/tools/merge` | `items` (`id:{guid}` or `file:{n}`, in order) + `files` |
 | POST | `/api/tools/split` | `id` or `file`, `mode` (`pages`/`chunks`/`ranges`), `pagesPerFile`, `ranges` |
 | POST | `/api/tools/compress` | `id` or `file`, `level` (`small`/`medium`/`high`) |
 | POST | `/api/tools/convert` | `id` or `file`, `format` (`docx`/`xlsx`/`png`), `dpi` |
+| POST | `/api/tools/protect` | `id` or `file`, `password` (the document's own), `userPassword`, `ownerPassword`, `allowPrint`, `allowCopy`, `allowModify`, `allowAnnotate`, `allowForms`, `allowAssemble` |
+| POST | `/api/tools/unprotect` | `id` or `file`, `password` (the permissions password, or the open password) |
+| POST | `/api/tools/sign` | `id` or `file`, `certificate` (.pfx / .p12), `certificatePassword`, `reason`, `location`, `contact`, `page` (0: invisible), `corner` |
 | POST | `/api/pages/new` | JSON `{ count, width, height }` (points): a blank PDF, stored like an upload. Returns `{ id, fileName, size, pageCount }` |
 | POST | `/api/pages/rearrange` | `id`, `name`, `layout` (JSON list of `{ source, page, rotate, width, height }`: source 0 = the document, 1..n = `files`, −1 = blank page; page 0 of a file = all its pages) + `files`. The result is stored as a new upload; returns as above |
 | POST | `/api/pages/extract` | `id`, `name`, `layout`: the pages as a download |
 
 Uploads are stored under random GUID names in the system temp folder (`pdf-viewer-uploads`) and
 deleted automatically after `PdfStorage:RetentionMinutes` (default 60); a background task checks
-on startup and every 10 minutes. Size limit is
+on startup and every 10 minutes. For a protected document the viewer sends its password in the `X-Pdf-Password`
+header with the info, fonts and signatures requests; it is not stored. Size limit is
 `PdfStorage:MaxFileSizeMB` in `backend/appsettings.json` (also update `maxFileSizeMB` in `frontend/app/app.js`).
 
 ## Structure
@@ -411,6 +441,8 @@ frontend/
   app/services/ocrService.js      OCR: draws pages, reads them with Tesseract, keeps the words per page
   app/controllers/ocrController.js  OCR tab, word boxes, Extract text / Detected list dialog
   app/controllers/findController.js  find bar and its keyboard shortcuts
+  app/services/securityService.js the password prompt for opening protected PDFs
+  app/controllers/securityController.js  Security tab: Protect, Remove password, Sign, Signatures dialog and badge
   app/services/themeService.js    light / dark theme
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
   app/services/recentFilesService.js  web Recent Files (copies kept in IndexedDB)
@@ -431,7 +463,9 @@ shared/PdfViewer.Tools/          PDF tools used by both apps
   OfficeExport.cs                 text-only Word and Excel files (Open XML SDK)
   Ghostscript.cs                  compression via Ghostscript
   PageRanges.cs                   "1-3, 5" parsing, chunks
-  PdfInfo.cs                      document properties (version, metadata, security, page sizes)
+  PdfInfo.cs                      document properties (version, metadata, security, page sizes) and fonts
+  PdfSecurity.cs                  protect with a password (AES-256), remove the password, sign (PDFsharp)
+  PdfSignatures.cs                check digital signatures (PDFium reads them, .NET checks the CMS and certificate)
   PageEditor.cs                   blank PDFs; rebuild a document's pages (delete, insert, move, copy, rotate, replace)
   Pdfium.cs                       shared PDFium lock, open and save helpers
   PngEncoder.cs                   small PNG writer
@@ -443,7 +477,7 @@ desktop/
   LinuxEnvironment.cs             fixes snap environment leaks (e.g. VS Code snap terminal) for WebKit
   Controllers/LocalPdfController.cs  page sizes and rendered page images for the opened file
   Controllers/LocalSearchController.cs  text search in the opened file, in steps (also by pattern)
-  Controllers/LocalInfoController.cs    document properties of the opened file
+  Controllers/LocalInfoController.cs    document properties, fonts and signatures of the opened file
   Services/PdfiumService.cs       open with PDFium, render pages, find text, working copy after page edits
   Services/PdfPreflight.cs        detects files PDFium cannot read before trying
   Services/RecentFiles.cs         recent file paths (JSON in the user's app data folder)
@@ -479,6 +513,9 @@ page edits (insert blank / from a file, delete, extract, move, duplicate, rotate
 page by page), New PDF, Save / Save as and the unsaved-changes prompt (web and desktop), continuous scrolling
 (current page follows the scroll, markups on the other pages, a 150-page document) and full screen,
 render failure recovery, OCR of a scanned drawing (recognise, search, dimensions including vertical text, drawing
-numbers, annotations, extract and save text and the detected list; web and desktop), light / dark theme, tablet viewport with touch highlighting, and no console errors.
-`password.pdf` and `scanned-drawing.pdf` (OCR) need Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
+numbers, annotations, extract and save text and the detected list; web and desktop), security (open with a password,
+wrong password, Protect, Remove password, Sign, and the signature check of a signed, a tampered and an extended copy;
+web and desktop), light / dark theme, tablet viewport with touch highlighting, and no console errors.
+`password.pdf` and `scanned-drawing.pdf` (OCR) need Ghostscript, `signer.pfx` (a self-signed test certificate, password
+`certpass`) needs OpenSSL and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).

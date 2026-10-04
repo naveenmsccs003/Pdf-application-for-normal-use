@@ -30,6 +30,7 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
     private Action<string>? _send;
     private PhotinoWindow? _window;
     private string? _startupFile;
+    private string? _passwordPath;      // a file waiting for its password (see "open-password")
 
     // Test mode: replies go to the collector of the request being handled. AsyncLocal keeps
     // overlapping test requests (e.g. "ready" and "open") from receiving each other's replies.
@@ -98,6 +99,21 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
                     Send(new { type = "open-cancelled" });
                 break;
 
+            case "open-password":
+                // The password for the file that needed one; the path stays here, never comes from the page.
+                var pending = _passwordPath;
+                var password = root.TryGetProperty("password", out var pw) ? pw.GetString() : null;
+                if (pending is null || string.IsNullOrEmpty(password))
+                    Send(new { type = "open-cancelled" });
+                else
+                    await OpenAsync(pending, password);
+                break;
+
+            case "open-password-cancelled":
+                _passwordPath = null;
+                Send(new { type = "open-cancelled" });
+                break;
+
             case "close":
                 pdfium.Close();
                 break;
@@ -152,16 +168,23 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
         }
     }
 
-    private async Task OpenAsync(string path)
+    private async Task OpenAsync(string path, string? password = null)
     {
         Send(new { type = "opening", fileName = Path.GetFileName(path) });
+        _passwordPath = null;
         try
         {
             // Large files can take a moment; keep the UI thread free.
-            var info = await Task.Run(() => pdfium.Open(path));
-            Send(new { type = "opened", info.Token, info.FileName, info.Size, info.PageCount });
+            var info = await Task.Run(() => pdfium.Open(path, password));
+            Send(new { type = "opened", info.Token, info.FileName, info.Size, info.PageCount, encrypted = password is not null });
             recent.Add(path);
             SendRecent();
+        }
+        catch (LocalPdfException ex) when (ex.NeedsPassword)
+        {
+            // Ask the viewer for the password; "open-password" opens this file with it.
+            _passwordPath = path;
+            Send(new { type = "password-required", fileName = Path.GetFileName(path), wrong = password is not null });
         }
         catch (LocalPdfException ex)
         {

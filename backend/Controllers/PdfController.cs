@@ -29,16 +29,33 @@ public class PdfController(PdfService pdfService, ILogger<PdfController> logger)
         }
     }
 
+    /// <summary>The password of a protected document, sent by the viewer with each request (never stored).</summary>
+    public const string PasswordHeader = "X-Pdf-Password";
+    private static readonly TimeSpan FontsBudget = TimeSpan.FromSeconds(3);
+
     /// <summary>Document properties: PDF version, metadata, security and page sizes.</summary>
     [HttpGet("{id:guid}/info")]
-    public async Task<IActionResult> Info(Guid id, CancellationToken ct)
+    public Task<IActionResult> Info(Guid id, [FromHeader(Name = PasswordHeader)] string? password, CancellationToken ct) =>
+        Read(id, path => PdfInfoReader.Read(path, password), ct);
+
+    /// <summary>The fonts of the document's text (as many pages as fit in a few seconds).</summary>
+    [HttpGet("{id:guid}/fonts")]
+    public Task<IActionResult> Fonts(Guid id, [FromHeader(Name = PasswordHeader)] string? password, CancellationToken ct) =>
+        Read(id, path => PdfInfoReader.ReadFonts(path, password, FontsBudget, ct), ct);
+
+    /// <summary>The document's digital signatures, each checked.</summary>
+    [HttpGet("{id:guid}/signatures")]
+    public Task<IActionResult> Signatures(Guid id, [FromHeader(Name = PasswordHeader)] string? password, CancellationToken ct) =>
+        Read(id, path => PdfSignatures.Verify(path, password), ct);
+
+    private async Task<IActionResult> Read<T>(Guid id, Func<string, T> read, CancellationToken ct)
     {
         var path = pdfService.GetStoredPath(id);
         if (path is null)
             return NotFound(new { error = "The requested PDF was not found. Please open it again." });
         try
         {
-            return Ok(await Task.Run(() => PdfInfoReader.Read(path), ct));
+            return Ok(await Task.Run(() => read(path), ct));
         }
         catch (ToolException ex)
         {

@@ -155,8 +155,11 @@ async function startHost() {
         await open('corrupt.pdf'); s = await state(); check('corrupt PDF rejected', s.error === 'The selected file is not a valid PDF.', s.error); await dismiss();
         await open('does-not-exist.pdf'); s = await state(); check('missing file reported', s.error === 'The selected file could not be found.', s.error); await dismiss();
         if (fs.existsSync(fixture('password.pdf'))) {
-            await open('password.pdf'); s = await state();
-            check('password-protected PDF reported', s.error === 'This PDF is password-protected and cannot be opened.', s.error); await dismiss();
+            await open('password.pdf');
+            check('password-protected PDF asks for its password', !!(await page.$('#open-password')), (await state()).status);
+            await page.keyboard.press('Escape'); await sleep(200);
+            const status = await page.$eval('.status-text', e => e.textContent.trim());
+            check('cancelling the password prompt opens nothing', !(await page.$('#open-password')) && status === 'Not opened: the PDF needs its password.', status);
         } else skip('password-protected PDF', 'fixture needs Ghostscript');
         check('still on empty state after errors', (await state()).empty);
 
@@ -670,6 +673,64 @@ async function startHost() {
             await page.click('button[aria-label="Detect dimensions"]'); await searchDone(); sr = await results();
             check('desktop OCR: dimensions in a PDF\'s own text (pattern on the host)', /^Page 3 6000 12['’]-6"$/.test(sr.groups.join('|')), sr);
             await page.keyboard.press('Escape'); await sleep(100);
+        }
+
+        // ----- Password protection and digital signatures (PDFsharp on the host; files through native dialogs) -----
+        if (!fs.existsSync(fixture('password.pdf'))) {
+            skip('desktop security', 'password.pdf missing (needs Ghostscript)');
+        } else {
+            const secDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfviewer-security-'));
+            const statusText = () => page.$eval('.status-text', e => e.textContent.trim());
+            const enterPassword = async password => {
+                const before = await page.evaluate(() => window.__replyCount || 0);
+                await page.$eval('#open-password', e => { e.value = ''; });
+                await page.type('#open-password', password); await page.keyboard.press('Enter');
+                await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 30000 }, before);
+                await sleep(300);
+            };
+            await open('password.pdf'); await enterPassword('nope');
+            check('desktop: a wrong password asks again', !!(await page.$('#open-password')) &&
+                /not correct/.test(await page.$eval('.dialog .is-error', e => e.textContent).catch(() => '')));
+            await enterPassword('secret'); await settle(); s = await state();
+            check('desktop: the right password opens it', s.fileName === 'password.pdf' && s.canvasW > 0 && !(await page.$('#open-password')), s);
+            await page.click('#ribbon-tab-security');
+            await page.click('button[aria-label="Remove password"]'); await sleep(200);
+            const unlockedPath = path.join(secDir, 'unlocked.pdf');
+            r = await runTool({ save: unlockedPath });
+            check('desktop: Remove password needs the permissions password', /permissions \(owner\) password/.test(r.error), r);
+            await page.type('#unprotect-password', 'owner');
+            await runTool({ save: unlockedPath }); s = await statusText();
+            check('desktop: Remove password writes a copy without it', /Saved unlocked\.pdf without a password/.test(s) && fs.existsSync(unlockedPath), s);
+            await open(unlockedPath);
+            check('desktop: the unlocked copy opens without a password', !(await page.$('#open-password')) && (await state()).fileName === 'unlocked.pdf');
+
+            await open('one-page.pdf'); await page.click('#ribbon-tab-security');
+            await page.click('button[aria-label="Protect with password"]'); await sleep(200);
+            await page.type('#protect-user', 'abc123'); await page.type('#protect-confirm', 'abc123');
+            const protectedPath = path.join(secDir, 'protected.pdf');
+            await runTool({ save: protectedPath }); s = await statusText();
+            check('desktop: Protect writes an AES-256 protected copy', /Saved protected\.pdf \(protected with AES-256\)/.test(s), s);
+            await open(protectedPath);
+            check('desktop: the protected copy asks for its password', !!(await page.$('#open-password')));
+            if (await page.$('#open-password')) { await enterPassword('abc123'); await settle(); }
+            check('desktop: and opens with it', (await state()).fileName === 'protected.pdf');
+
+            if (!fs.existsSync(fixture('signer.pfx'))) {
+                skip('desktop signing', 'signer.pfx missing (needs OpenSSL)');
+            } else {
+                await open('ten-pages.pdf'); await page.click('#ribbon-tab-security');
+                await page.click('button[aria-label="Sign"]'); await sleep(200);
+                await page.type('#sign-cert-password', 'certpass'); await page.type('#sign-reason', 'Checked');
+                const signedPath = path.join(secDir, 'signed.pdf');
+                await runTool({ files: [fixture('signer.pfx')], save: signedPath }); s = await statusText();
+                check('desktop: Sign writes a signed copy (certificate from the native dialog)', /^Signed by Test Signer: saved signed\.pdf/.test(s) && fs.existsSync(signedPath), s);
+                await open(signedPath);
+                await page.waitForSelector('.signature-badge', { timeout: 15000 }).catch(() => {});
+                const badge = await page.$eval('.signature-badge', e => e.dataset.status).catch(() => 'none');
+                check('desktop: the signed copy is checked on the host (intact, self-signed: warning)', badge === 'warning', badge);
+            }
+            await open('one-page.pdf');    // release the files before removing them
+            fs.rmSync(secDir, { recursive: true, force: true });
         }
 
         // ----- Security: API only serves the opened file -----

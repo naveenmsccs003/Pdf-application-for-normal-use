@@ -1,15 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- PDF tools shared by the web backend and the desktop app: merge, split, compress, convert. -->
+  <!-- PDF tools shared by the web backend and the desktop app: merge, split, compress, convert, protect, sign. -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PdfViewer.Tools</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageReference Include="PDFiumCore" Version="156.0.8076" />
+    <!-- Password protection (AES-256) and digital signatures (MIT licence). -->
+    <PackageReference Include="PDFsharp" Version="6.2.4" />
   </ItemGroup>
 
 </Project>

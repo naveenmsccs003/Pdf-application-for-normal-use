@@ -192,7 +192,7 @@
                                 return; // superseded by a newer render
                             }
                             scope.rendering = false;
-                            canvasLayer.innerHTML = '';
+                            clearCanvases(canvasLayer);
                             canvasLayer.appendChild(result.canvas);
                             scope.rendered = { page: page, scale: scale, width: result.width, height: result.height };
                             if (pageChanged && !scope.continuous) {
@@ -207,12 +207,25 @@
                         });
                     }
 
+                    /**
+                     * Frees a canvas's pixels now (up to 64 MB for a page) instead of whenever it is garbage collected;
+                     * WebKit (the desktop window) in particular limits the total canvas memory of a page.
+                     */
+                    function releaseCanvas(canvas) {
+                        if (canvas && canvas.tagName === 'CANVAS') { canvas.width = 0; canvas.height = 0; }
+                    }
+
+                    function clearCanvases(el) {
+                        Array.prototype.forEach.call(el.querySelectorAll('canvas'), releaseCanvas);
+                        el.innerHTML = '';
+                    }
+
                     scope.$watchGroup(['docVersion', 'page', 'scale'], function (newValues, oldValues) {
                         if (newValues[0] !== oldValues[0]) {
                             // New document: forget the previous one's page.
                             scope.rendered = { page: 0, scale: 1, width: 0, height: 0 };
                             scope.rendering = false;
-                            canvasLayer.innerHTML = '';
+                            clearCanvases(canvasLayer);
                         }
                         render();
                     });
@@ -413,7 +426,7 @@
                             pages.filter(function (p) { return !shown[p]; })
                                 .sort(function (a, b) { return Math.abs(b - scope.page) - Math.abs(a - scope.page); })
                                 .slice(0, pages.length - KEEP_IMAGES)
-                                .forEach(function (p) { delete images[p]; });
+                                .forEach(function (p) { releaseCanvas(images[p].canvas); delete images[p]; });
                         }
                     }
 

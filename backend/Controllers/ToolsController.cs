@@ -7,7 +7,7 @@ using PdfViewer.Tools;
 namespace PdfViewer.Api.Controllers;
 
 /// <summary>
-/// Merge, split, compress and convert. Each request uses either the open document
+/// Merge, split, compress, convert, protect, remove a password and sign. Each request uses either the open document
 /// (<c>id</c> of an earlier upload) or a newly uploaded <c>file</c>; uploads go through the same
 /// validation as the viewer. Results are streamed from temp files that delete themselves.
 /// </summary>
@@ -144,6 +144,56 @@ public class ToolsController(PdfService pdfService, ILogger<ToolsController> log
                 default:
                     throw new ToolException("Choose an output format.");
             }
+        });
+
+    /// <summary>A copy protected with AES-256: an open password and / or a permissions (owner) password.</summary>
+    /// <param name="password">The open document's own password, if it has one.</param>
+    [HttpPost("protect")]
+    public Task<IActionResult> Protect([FromForm] Guid? id, IFormFile? file, [FromForm] string? name, [FromForm] string? password,
+        [FromForm] string? userPassword, [FromForm] string? ownerPassword, [FromForm] bool allowPrint, [FromForm] bool allowCopy,
+        [FromForm] bool allowModify, [FromForm] bool allowAnnotate, [FromForm] bool allowForms, [FromForm] bool allowAssemble,
+        CancellationToken ct) =>
+        Run(async () =>
+        {
+            var (path, baseName) = await ResolveInputAsync(id, file, name, ct);
+            var output = CreateTempFile();
+            var options = new ProtectOptions(userPassword, ownerPassword, allowPrint, allowCopy, allowModify, allowAnnotate, allowForms, allowAssemble);
+            await Task.Run(() => PdfSecurity.Protect(path, password, output, options), ct);
+            return Download(output, "application/pdf", $"{baseName}-protected.pdf");
+        });
+
+    /// <summary>A copy without the password and permissions (needs the owner password, if there is one).</summary>
+    [HttpPost("unprotect")]
+    public Task<IActionResult> Unprotect([FromForm] Guid? id, IFormFile? file, [FromForm] string? name, [FromForm] string? password,
+        CancellationToken ct) =>
+        Run(async () =>
+        {
+            var (path, baseName) = await ResolveInputAsync(id, file, name, ct);
+            var output = CreateTempFile();
+            await Task.Run(() => PdfSecurity.RemovePassword(path, password, output), ct);
+            return Download(output, "application/pdf", $"{baseName}-unlocked.pdf");
+        });
+
+    /// <summary>A signed copy, with the certificate (.pfx / .p12) sent with the request; the certificate is not stored.</summary>
+    /// <param name="page">The page showing the signature; 0 for an invisible signature.</param>
+    /// <param name="corner">"bottom-right", "bottom-left", "top-right" or "top-left".</param>
+    [HttpPost("sign")]
+    public Task<IActionResult> Sign([FromForm] Guid? id, IFormFile? file, [FromForm] string? name, IFormFile? certificate,
+        [FromForm] string? certificatePassword, [FromForm] string? reason, [FromForm] string? location, [FromForm] string? contact,
+        [FromForm] int page, [FromForm] string? corner, CancellationToken ct) =>
+        Run(async () =>
+        {
+            if (certificate is null || certificate.Length == 0 || certificate.Length > PdfSecurity.MaxCertificateBytes)
+                throw new ToolException("Choose a certificate file (.pfx or .p12).");
+            var (path, baseName) = await ResolveInputAsync(id, file, name, ct);
+            using var buffer = new MemoryStream();
+            await certificate.CopyToAsync(buffer, ct);
+            var output = CreateTempFile();
+            var result = await PdfSecurity.SignAsync(path, output, buffer.ToArray(), certificatePassword,
+                new SignOptions(reason, location, contact, page, corner));
+            Response.Headers["X-Signer"] = Uri.EscapeDataString(result.Signer);
+            Response.Headers["X-Signature-Visible"] = result.Visible ? "true" : "false";
+            return Download(output, "application/pdf", $"{baseName}-signed.pdf");
         });
 
     /// <summary>Returns a copy of the open document with its markups as PDF annotations.</summary>

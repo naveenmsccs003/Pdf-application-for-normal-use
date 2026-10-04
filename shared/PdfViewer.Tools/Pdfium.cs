@@ -25,12 +25,35 @@ public static class Pdfium
         }
     }
 
-    /// <summary>Opens a document; caller holds the lock. Throws <see cref="ToolException"/>.</summary>
-    public static FpdfDocumentT OpenDocument(string path)
+    /// <summary>Opens a document, with its password if it has one; caller holds the lock. Throws <see cref="ToolException"/>.</summary>
+    public static FpdfDocumentT OpenDocument(string path, string? password = null)
     {
-        var document = fpdfview.FPDF_LoadDocument(path, null);
-        return document ?? throw new ToolException(ErrorMessage(fpdfview.FPDF_GetLastError()));
+        var document = fpdfview.FPDF_LoadDocument(path, string.IsNullOrEmpty(password) ? null : password);
+        if (document != null) return document;
+        var code = fpdfview.FPDF_GetLastError();
+        throw new ToolException(code == PasswordError && !string.IsNullOrEmpty(password) ? "The password is not correct." : ErrorMessage(code));
     }
+
+    /// <summary>Whether the document is encrypted (has a password or permissions). Throws <see cref="ToolException"/>.</summary>
+    public static bool IsEncrypted(string path, string? password)
+    {
+        EnsureInitialized();
+        lock (Lock)
+        {
+            var document = OpenDocument(path, password);
+            try
+            {
+                return fpdfview.FPDF_GetSecurityHandlerRevision(document) != -1;
+            }
+            finally
+            {
+                fpdfview.FPDF_CloseDocument(document);
+            }
+        }
+    }
+
+    /// <summary>FPDF_GetLastError: the document needs a password (or the one given is wrong).</summary>
+    public const ulong PasswordError = 4;
 
     public static string ErrorMessage(ulong code) => code switch
     {

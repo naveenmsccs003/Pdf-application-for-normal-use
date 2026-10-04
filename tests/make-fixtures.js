@@ -2,6 +2,7 @@
  * Generates the test PDFs used by e2e.test.js into tests/fixtures/.
  * Most files are written directly (no dependencies). Optional extras:
  *   - password-protected PDF: needs Ghostscript (`gs`)
+ *   - signing certificate (signer.pfx, password "certpass"): needs OpenSSL (`openssl`)
  *   - real-world PDF: downloaded from the pdf.js test corpus (needs internet)
  * Missing extras are skipped and their tests are reported as SKIP.
  */
@@ -209,6 +210,19 @@ try {
     console.log('  password.pdf           (Ghostscript)');
 } catch {
     console.log('  password.pdf           skipped (Ghostscript not installed)');
+}
+
+// Optional: a self-signed certificate with its private key, for signing PDFs (password "certpass").
+try {
+    const key = path.join(OUT, 'signer-key.tmp.pem'), cert = path.join(OUT, 'signer-cert.tmp.pem');
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert, '-days', '3650',
+        '-subj', '/CN=Test Signer/emailAddress=signer@example.com'], { stdio: 'ignore' });
+    execFileSync('openssl', ['pkcs12', '-export', '-inkey', key, '-in', cert, '-out', path.join(OUT, 'signer.pfx'),
+        '-passout', 'pass:certpass'], { stdio: 'ignore' });
+    fs.rmSync(key); fs.rmSync(cert);
+    console.log('  signer.pfx             (OpenSSL)');
+} catch {
+    console.log('  signer.pfx             skipped (OpenSSL not installed)');
 }
 
 // Optional: a scanned drawing (Ghostscript turns a drawing into page images, so it has no text) for OCR.

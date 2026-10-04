@@ -2,7 +2,7 @@
     'use strict';
 
     /**
-     * PDF tools: merge, split, compress, convert.
+     * PDF tools: merge, split, compress, convert; protect, remove a password, sign.
      *   web:     posts to /api/tools/* and downloads the result
      *   desktop: asks the host, which shows native save dialogs and writes to disk
      * Every operation resolves with a message for the user, or null if the user cancelled.
@@ -256,8 +256,54 @@
                 return $q.when('Downloaded ' + name + '.');
             }
 
+            // ----- security: password protection and digital signatures -----
+
+            /**
+             * A protected copy: options { userPassword, ownerPassword, allowPrint, allowCopy, allowModify, allowAnnotate,
+             * allowForms, allowAssemble }. The open document's own password (if any) goes along to read it.
+             */
+            function protect(source, fileName, options) {
+                if (desktopService.isDesktop) { return runDesktop('protect', ['current'], options); }
+                var form = new FormData();
+                appendSource(form, source, fileName);
+                if (pdfService.password()) { form.append('password', pdfService.password()); }
+                Object.keys(options).forEach(function (key) { form.append(key, options[key]); });
+                return post('protect', form).then(function (result) { return 'Downloaded ' + result.name + ' (protected with AES-256).'; });
+            }
+
+            /** A copy without the password (`password`: the owner password, or empty to use the document's own). */
+            function unprotect(source, fileName, password) {
+                var value = password || pdfService.password() || '';
+                if (desktopService.isDesktop) { return runDesktop('unprotect', ['current'], { password: password || '' }); }
+                var form = new FormData();
+                appendSource(form, source, fileName);
+                form.append('password', value);
+                return post('unprotect', form).then(function (result) { return 'Downloaded ' + result.name + ' without a password.'; });
+            }
+
+            /**
+             * A signed copy: options { certificatePassword, reason, location, contact, page (0: invisible), corner }.
+             * Web: `certificate` is the .pfx / .p12 file; desktop: the host asks for it.
+             */
+            function sign(source, fileName, options, certificate) {
+                if (desktopService.isDesktop) { return runDesktop('sign', ['current'], options); }
+                var form = new FormData();
+                appendSource(form, source, fileName);
+                form.append('certificate', certificate, certificate.name);
+                Object.keys(options).forEach(function (key) { form.append(key, options[key]); });
+                return post('sign', form).then(function (result) {
+                    var signer = decodeURIComponent(result.headers('X-Signer') || '');
+                    var invisible = options.page > 0 && result.headers('X-Signature-Visible') === 'false';
+                    return 'Signed by ' + signer + ': downloaded ' + result.name +
+                        (invisible ? ' (invisible: no font to draw the signature was found on the server).' : '.');
+                });
+            }
+
             return {
                 isDesktop: desktopService.isDesktop,
+                protect: protect,
+                unprotect: unprotect,
+                sign: sign,
                 saveHighlights: saveHighlights,
                 saveReport: saveReport,
                 annotatedPdf: annotatedPdf,

@@ -9,7 +9,11 @@ public record PageSize(double Width, double Height);
 public record PageText(string Text);
 
 /// <summary>An error whose message is safe to show to the user.</summary>
-public class LocalPdfException(string message) : Exception(message);
+public class LocalPdfException(string message) : Exception(message)
+{
+    /// <summary>The PDF needs a password to open (or the one given was wrong).</summary>
+    public bool NeedsPassword { get; init; }
+}
 
 /// <summary>A rectangle in page units at scale 1, top-left origin, as displayed (after /Rotate).</summary>
 public record TextRect(double X, double Y, double Width, double Height);

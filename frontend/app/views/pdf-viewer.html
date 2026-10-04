@@ -86,6 +86,10 @@
     <symbol id="i-annotation" viewBox="0 0 24 24"><path d="M4 4h16v11H11l-4 4v-4H4z"/><path d="M8 8h8M8 11h5"/></symbol>
     <symbol id="i-extract-text" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 11h7M9 14h7M9 17h4"/></symbol>
     <symbol id="i-detect" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M9 9v11"/><path d="M5.5 12h1.5M5.5 15h1.5M11.5 12h6M11.5 15h4"/></symbol>
+    <symbol id="i-lock-add" viewBox="0 0 24 24"><rect x="4" y="10" width="13" height="10" rx="1.5"/><path d="M7 10V7a3.5 3.5 0 0 1 7 0v3"/><path d="M19 3v5M16.5 5.5h5"/><path d="M10.5 14v2.5"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="1.5"/><path d="M8 10V7a3.5 3.5 0 0 1 6.8-1.2"/><path d="M12 14v2.5"/></symbol>
+    <symbol id="i-sign" viewBox="0 0 24 24"><path d="M3 17c2-3 3.5-6 5-6s-1 6 1 6 3-4 4.5-4 0 4 1.5 4 2-1 3-2"/><path d="M3 21h18"/><path d="M15 3l3 3-6 6-3.5.5.5-3.5z"/></symbol>
+    <symbol id="i-signatures" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/></symbol>
     <symbol id="i-find-drawing" viewBox="0 0 24 24"><rect x="3" y="4" width="14" height="16" rx="1"/><path d="M9 16h8M9 16v4"/><circle cx="17.5" cy="9.5" r="3"/><path d="M19.7 11.7L22 14"/></symbol>
     <symbol id="i-find-beam" viewBox="0 0 24 24"><path d="M2 8h14M2 13h14M4 8v5M14 8v5"/><circle cx="17.5" cy="16.5" r="3"/><path d="M19.7 18.7L22 21"/></symbol>
     <symbol id="i-find-column" viewBox="0 0 24 24"><path d="M5 3h8M5 21h8M7 3v18M11 3v18"/><circle cx="17.5" cy="12.5" r="3"/><path d="M19.7 14.7L22 17"/></symbol>
@@ -941,6 +945,45 @@
             <span class="ribbon-caption">Extract</span>
         </div>
     </div>
+
+    <!-- Security: password protection and digital signatures (securityController.js) -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-security" aria-labelledby="ribbon-tab-security" ng-show="vm.ribbonTab === 'security'">
+        <div class="ribbon-group" role="group" aria-label="Password protection">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="sec.openProtect()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Protect with password" title="Save a copy protected with a password (AES-256) and permissions">
+                    <svg class="icon"><use href="#i-lock-add"></use></svg><span>Protect</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="sec.openUnprotect()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Remove password" title="Save a copy without the password and permissions">
+                    <svg class="icon"><use href="#i-unlock"></use></svg><span>Remove password</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Password</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Digital signatures">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="sec.openSign()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Sign" title="Sign a copy with your certificate (.pfx / .p12)">
+                    <svg class="icon"><use href="#i-sign"></use></svg><span>Sign</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="sec.openSignatures()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Signatures" title="Check the document's digital signatures: intact, who signed and when, trusted">
+                    <svg class="icon"><use href="#i-signatures"></use></svg><span>Signatures</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Digital signature</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Document information">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openProperties()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Properties and fonts" title="Document properties: security, fonts and more ({{ vm.modKey }}D)">
+                    <svg class="icon"><use href="#i-report"></use></svg><span>Properties &amp; fonts</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Document</span>
+        </div>
+    </div>
 </nav>
 
 <div class="alert" role="alert" ng-if="vm.error">
@@ -973,6 +1016,9 @@
                 <svg class="icon icon-sm"><use href="#i-file"></use></svg>
                 <span class="file-name">{{ vm.fileName }}</span>
                 <span class="doc-modified" ng-if="vm.modified" title="Not saved yet" aria-label="(not saved)">&#9679;</span>
+                <button type="button" class="signature-badge" ng-if="sec.badge()" data-status="{{ sec.badge() }}" ng-click="sec.openSignatures()"
+                        title="Digital signatures: click for details">
+                    <svg class="icon icon-xs"><use href="#i-signatures"></use></svg>{{ sec.badgeText() }}</button>
                 <button type="button" class="doc-tab-close" ng-click="vm.closeDocument()" ng-disabled="vm.busy"
                         aria-label="Close document" title="Close">
                     <svg class="icon icon-sm"><use href="#i-close"></use></svg>
@@ -1319,6 +1365,176 @@
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('pdf')" ng-disabled="!vm.reportDialog.table.rows.length || vm.reportDialog.busy"
                     title="A PDF report (A4 landscape) with the summary and table">Save PDF report&hellip;</button>
             <button type="button" class="tool tool-labelled tool-primary" ng-click="vm.reportDialog = null">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Password of a protected PDF, asked when opening it (securityService) -->
+<div class="dialog-backdrop" ng-if="sec.prompt()" ng-click="sec.cancelPassword()">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="open-password-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="open-password-title">Password required</h2>
+            <button type="button" class="panel-close" ng-click="sec.cancelPassword()" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="sec.submitPassword()" id="open-password-form">
+            <label class="dialog-intro" for="open-password"><strong>{{ sec.prompt().fileName }}</strong> is protected. Enter its password to open it.</label>
+            <input type="password" id="open-password" class="sec-input" ng-model="sec.prompt().value" autocomplete="off" maxlength="{{ sec.maxPassword }}">
+            <div class="dialog-message is-error" role="alert" ng-if="sec.prompt().wrong">The password is not correct. Try again.</div>
+            <p class="dialog-note">The password is only used to open the file and is not saved.</p>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="sec.cancelPassword()">Cancel</button>
+            <button type="submit" form="open-password-form" class="tool tool-labelled tool-primary" ng-disabled="!sec.prompt().value">Open</button>
+        </div>
+    </div>
+</div>
+
+<!-- Protect with a password (Security tab) -->
+<div class="dialog-backdrop" ng-if="sec.protectDialog" ng-click="sec.closeAll()">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="protect-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="protect-title">Protect with a password</h2>
+            <button type="button" class="panel-close" ng-click="sec.closeAll()" ng-disabled="sec.protectDialog.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="sec.runProtect()" id="protect-form">
+            <div class="sec-form">
+                <label for="protect-user">Password to open</label>
+                <input type="password" id="protect-user" class="sec-input" ng-model="sec.protectDialog.userPassword" autocomplete="new-password" maxlength="{{ sec.maxPassword }}">
+                <label for="protect-confirm">Repeat it</label>
+                <input type="password" id="protect-confirm" class="sec-input" ng-model="sec.protectDialog.userConfirm" autocomplete="new-password" maxlength="{{ sec.maxPassword }}">
+                <label for="protect-owner">Permissions password</label>
+                <input type="password" id="protect-owner" class="sec-input" ng-model="sec.protectDialog.ownerPassword" autocomplete="new-password" maxlength="{{ sec.maxPassword }}"
+                       placeholder="Optional">
+            </div>
+            <p class="dialog-note">Without a password to open, anyone can open the PDF but only do what is allowed below. The permissions password lifts those limits.</p>
+            <fieldset class="sec-permissions">
+                <legend>Allowed without the permissions password</legend>
+                <label class="choice"><input type="checkbox" ng-model="sec.protectDialog.allowPrint"> <span>Printing</span></label>
+                <label class="choice"><input type="checkbox" ng-model="sec.protectDialog.allowCopy"> <span>Copying text and images</span></label>
+                <label class="choice"><input type="checkbox" ng-model="sec.protectDialog.allowAnnotate"> <span>Comments and markups</span></label>
+                <label class="choice"><input type="checkbox" ng-model="sec.protectDialog.allowForms"> <span>Filling in forms</span></label>
+                <label class="choice"><input type="checkbox" ng-model="sec.protectDialog.allowModify"> <span>Changing the document</span></label>
+                <label class="choice"><input type="checkbox" ng-model="sec.protectDialog.allowAssemble"> <span>Inserting, deleting and rotating pages</span></label>
+            </fieldset>
+            <p class="dialog-note">Encrypted with AES-256. A protected copy is saved; the open document is not changed. Keep the passwords safe: they cannot be recovered.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="sec.protectDialog.error">{{ sec.protectDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="sec.closeAll()" ng-disabled="sec.protectDialog.busy">Cancel</button>
+            <button type="submit" form="protect-form" class="tool tool-labelled tool-primary" ng-disabled="sec.protectDialog.busy">
+                {{ sec.protectDialog.busy ? 'Saving…' : 'Save protected copy' }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- Remove the password (Security tab) -->
+<div class="dialog-backdrop" ng-if="sec.unprotectDialog" ng-click="sec.closeAll()">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="unprotect-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="unprotect-title">Remove password</h2>
+            <button type="button" class="panel-close" ng-click="sec.closeAll()" ng-disabled="sec.unprotectDialog.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="sec.runUnprotect()" id="unprotect-form">
+            <label class="dialog-intro" for="unprotect-password">Permissions (owner) password</label>
+            <input type="password" id="unprotect-password" class="sec-input" ng-model="sec.unprotectDialog.password" autocomplete="off" maxlength="{{ sec.maxPassword }}"
+                   placeholder="{{ sec.unprotectDialog.openedWithPassword ? 'Empty: the password you opened it with' : '' }}">
+            <p class="dialog-note">Saves a copy without encryption, password and permissions. A PDF with permissions needs its permissions password;
+                one with only a password to open needs that password.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="sec.unprotectDialog.error">{{ sec.unprotectDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="sec.closeAll()" ng-disabled="sec.unprotectDialog.busy">Cancel</button>
+            <button type="submit" form="unprotect-form" class="tool tool-labelled tool-primary" ng-disabled="sec.unprotectDialog.busy">
+                {{ sec.unprotectDialog.busy ? 'Saving…' : 'Save copy without password' }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- Sign with a certificate (Security tab) -->
+<div class="dialog-backdrop" ng-if="sec.signDialog" ng-click="sec.closeAll()">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="sign-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="sign-title">Sign the document</h2>
+            <button type="button" class="panel-close" ng-click="sec.closeAll()" ng-disabled="sec.signDialog.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="sec.runSign()" id="sign-form">
+            <div class="sec-form">
+                <span>Certificate</span>
+                <span ng-if="!sec.isDesktop">
+                    <label class="tool tool-labelled tool-outline sec-file">
+                        <input type="file" accept=".pfx,.p12,application/x-pkcs12" class="visually-hidden" aria-label="Certificate file" on-file-selected="sec.setCertificate(file)">
+                        <span>{{ sec.signDialog.certificate ? sec.signDialog.certificate.name : 'Choose .pfx / .p12…' }}</span>
+                    </label>
+                </span>
+                <span class="properties-muted" ng-if="sec.isDesktop">Chosen after you click Sign (.pfx or .p12)</span>
+                <label for="sign-cert-password">Certificate password</label>
+                <input type="password" id="sign-cert-password" class="sec-input" ng-model="sec.signDialog.certificatePassword" autocomplete="off" maxlength="200">
+                <label for="sign-reason">Reason</label>
+                <input type="text" id="sign-reason" class="sec-input" ng-model="sec.signDialog.reason" maxlength="200" placeholder="e.g. Approved for construction">
+                <label for="sign-location">Location</label>
+                <input type="text" id="sign-location" class="sec-input" ng-model="sec.signDialog.location" maxlength="200" placeholder="Optional">
+                <label for="sign-contact">Contact</label>
+                <input type="text" id="sign-contact" class="sec-input" ng-model="sec.signDialog.contact" maxlength="200" placeholder="Optional">
+            </div>
+            <label class="choice"><input type="checkbox" ng-model="sec.signDialog.visible"> <span>Show the signature on the page</span></label>
+            <div class="sec-form" ng-if="sec.signDialog.visible">
+                <label for="sign-page">Page</label>
+                <input type="number" id="sign-page" class="sec-input sec-short" ng-model="sec.signDialog.page" min="1" max="{{ vm.pageCount }}">
+                <label for="sign-corner">Corner</label>
+                <select id="sign-corner" class="sec-input sec-short" ng-model="sec.signDialog.corner" ng-options="c.value as c.label for c in sec.CORNERS"></select>
+            </div>
+            <p class="dialog-note">A signed copy is saved. Any later change to it shows as a broken signature. Your certificate {{ sec.isDesktop ? 'is read from your computer' : 'is sent to this app\'s own server only to sign' }}, and is not stored.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="sec.signDialog.error">{{ sec.signDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="sec.closeAll()" ng-disabled="sec.signDialog.busy">Cancel</button>
+            <button type="submit" form="sign-form" class="tool tool-labelled tool-primary" ng-disabled="sec.signDialog.busy">
+                {{ sec.signDialog.busy ? 'Signing…' : 'Sign' }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- Signatures: each digital signature checked (Security tab, or the badge on the document tab) -->
+<div class="dialog-backdrop" ng-if="sec.signaturesDialog" ng-click="sec.closeAll()">
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="signatures-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="signatures-title">Digital signatures</h2>
+            <button type="button" class="panel-close" ng-click="sec.closeAll()" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body">
+            <p class="dialog-intro" ng-if="sec.signaturesDialog.loading"><span class="spinner spinner-sm"></span> Checking the signatures&hellip;</p>
+            <div class="dialog-message is-error" role="alert" ng-if="sec.signaturesDialog.error">{{ sec.signaturesDialog.error }}</div>
+            <p class="dialog-intro" ng-if="!sec.signaturesDialog.loading && !sec.signaturesDialog.error && !sec.signaturesDialog.list.length">This document has no digital signatures.</p>
+            <section class="signature-card" ng-repeat="s in sec.signaturesDialog.list track by s.number" data-status="{{ s.status }}">
+                <h3><span class="signature-status">{{ s.status === 'valid' ? 'Valid' : s.status === 'invalid' ? 'Invalid' : 'Valid, with warnings' }}</span>
+                    Signature {{ s.number }}{{ s.signer ? ' by ' + s.signer : '' }}</h3>
+                <p>{{ s.summary }}</p>
+                <dl class="properties-list">
+                    <div><dt>Signed by</dt><dd>{{ s.signer || '—' }}<span ng-if="s.email"> &lt;{{ s.email }}&gt;</span></dd></div>
+                    <div><dt>Signed on</dt><dd>{{ sec.formatDate(s.signedAt) }}</dd></div>
+                    <div ng-if="s.reason"><dt>Reason</dt><dd>{{ s.reason }}</dd></div>
+                    <div><dt>Document intact</dt><dd>{{ s.intact ? 'Yes: the signed content has not been changed' : 'No: changed after signing, or the signature is damaged' }}</dd></div>
+                    <div><dt>Covers</dt><dd>{{ s.coversWholeFile ? 'The whole document' : 'An earlier version: later changes are not signed' }}</dd></div>
+                    <div><dt>Signer's identity</dt><dd>{{ s.trusted ? 'Verified: the certificate is trusted on this computer' : 'Not verified: ' + s.trustProblem }}</dd></div>
+                    <div><dt>Certificate</dt><dd>Issued by {{ s.issuer || '—' }}; valid {{ sec.formatDate(s.certificateValidFrom) }} to {{ sec.formatDate(s.certificateValidTo) }}</dd></div>
+                    <div><dt>Format</dt><dd>{{ s.format || '—' }}</dd></div>
+                    <div ng-if="s.detail"><dt>Details</dt><dd>{{ s.detail }}</dd></div>
+                </dl>
+            </section>
+            <p class="dialog-note" ng-if="sec.signaturesDialog.list.length">Checked on this computer, offline: the certificate's revocation is not checked.</p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-primary" ng-click="sec.closeAll()">Close</button>
         </div>
     </div>
 </div>
@@ -1888,6 +2104,22 @@
                 <dl class="properties-list"><div ng-repeat="row in vm.propertiesDialog.description"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></div></dl>
                 <h3>Created with</h3>
                 <dl class="properties-list"><div ng-repeat="row in vm.propertiesDialog.application"><dt>{{ row[0] }}</dt><dd>{{ row[1] }}</dd></div></dl>
+                <h3>Fonts</h3>
+                <p class="dialog-intro" ng-if="vm.propertiesDialog.fontsLoading"><span class="spinner spinner-sm"></span> Finding the fonts&hellip;</p>
+                <p class="properties-muted" ng-if="!vm.propertiesDialog.fontsLoading && !vm.propertiesDialog.fonts.length">No fonts: the pages have no text (scanned or drawings only).</p>
+                <table class="properties-sizes properties-fonts" ng-if="vm.propertiesDialog.fonts.length">
+                    <thead><tr><th>Font</th><th>Embedded</th><th>Style</th><th>Pages</th></tr></thead>
+                    <tbody>
+                        <tr ng-repeat="f in vm.propertiesDialog.fonts track by $index" ng-class="{'is-not-embedded': !f.embedded}">
+                            <td>{{ f.name }} <span class="properties-muted" ng-if="f.family && f.family !== f.name">({{ f.family }})</span></td>
+                            <td>{{ f.embedded ? (f.subset ? 'Yes (subset)' : 'Yes') : 'No' }}</td>
+                            <td>{{ f.weight >= 600 ? 'Bold' : 'Regular' }}{{ f.italic ? ', italic' : '' }}</td>
+                            <td>{{ f.pages }} <span class="properties-muted">({{ f.firstPages.join(', ') }}{{ f.pages > f.firstPages.length ? ', …' : '' }})</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="properties-muted" ng-if="vm.propertiesDialog.fontsNote">{{ vm.propertiesDialog.fontsNote }}</p>
+                <p class="properties-muted" ng-if="vm.propertiesDialog.fonts.length">Fonts that are not embedded are replaced by similar fonts on each computer, so the text may look different.</p>
                 <h3>Page sizes</h3>
                 <table class="properties-sizes">
                     <thead><tr><th>Paper</th><th>Size</th><th>Inches</th><th>Pages</th></tr></thead>

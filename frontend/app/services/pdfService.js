@@ -10,8 +10,8 @@
      *   - desktop: the PDF is opened from disk by the desktop host and pages arrive as images
      *              rendered by PDFium (works for files far larger than a browser can hold)
      */
-    angular.module('pdfViewerApp').factory('pdfService', ['$http', '$q', 'VIEWER_CONFIG',
-        function ($http, $q, VIEWER_CONFIG) {
+    angular.module('pdfViewerApp').factory('pdfService', ['$http', '$q', '$timeout', 'VIEWER_CONFIG',
+        function ($http, $q, $timeout, VIEWER_CONFIG) {
             // Browsers struggle with very large canvases; this matches pdf.js' own default limit.
             var MAX_CANVAS_PIXELS = 16777216;
 
@@ -22,6 +22,7 @@
             var localDocument = null;   // desktop: { token, pageCount, sizes }
             var pendingImage = null;    // desktop: page image being loaded
             var thumbnailTasks = [];    // pdf.js thumbnail renders in progress
+            var documentPassword = null; // web: the password the open document was opened with (memory only)
 
             /** Returns a user-friendly error message, or null when the file looks fine. */
             function validateFile(file) {
@@ -61,22 +62,40 @@
             }
 
             /**
-             * Loads a PDF from a URL; resolves with the page count. Rejects with a message.
-             * The current document stays open until the new one has loaded, so a failed
-             * open leaves the viewer as it was.
+             * Loads a PDF from a URL; resolves with the page count. Rejects with a message ('cancelled' when the
+             * password prompt was cancelled). The current document stays open until the new one has loaded, so a
+             * failed open leaves the viewer as it was.
+             * askPassword(wrong) is called for a password-protected PDF and resolves with the password (or rejects
+             * to cancel); `wrong` after a wrong one.
              */
-            function load(url) {
+            function load(url, askPassword) {
                 var task = pdfjsLib.getDocument({ url: url, isEvalSupported: false });
+                var typed = null, cancelled = false;
+                task.onPassword = function (update, reason) {
+                    if (!askPassword) { cancelled = true; task.destroy(); return; }
+                    // pdf.js calls this outside Angular: ask inside a digest so the prompt shows.
+                    $timeout(function () { return askPassword(reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD); }).then(function (password) {
+                        typed = password;
+                        update(password);
+                    }, function () {
+                        cancelled = true;
+                        task.destroy();
+                    });
+                };
 
                 return $q.when(task.promise).then(function (doc) {
                     close();
                     loadingTask = task;
                     pdfDocument = doc;
+                    documentPassword = typed;
                     return doc.numPages;
                 }, function (error) {
                     task.destroy();
                     var name = error && error.name;
-                    if (name === 'PasswordException') {
+                    if (cancelled && askPassword) {
+                        return $q.reject('cancelled');
+                    }
+                    if (name === 'PasswordException' || cancelled) {
                         return $q.reject('This PDF is password-protected and cannot be opened.');
                     }
                     if (name === 'InvalidPDFException') {
@@ -98,6 +117,7 @@
 
             function close() {
                 localDocument = null;
+                documentPassword = null;
                 var task = loadingTask;
                 var pendingRender = renderTask;
                 cancelRender();
@@ -331,14 +351,34 @@
              * { kind: 'web', id } on the web.
              */
             function getInfo(source) {
-                var url = localDocument ? 'api/local/' + localDocument.token + '/info' : VIEWER_CONFIG.apiBase + '/' + source.id + '/info';
-                return $http.get(url).then(function (response) { return response.data; }, function (response) {
-                    return $q.reject((response.data && response.data.error) || 'Unable to read the document properties.');
+                return getAbout(source, 'info', 'Unable to read the document properties.');
+            }
+
+            /** The fonts of the document's text: { fonts: [{ name, family, embedded, subset, weight, italic, pages, firstPages }], pagesScanned, pageCount }. */
+            function getFonts(source) {
+                return getAbout(source, 'fonts', 'Unable to read the fonts.');
+            }
+
+            /** The document's digital signatures, each checked (see PdfSignatures.cs): [{ number, status, summary, signer, … }]. */
+            function getSignatures(source) {
+                return getAbout(source, 'signatures', 'Unable to check the signatures.');
+            }
+
+            // Desktop: the host knows the password; web: it goes along in a header (never in the URL).
+            function getAbout(source, what, failure) {
+                var url = localDocument ? 'api/local/' + localDocument.token + '/' + what : VIEWER_CONFIG.apiBase + '/' + source.id + '/' + what;
+                var config = documentPassword ? { headers: { 'X-Pdf-Password': documentPassword } } : {};
+                return $http.get(url, config).then(function (response) { return response.data; }, function (response) {
+                    return $q.reject((response.data && response.data.error) || failure);
                 });
             }
 
             return {
                 getInfo: getInfo,
+                getFonts: getFonts,
+                getSignatures: getSignatures,
+                /** Web: the open document's password, if it was opened with one. */
+                password: function () { return documentPassword; },
                 validateFile: validateFile,
                 upload: upload,
                 load: load,
