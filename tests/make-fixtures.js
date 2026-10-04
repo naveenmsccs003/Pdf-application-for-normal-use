@@ -113,6 +113,8 @@ console.log('Writing fixtures to ' + OUT);
 write('one-page.pdf', buildPdf([textPage(1)]));
 // A later revision of one-page.pdf for Compare / Overlay: line 5 removed, a rectangle added.
 write('one-page-rev-b.pdf', buildPdf([textPage(1, 595, 842, { skipLines: [5], drawing: '2 w 380 300 150 80 re S' })]));
+// Revision C of it: line 8 removed, the rectangle made wider (changed), a line added at the bottom.
+write('one-page-rev-c.pdf', buildPdf([textPage(1, 595, 842, { skipLines: [5, 8], drawing: '2 w 380 300 190 80 re S\n2 w 60 60 m 300 60 l S' })]));
 const tenPages = buildPdf(range(10).map(n => textPage(n)));
 write('ten-pages.pdf', tenPages);
 write('large-150.pdf', buildPdf(range(150).map(n => textPage(n, 612, 792))));

@@ -144,9 +144,13 @@ On the **Review** tab (web and desktop):
 On the **Revision** tab (web and desktop):
 
 - **Compare…**: open another revision of the PDF (usually the previous issue). Page N is compared with page N.
-  - **Differences**: what this revision added in green, what it removed (only in the other revision) in red, changed
-    areas boxed; unchanged content is faded. **↑ / ↓** go to the previous / next changed area, on later or earlier
-    pages too. **Cloud changes** marks every changed area on the page with a revision cloud.
+  - **Differences**: what this revision added in green, what it removed (only in the other revision) in red; unchanged
+    content is faded. Each changed area is boxed and labelled with its kind: **Added** (only new content, green),
+    **Removed** (only old content, red) or **Changed** (both: an element moved, resized or rewritten, orange).
+    The **Added / Removed / Changed** buttons show how many of each the page has and show or hide that kind.
+    **↑ / ↓** go to the previous / next changed area shown, on later or earlier pages too.
+  - **Cloud changes** (revision highlighting): a revision cloud round every changed area shown on the page and, when
+    there is a current revision, its tag (a triangle with the label) at each cloud's corner.
   - **Overlay**: both revisions drawn together: this one in blue, the other in red, unchanged content in grey.
   - **Off** shows the plain page; **×** stops comparing. Pages are compared at about 1800 px (a moment per page).
 - **Revisions**: the document's revision list (label, date, description, by) and the current revision. New markups belong

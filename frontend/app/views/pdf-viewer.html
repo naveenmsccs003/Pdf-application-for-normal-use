@@ -807,7 +807,7 @@
             <div class="ribbon-tools">
                 <button type="button" class="tool tool-labelled" ng-click="vm.setCompareMode('diff')" ng-disabled="!vm.isComparing()"
                         ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'diff'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'diff' }}"
-                        aria-label="Differences" title="Differences: added in green, removed in red, changed areas boxed">
+                        aria-label="Differences" title="Differences: added in green, removed in red; each changed area boxed and labelled added, removed or changed">
                     <svg class="icon"><use href="#i-compare"></use></svg><span>Differences</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.setCompareMode('overlay')" ng-disabled="!vm.isComparing()"
@@ -818,6 +818,14 @@
                 <button type="button" class="tool" ng-click="vm.setCompareMode('off')" ng-disabled="!vm.isComparing()"
                         ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'off'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'off' }}"
                         aria-label="Hide comparison" title="Show the page without the comparison">Off</button>
+                <span class="change-kinds" role="group" aria-label="Kinds of change">
+                    <button type="button" class="tool change-kind" ng-repeat="k in vm.CHANGE_KINDS track by k.key" data-kind="{{ k.key }}"
+                            ng-click="vm.toggleChangeKind(k.key)" ng-disabled="!vm.isComparing()"
+                            ng-class="{'is-active': vm.isComparing() && vm.compare.show[k.key]}" aria-pressed="{{ !!vm.compare.show[k.key] }}"
+                            aria-label="Show {{ k.label | lowercase }}" title="{{ k.title }}. Click to show or hide them.">
+                        <span class="change-dot"></span>{{ k.label }}<span class="change-kind-count" ng-if="vm.isComparing() && !vm.compare.busy">{{ vm.kindCount(k.key) }}</span>
+                    </button>
+                </span>
                 <button type="button" class="tool" ng-click="vm.goToChange(-1)" ng-disabled="!vm.isComparing() || vm.compare.busy"
                         aria-label="Previous change" title="Previous changed area">
                     <svg class="icon"><use href="#i-up"></use></svg>
@@ -829,7 +837,7 @@
                     <svg class="icon"><use href="#i-down"></use></svg>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.cloudChanges()" ng-disabled="!vm.changeCount()"
-                        aria-label="Cloud changes" title="Mark every changed area on this page with a revision cloud">
+                        aria-label="Cloud changes" title="Revision highlighting: a revision cloud round every changed area shown on this page, tagged with the current revision">
                     <svg class="icon"><use href="#i-cloud"></use></svg><span>Cloud changes</span>
                 </button>
             </div>

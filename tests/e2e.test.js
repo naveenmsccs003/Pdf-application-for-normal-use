@@ -1361,7 +1361,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         status: document.querySelector('.status-text').textContent.trim(),
         regions: [...document.querySelectorAll('.revision-region')].map(e => ({
             x: parseFloat(e.style.left), y: parseFloat(e.style.top), w: parseFloat(e.style.width), h: parseFloat(e.style.height),
-            active: e.classList.contains('is-active') })),
+            active: e.classList.contains('is-active'), kind: e.dataset.kind, label: e.textContent.trim() })),
+        kinds: [...document.querySelectorAll('.change-kind')].map(b => b.textContent.replace(/\s+/g, ' ').trim() + (b.getAttribute('aria-pressed') === 'true' ? '' : ' (off)')),
         image: !!document.querySelector('.revision-image'),
         overlay: !!document.querySelector('.revision-image.is-overlay'),
         faded: !!document.querySelector('.pdf-page.is-comparing'),
@@ -1399,12 +1400,20 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('revision: Compare finds the 2 changed areas: removed line 5 and the added rectangle',
         rv.regions.length === 2 && rv.count === '2 changes' && rv.file === 'one-page.pdf' && rv.image && rv.faded &&
         near(rv.regions[0].y, 207, 6) && near(rv.regions[1].x, 376, 6) && near(rv.regions[1].y, 458, 6) && /2 changed areas/.test(rv.status), rv);
+    check('revision: each changed area is identified: line 5 removed, the rectangle added',
+        rv.regions[0].kind === 'removed' && rv.regions[0].label === 'Removed' && rv.regions[1].kind === 'added' && rv.regions[1].label === 'Added' &&
+        rv.kinds.join('|') === 'Added1|Removed1|Changed0' && /1 added, 1 removed/.test(rv.status), rv);
+    await page.click('button[aria-label="Show added"]'); await sleep(200); rv = await revisionState();
+    check('revision: hiding Added leaves only the removed area (boxes and count)',
+        rv.regions.length === 1 && rv.regions[0].kind === 'removed' && rv.count === '1 change' && rv.kinds[0] === 'Added1 (off)' && /1 shown/.test(rv.status), rv);
+    await page.click('button[aria-label="Show added"]'); await sleep(200);
     const line5 = { x: 50, y: 208, w: 300, h: 16 }, rectEdge = { x: 375, y: 470, w: 10, h: 60 }, line6 = { x: 50, y: 228, w: 300, h: 16 };
     let c1 = await revisionColours(line5), c2 = await revisionColours(rectEdge), c3 = await revisionColours(line6);
     check('revision: removed text in red, added lines in green, unchanged clear',
         c1.red > 100 && c1.green === 0 && c2.green > 50 && c2.red === 0 && c3.red + c3.green === 0, [c1, c2, c3]);
     await page.click('button[aria-label="Next change"]'); await sleep(200); rv = await revisionState();
-    check('revision: Next change selects the first changed area', rv.regions[0].active && !rv.regions[1].active && /Change 1 of 2/.test(rv.status), rv.status);
+    check('revision: Next change selects the first changed area and says what it is', rv.regions[0].active && !rv.regions[1].active &&
+        /Change 1 of 2 on page 1: removed/.test(rv.status), rv.status);
     await page.click('button[aria-label="Next change"]'); await sleep(200);
     await page.click('button[aria-label="Next change"]'); await sleep(300); rv = await revisionState();
     check('revision: after the last change, says there are no more', rv.regions[1].active && /No more changes after page 1/.test(rv.status), rv.status);
@@ -1440,25 +1449,25 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.click('button[aria-label="Revision tag"]'); await clickAt(545, 450); await sleep(300);
     let ml2 = await page.$$eval('.markup-row', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ').trim()));
     const tag = await page.$eval('.markup-layer g.markup[data-type="revtag"]', g => ({ d: g.querySelector('path').getAttribute('d'), text: g.querySelector('tspan').textContent }));
-    check('revision: Cloud changes adds a cloud per changed area; the tag shows B; all in Rev B',
-        ml2.length === 3 && ml2.filter(t => /^Cloud Page 1 · Rev B/.test(t)).length === 2 && /^Revision tag: B Page 1 · Rev B/.test(ml2[2]) &&
-        tag.text === 'B' && /Z?$/.test(tag.d), [ml2, tag]);
+    check('revision: Cloud changes adds a cloud and a Rev B tag per changed area; the placed tag shows B; all in Rev B',
+        ml2.length === 5 && ml2.filter(t => /^Cloud Page 1 · Rev B/.test(t)).length === 2 &&
+        ml2.filter(t => /^Revision tag: B Page 1 · Rev B/.test(t)).length === 3 && tag.text === 'B' && /Z?$/.test(tag.d), [ml2, tag]);
     await page.keyboard.press('Escape');
     await page.click('button[aria-label="Revisions"]'); await sleep(200);
     await page.click('.revision-table tbody tr:first-child input[type=radio]'); await sleep(100);
     await page.click('[aria-labelledby="revisions-dialog-title"] .dialog-footer .tool-primary'); await sleep(100);
     await page.click('#ribbon-tab-markup'); await click('Rectangle'); await drag(100, 560, 200, 580); await page.keyboard.press('Escape');
     await page.click('#ribbon-tab-revision'); await sleep(100);
-    check('revision: markups made after switching to A belong to A', (await page.$$eval('.markup-meta', els => els.map(e => e.textContent)))[3].includes('Rev A'));
+    check('revision: markups made after switching to A belong to A', (await page.$$eval('.markup-meta', els => els.map(e => e.textContent)))[5].includes('Rev A'));
     await page.click('#ribbon-revision button[aria-label="Markup report"]'); await sleep(200);
     const report = () => page.evaluate(() => ({ total: document.querySelector('.report-total').textContent.replace(/\s+/g, ' ').trim(),
         rows: [...document.querySelectorAll('.report-table tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim())) }));
     let rep = await report();
     check('revision: the markup report lists every markup with page, type, content, colour and revision',
-        rep.rows.length === 4 && /^4 markups · 2 Cloud/.test(rep.total) && rep.rows[2].slice(1, 6).join('|') === '1|Revision tag|Revision B|#e01b24|B' &&
-        rep.rows[3][5] === 'A', rep);
+        rep.rows.length === 6 && /^6 markups · 3 Revision tag · 2 Cloud/.test(rep.total) && rep.rows[1].slice(1, 6).join('|') === '1|Revision tag|Revision B|#e01b24|B' &&
+        rep.rows[5][5] === 'A', rep);
     await page.select('[aria-label="Report revision"]', 'B'); await sleep(150); rep = await report();
-    check('revision: the report can show one revision', rep.rows.length === 3 && rep.rows.every(r => r[5] === 'B'), rep.total);
+    check('revision: the report can show one revision', rep.rows.length === 5 && rep.rows.every(r => r[5] === 'B'), rep.total);
     await page.select('[aria-label="Report revision"]', ''); await sleep(100);
     await page.click('.dialog-footer .tool-outline'); await sleep(300); s = await state();
     check('revision: Save CSV downloads the report', s.status === 'Downloaded one-page-rev-b-markups.csv.', s.status);
@@ -1469,8 +1478,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         const html = await waitForDownload('one-page-rev-b-markups.html');
         const csvText = csv ? csv.toString('utf8') : '';
         check('revision: the CSV has a header and one row per markup (UTF-8 with BOM for Excel)',
-            csvText.startsWith('\ufeffNo.,Page,Type,Content,Colour,Revision,Created\r\n') && csvText.trim().split('\r\n').length === 5 &&
-            /\r\n3,1,Revision tag,Revision B,#e01b24,B,\d{4}-/.test(csvText), csvText.slice(0, 200));
+            csvText.startsWith('\ufeffNo.,Page,Type,Content,Colour,Revision,Created\r\n') && csvText.trim().split('\r\n').length === 7 &&
+            /\r\n2,1,Revision tag,Revision B,#e01b24,B,\d{4}-/.test(csvText), csvText.slice(0, 200));
         check('revision: the HTML report has the summary and table', !!html && /<h1>Markup report<\/h1>/.test(html.toString()) &&
             (html.toString().match(/<tr>/g) || []).length >= 4 + 1);
     }
@@ -1479,7 +1488,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
         !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
     s = await state();
-    check('revision: clouds and the revision tag save into the PDF copy', /with 4 markups/.test(s.status), s.status);
+    check('revision: clouds and the revision tag save into the PDF copy', /with 6 markups/.test(s.status), s.status);
     await open('one-page.pdf'); await page.click('#ribbon-tab-revision'); await sleep(100); rv = await revisionState();
     check('revision: opening another PDF ends the comparison', !rv.image && rv.file === '' &&
         (await page.$eval('button[aria-label="Revisions"]', b => b.textContent.trim())) === 'Revisions');
@@ -1961,11 +1970,34 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     rpt = await page.evaluate(() => ({ total: document.querySelector('.report-total').textContent.trim(),
         rows: [...document.querySelectorAll('.report-table tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim())) }));
     check('change report: every changed area against the compared revision, where it is and whether it is clouded',
-        rpt.total === '2 changes on 1 of 1 page' && rpt.rows.length === 2 && rpt.rows.every(r => r[2] === 'Changed area' && /mm at/.test(r[4]) && /^Yes/.test(r[5])), rpt);
+        rpt.total === '2 changes on 1 of 1 page · 1 added · 1 removed' && rpt.rows.length === 2 &&
+        rpt.rows[0][2] === 'Removed' && rpt.rows[1][2] === 'Added' && /^Added: only in this revision/.test(rpt.rows[1][3]) &&
+        rpt.rows.every(r => /mm at/.test(r[5]) && /^Yes/.test(r[6])), rpt);
     await page.click('.dialog-footer .tool-outline:nth-child(1)'); os = await waitStatus(/Downloaded one-page-rev-b-changes\.csv|Unable/);
     check('change report: CSV export', os === 'Downloaded one-page-rev-b-changes.csv.', os);
     await page.click('[aria-labelledby="report-dialog-title"] .tool-primary'); await sleep(100);
     await click('Close comparison'); await click('Clear Markups').catch(() => {});
+
+    // Revision C against B: line 8 removed, the rectangle made wider (changed), a line added at the bottom.
+    await open('one-page-rev-c.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-revision'); await sleep(100);
+    await (await page.$('#ribbon-revision input[type=file]')).uploadFile(path.join(FIXTURES, 'one-page-rev-b.pdf'));
+    await page.waitForFunction(() => /changed area|no differences|Unable/.test(document.querySelector('.status-text').textContent), { timeout: 30000 });
+    rv = await revisionState();
+    check('revision C: added, removed and changed elements are each identified',
+        rv.regions.map(r => r.kind).join('|') === 'removed|changed|added' && rv.kinds.join('|') === 'Added1|Removed1|Changed1' &&
+        /3 changed areas: 1 added, 1 removed, 1 changed/.test(rv.status) && near(rv.regions[1].x, 526, 6) && near(rv.regions[1].w, 49, 8), rv);   // the moved right side of the rectangle
+    await page.click('button[aria-label="Show added"]'); await page.click('button[aria-label="Show removed"]'); await sleep(200);
+    await page.click('button[aria-label="Next change"]'); await sleep(200); rv = await revisionState();
+    check('revision C: with only Changed shown, Next change goes to the changed rectangle',
+        rv.regions.length === 1 && rv.regions[0].kind === 'changed' && rv.regions[0].active && /Change 1 of 1 on page 1: changed/.test(rv.status), rv);
+    await click('Cloud changes'); await sleep(300);
+    check('revision C: Cloud changes clouds only the changed areas shown', (await reviewLabels()).join('|') === 'Cloud', await reviewLabels());
+    await page.click('button[aria-label="Overlay"]'); await sleep(400); rv = await revisionState();
+    check('revision C: Overlay still works with the kinds filtered', rv.overlay && rv.regions.length === 0);
+    await click('Close comparison'); rv = await revisionState();
+    check('revision C: closing the comparison shows every kind again', rv.kinds.every(k => !/\(off\)/.test(k)), rv.kinds);
+    await click('Clear Markups').catch(() => {});
 
     // ===== Search by drawing / beam / column number; page size; document properties =====
     const results = () => page.evaluate(() => ({

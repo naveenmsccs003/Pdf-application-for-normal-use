@@ -75,7 +75,7 @@
                     onMoveMarkup: '&',      // the selected markup was dragged or resized: (id, markup) is the changed copy
                     onEditMarkup: '&',      // a markup was double-clicked
                     onPlaceTag: '&',        // revision tag, stamp, custom markup: (pageNumber, at) where the page was clicked
-                    revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay', url, regions, active }
+                    revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay', url, regions (with kind), active }
                     onSelectHighlight: '&',  // (id, additive): additive (Ctrl / Shift click) adds or takes it from the selection
                     onRemoveHighlight: '&',
                     onRemoveSelected: '&',
@@ -104,9 +104,12 @@
                     '    <img class="revision-image" ng-if="revisionOn()" ng-src="{{ revision.url }}" alt=""' +
                     '         ng-class="{\'is-overlay\': revision.mode === \'overlay\'}">' +
                     '    <div class="revision-regions" ng-if="revisionOn() && revision.mode === \'diff\'">' +
-                    '      <div class="revision-region" ng-repeat="r in revision.regions track by $index" ng-class="{\'is-active\': $index === revision.active}"' +
+                    '      <div class="revision-region" ng-repeat="r in revision.regions track by $index" data-kind="{{ r.kind }}"' +
+                    '           ng-class="{\'is-active\': $index === revision.active}"' +
                     '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
-                    '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}"></div>' +
+                    '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}">' +
+                    '        <span class="revision-kind">{{ r.kind === \'added\' ? \'Added\' : r.kind === \'removed\' ? \'Removed\' : \'Changed\' }}</span>' +
+                    '      </div>' +
                     '    </div>' +
                     '    <div class="search-layer">' +
                     '      <div class="search-hit" ng-repeat="r in pageHits track by $index" ng-class="{\'is-current\': r.current}"' +

@@ -7,7 +7,9 @@
      * one-pixel tolerance so anti-aliasing does not count as a change:
      *   - differences: what only the other revision has (removed, red) and what only this one has (added, green)
      *   - overlay:     this revision in blue, the other in red, what both have in dark grey
-     *   - regions:     boxes around groups of changes, in PDF units (for clouds and "next change")
+     *   - regions:     boxes around groups of changes, in PDF units (for clouds and "next change"), each with its
+     *                  kind: 'added' (only new ink), 'removed' (only ink the other revision had) or 'changed' (both:
+     *                  an element moved, resized or rewritten)
      * The other revision is read in the browser (web, pdf.js) or opened by the desktop host (PDFium).
      */
     angular.module('pdfViewerApp').factory('compareService', ['$http', '$q', 'pdfService', 'desktopService',
@@ -19,6 +21,7 @@
             var MIN_CELL_CHANGES = 3;   // fewer changed pixels in a cell is noise
             var MAX_REGIONS = 200;
             var CACHE_PAGES = 6;
+            var KIND_SHARE = 0.12;      // a region is changed when both added and removed ink are at least this share
 
             var other = null;           // { fileName, pageCount, doc (web) | token (desktop), task }
             var cache = [];             // [{ key, result }], newest last
@@ -170,7 +173,7 @@
                 var thisNear = dilate(thisInk, w, h), otherNear = dilate(otherInk, w, h);
                 var diff = new ImageData(w, h), overlay = new ImageData(w, h);
                 var cols = Math.ceil(w / CELL_PX), rows = Math.ceil(h / CELL_PX);
-                var cells = new Uint16Array(cols * rows);
+                var addedCells = new Uint32Array(cols * rows), removedCells = new Uint32Array(cols * rows);
                 var added = 0, removed = 0;
                 for (var p = 0, i = 0; p < thisInk.length; p++, i += 4) {
                     var isAdded = thisInk[p] && !otherNear[p];
@@ -192,23 +195,34 @@
                     o[i + 3] = 255;
                     if (isAdded || isRemoved) {
                         var x = p % w, y = (p - x) / w;
-                        cells[Math.floor(y / CELL_PX) * cols + Math.floor(x / CELL_PX)]++;
+                        (isAdded ? addedCells : removedCells)[Math.floor(y / CELL_PX) * cols + Math.floor(x / CELL_PX)]++;
                     }
                 }
-                return { diff: diff, overlay: overlay, cells: cells, cols: cols, rows: rows, added: added, removed: removed };
+                return { diff: diff, overlay: overlay, addedCells: addedCells, removedCells: removedCells, cols: cols, rows: rows,
+                         added: added, removed: removed };
             }
 
-            // Groups changed cells (touching or one cell apart) into boxes, in pixels.
-            function regionsOf(cells, cols, rows) {
-                var marked = new Uint8Array(cells.length);
-                for (var c = 0; c < cells.length; c++) { marked[c] = cells[c] >= MIN_CELL_CHANGES ? 1 : 0; }
-                var seen = new Uint8Array(cells.length), regions = [];
-                for (var start = 0; start < cells.length && regions.length < MAX_REGIONS; start++) {
+            /** What a group of changes is, from its added and removed pixel counts. */
+            function kindOf(added, removed) {
+                var total = added + removed;
+                if (removed < total * KIND_SHARE) { return 'added'; }
+                if (added < total * KIND_SHARE) { return 'removed'; }
+                return 'changed';
+            }
+
+            // Groups changed cells (touching or one cell apart) into boxes, in pixels, with their kind.
+            function regionsOf(addedCells, removedCells, cols, rows) {
+                var marked = new Uint8Array(addedCells.length);
+                for (var c = 0; c < marked.length; c++) { marked[c] = addedCells[c] + removedCells[c] >= MIN_CELL_CHANGES ? 1 : 0; }
+                var seen = new Uint8Array(marked.length), regions = [];
+                for (var start = 0; start < marked.length && regions.length < MAX_REGIONS; start++) {
                     if (!marked[start] || seen[start]) { continue; }
-                    var stack = [start], box = { x0: cols, y0: rows, x1: 0, y1: 0 };
+                    var stack = [start], box = { x0: cols, y0: rows, x1: 0, y1: 0, added: 0, removed: 0 };
                     seen[start] = 1;
                     while (stack.length) {
                         var cell = stack.pop(), cx = cell % cols, cy = (cell - cx) / cols;
+                        box.added += addedCells[cell];
+                        box.removed += removedCells[cell];
                         box.x0 = Math.min(box.x0, cx); box.y0 = Math.min(box.y0, cy);
                         box.x1 = Math.max(box.x1, cx); box.y1 = Math.max(box.y1, cy);
                         for (var dy = -2; dy <= 2; dy++) {
@@ -223,7 +237,8 @@
                     regions.push(box);
                 }
                 return regions.map(function (b) {
-                    return { x: b.x0 * CELL_PX, y: b.y0 * CELL_PX, width: (b.x1 - b.x0 + 1) * CELL_PX, height: (b.y1 - b.y0 + 1) * CELL_PX };
+                    return { x: b.x0 * CELL_PX, y: b.y0 * CELL_PX, width: (b.x1 - b.x0 + 1) * CELL_PX, height: (b.y1 - b.y0 + 1) * CELL_PX,
+                             kind: kindOf(b.added, b.removed) };
                 });
             }
 
@@ -237,7 +252,7 @@
 
             /**
              * Compares page N of both revisions. Resolves with { pageNumber, diffUrl, overlay, regions, added, removed,
-             * missing } (regions in PDF units, top to bottom); `missing` if the other revision has no page N.
+             * missing } (regions in PDF units with their kind, top to bottom); `missing` if the other revision has no page N.
              */
             function comparePage(pageNumber) {
                 if (!other) { return $q.reject('Open a revision to compare with first.'); }
@@ -253,10 +268,10 @@
                     return $q.all([drawThisPage(pageNumber, thisCanvas), missing ? null : drawOtherPage(pageNumber, otherCanvas)]).then(function () {
                         if (other !== compared) { return $q.reject('The comparison was closed.'); }
                         var result = compareMasks(inkMask(thisCanvas), inkMask(otherCanvas), w, h);
-                        var regions = regionsOf(result.cells, result.cols, result.rows).map(function (r) {
+                        var regions = regionsOf(result.addedCells, result.removedCells, result.cols, result.rows).map(function (r) {
                             var pad = 2;
                             return { x: Math.max(0, r.x / scale - pad), y: Math.max(0, r.y / scale - pad),
-                                     width: r.width / scale + 2 * pad, height: r.height / scale + 2 * pad };
+                                     width: r.width / scale + 2 * pad, height: r.height / scale + 2 * pad, kind: r.kind };
                         }).sort(function (a, b) { return a.y - b.y || a.x - b.x; });
                         return {
                             pageNumber: pageNumber,

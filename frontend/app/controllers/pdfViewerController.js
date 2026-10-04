@@ -1381,14 +1381,52 @@
             };
 
             // ----- Revision: compare / overlay with another revision -----
-            vm.compare = { fileName: '', pageCount: 0, mode: 'diff', busy: false, result: null, active: -1 };
+            // show: the kinds of change listed, boxed, stepped through and clouded (the ribbon's Added / Removed / Changed).
+            function newCompare() {
+                return { fileName: '', pageCount: 0, mode: 'diff', busy: false, result: null, active: -1,
+                         show: { added: true, removed: true, changed: true } };
+            }
+            vm.compare = newCompare();
             vm.revisionView = null;     // what the viewer shows over the page: { page, mode, url, regions, active }
+            vm.CHANGE_KINDS = [
+                { key: 'added', label: 'Added', title: 'Added: only in this revision (green)' },
+                { key: 'removed', label: 'Removed', title: 'Removed: only in the compared revision (red)' },
+                { key: 'changed', label: 'Changed', title: 'Changed: moved, resized or rewritten (both added and removed ink)' }
+            ];
+
+            /** The changed areas of a comparison result that are shown (their kind is ticked). */
+            function visibleRegions(result) {
+                return result ? result.regions.filter(function (r) { return vm.compare.show[r.kind]; }) : [];
+            }
+
+            function currentResult() {
+                var r = vm.compare.result;
+                return r && r.pageNumber === vm.currentPage ? r : null;
+            }
+
+            /** How many changed areas of `kind` this page has (shown or not). */
+            vm.kindCount = function (kind) {
+                var r = currentResult();
+                return r ? r.regions.filter(function (g) { return g.kind === kind; }).length : 0;
+            };
+
+            /** Shows or hides one kind of change. */
+            vm.toggleChangeKind = function (kind) {
+                if (!compareService.isOpen()) { return; }
+                vm.compare.show[kind] = !vm.compare.show[kind];
+                vm.compare.active = -1;
+                var r = currentResult();
+                if (r && vm.compare.mode !== 'off') {
+                    vm.revisionView = viewFor(r, -1);
+                    vm.status = compareStatus(r);
+                }
+            };
 
             vm.isComparing = function () { return compareService.isOpen(); };
 
             function closeRevisionWork() {
                 compareService.close();
-                vm.compare = { fileName: '', pageCount: 0, mode: 'diff', busy: false, result: null, active: -1 };
+                vm.compare = newCompare();
                 vm.revisionView = null;
                 vm.revisionsDialog = null;
                 vm.reportDialog = null;
@@ -1425,7 +1463,7 @@
 
             function viewFor(result, active) {
                 return { page: result.pageNumber, mode: vm.compare.mode, url: vm.compare.mode === 'overlay' ? compareService.overlayUrl(result) : result.diffUrl,
-                         regions: result.regions, active: active };
+                         regions: visibleRegions(result), active: active };
             }
 
             var pendingActive = null;   // { page, index }: the change to show once that page is compared
@@ -1455,17 +1493,22 @@
                 var name = vm.compare.fileName;
                 if (r.missing) { return 'Page ' + r.pageNumber + ' is not in ' + name + ': everything on it is new.'; }
                 if (!r.regions.length) { return 'Page ' + r.pageNumber + ': no differences from ' + name + '.'; }
-                return 'Page ' + r.pageNumber + ': ' + r.regions.length + ' changed area' + (r.regions.length === 1 ? '' : 's') +
-                       (vm.compare.mode === 'diff' ? ' (green: added, red: removed in this revision)' : ' (blue: this revision, red: ' + name + ')');
+                var kinds = vm.CHANGE_KINDS.map(function (k) {
+                    var n = r.regions.filter(function (g) { return g.kind === k.key; }).length;
+                    return n ? n + ' ' + k.label.toLowerCase() : '';
+                }).filter(Boolean).join(', ');
+                var shown = visibleRegions(r).length;
+                return 'Page ' + r.pageNumber + ': ' + r.regions.length + ' changed area' + (r.regions.length === 1 ? '' : 's') + ': ' + kinds +
+                       (shown < r.regions.length ? ' (' + shown + ' shown)' : '') +
+                       (vm.compare.mode === 'diff' ? '. Green: added, red: removed in this revision.' : '. Blue: this revision, red: ' + name + '.');
             }
 
             $scope.$watch(function () { return vm.currentPage; }, function (page, old) {
                 if (page !== old && compareService.isOpen()) { refreshCompare(); }
             });
 
-            vm.changeCount = function () {
-                return vm.compare.result && vm.compare.result.pageNumber === vm.currentPage ? vm.compare.result.regions.length : 0;
-            };
+            /** The changed areas shown on this page. */
+            vm.changeCount = function () { return visibleRegions(currentResult()).length; };
 
             /** Previous / next changed area: on this page first, then on the pages before / after it. */
             vm.goToChange = function (step) {
@@ -1473,12 +1516,14 @@
                 if (!compareService.isOpen() || vm.compare.busy) { return; }
                 if (vm.compare.mode === 'off') { vm.compare.mode = 'diff'; }
                 if (r && r.pageNumber === vm.currentPage) {
+                    var regions = visibleRegions(r);
                     var next = vm.compare.active + step;
-                    if (vm.compare.active < 0 && step < 0) { next = r.regions.length - 1; }
-                    if (next >= 0 && next < r.regions.length) {
+                    if (vm.compare.active < 0 && step < 0) { next = regions.length - 1; }
+                    if (next >= 0 && next < regions.length) {
                         vm.compare.active = next;
                         vm.revisionView = viewFor(r, next);
-                        vm.status = 'Change ' + (next + 1) + ' of ' + r.regions.length + ' on page ' + r.pageNumber + '.';
+                        var kind = vm.CHANGE_KINDS.filter(function (k) { return k.key === regions[next].kind; })[0];
+                        vm.status = 'Change ' + (next + 1) + ' of ' + regions.length + ' on page ' + r.pageNumber + ': ' + kind.label.toLowerCase() + '.';
                         return;
                     }
                 }
@@ -1493,14 +1538,15 @@
                 vm.compare.busy = true;
                 vm.status = 'Looking for changes on page ' + page + '\u2026';
                 compareService.comparePage(page).then(function (result) {
-                    if (!result.regions.length) {
+                    var count = visibleRegions(result).length;
+                    if (!count) {
                         vm.compare.busy = false;
                         searchPages(page + step, step);
                         return;
                     }
                     vm.compare.busy = false;
                     // The page watcher compares the new page (from the cache) and shows this change.
-                    pendingActive = { page: page, index: step > 0 ? 0 : result.regions.length - 1 };
+                    pendingActive = { page: page, index: step > 0 ? 0 : count - 1 };
                     goToPage(page);
                 }, function (message) {
                     vm.compare.busy = false;
@@ -1508,17 +1554,32 @@
                 });
             }
 
-            /** Marks every changed area on this page with a revision cloud (in the current colour and revision). */
+            /**
+             * Revision highlighting: marks every changed area shown on this page with a revision cloud (in the current
+             * colour and revision) and, when there is a current revision, its tag (a triangle with the label) at the
+             * cloud's top-right corner.
+             */
             vm.cloudChanges = function () {
-                var r = vm.compare.result;
-                if (!r || r.pageNumber !== vm.currentPage || !r.regions.length) { return; }
+                var r = currentResult(), regions = visibleRegions(r);
+                if (!regions.length) { return; }
+                var revision = revisionService.current();
                 pdfService.getPageSize(r.pageNumber).then(function (size) {
                     var sizes = markupGeometry.sizesFor(size.width, size.height);
-                    r.regions.forEach(function (region) {
-                        vm.addMarkup(r.pageNumber, angular.extend({ type: 'cloud', color: vm.markupColor, strokeWidth: sizes.strokeWidth }, region));
+                    var side = Math.round(sizes.fontSize * 2);
+                    regions.forEach(function (region) {
+                        vm.addMarkup(r.pageNumber, { type: 'cloud', color: vm.markupColor, strokeWidth: sizes.strokeWidth,
+                                                     x: region.x, y: region.y, width: region.width, height: region.height });
+                        if (!revision) { return; }
+                        vm.addMarkup(r.pageNumber, {
+                            type: 'revtag', color: vm.markupColor, strokeWidth: sizes.strokeWidth, text: revision.label,
+                            fontSize: Math.max(8, Math.round(sizes.fontSize * 0.85)), width: side, height: side,
+                            x: Math.min(Math.max(region.x + region.width - side / 3, 0), size.width - side),
+                            y: Math.min(Math.max(region.y - side * 2 / 3, 0), size.height - side)
+                        });
                     });
                     vm.selectedHighlightId = null;
-                    vm.status = 'Added ' + r.regions.length + ' revision cloud' + (r.regions.length === 1 ? '' : 's') + ' on page ' + r.pageNumber + '.';
+                    vm.status = 'Added ' + regions.length + ' revision cloud' + (regions.length === 1 ? '' : 's') +
+                        (revision ? ' with Rev ' + revision.label + ' tags' : '') + ' on page ' + r.pageNumber + '.';
                 });
             };
 
@@ -1773,7 +1834,8 @@
                     d.table = reportService.changeTable(pages, vm.highlights, reportInfo(d));
                     var changed = d.table.summaries[0].items[1].count;
                     d.totalText = d.table.rows.length + ' change' + (d.table.rows.length === 1 ? '' : 's') + ' on ' + changed +
-                        ' of ' + count + ' page' + (count === 1 ? '' : 's') + (vm.pageCount > count ? ' (first ' + count + ' pages compared)' : '');
+                        ' of ' + count + ' page' + (count === 1 ? '' : 's') + (vm.pageCount > count ? ' (first ' + count + ' pages compared)' : '') +
+                        d.table.summaries[2].items.map(function (k) { return ' · ' + k.count + ' ' + k.name.toLowerCase(); }).join('');
                 }, function (message) {
                     if (vm.reportDialog === d) { d.error = typeof message === 'string' ? message : 'Unable to compare the pages.'; }
                 }).finally(function () {

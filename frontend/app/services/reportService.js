@@ -136,12 +136,16 @@
          * `pages`: [{ pageNumber, size: { width, height }, regions, missing }] from comparing each page with
          * `info.compareName`. A changed area marked with a revision cloud says so (and which revision).
          */
+        var CHANGE_KINDS = { added: 'Added', removed: 'Removed', changed: 'Changed' };
+        var CHANGE_TEXT = { added: 'Added: only in this revision', removed: 'Removed: only in the compared revision',
+                            changed: 'Changed: moved, resized or rewritten' };
+
         function changeTable(pages, markups, info) {
             var list = [], changed = 0, added = 0;
             pages.forEach(function (p) {
                 if (p.missing) {
                     added++;
-                    list.push({ number: list.length + 1, page: p.pageNumber, place: 'whole page', area: '',
+                    list.push({ number: list.length + 1, page: p.pageNumber, place: 'whole page', area: '', kind: 'Added',
                                 change: 'New page (not in ' + info.compareName + ')', cloud: '' });
                     return;
                 }
@@ -152,7 +156,8 @@
                         number: list.length + 1, page: p.pageNumber, place: placeOn(r, p.size),
                         area: Math.round(r.width * MM) + ' × ' + Math.round(r.height * MM) + ' mm at ' +
                               Math.round(r.x * MM) + ', ' + Math.round(r.y * MM) + ' mm',
-                        change: 'Changed area', cloud: cloud ? 'Yes' + (cloud.revision ? ' (rev ' + cloud.revision + ')' : '') : 'No'
+                        kind: CHANGE_KINDS[r.kind] || 'Changed', change: CHANGE_TEXT[r.kind] || CHANGE_TEXT.changed,
+                        cloud: cloud ? 'Yes' + (cloud.revision ? ' (rev ' + cloud.revision + ')' : '') : 'No'
                     });
                 });
             });
@@ -162,14 +167,15 @@
                            'generated ' + formatTime(new Date())].join(' · '),
                 columns: [
                     { key: 'number', label: 'No.', width: 0.5, number: true }, { key: 'page', label: 'Page', width: 0.5, number: true },
-                    { key: 'change', label: 'Change', width: 2 }, { key: 'place', label: 'Where', width: 1 },
+                    { key: 'kind', label: 'Kind', width: 0.8 }, { key: 'change', label: 'Change', width: 2 }, { key: 'place', label: 'Where', width: 1 },
                     { key: 'area', label: 'Size and position (from top left)', width: 2.4 }, { key: 'cloud', label: 'Clouded', width: 0.9 }
                 ],
                 rows: list,
                 summaries: [{ label: 'Pages', items: [
                     { name: 'compared', count: pages.length }, { name: 'with changes', count: changed },
                     { name: 'new', count: added }, { name: 'unchanged', count: pages.length - changed - added }] },
-                    countBy(list, 'page', 'Changes by page', function (p) { return 'Page ' + p; })]
+                    countBy(list, 'page', 'Changes by page', function (p) { return 'Page ' + p; }),
+                    countBy(list, 'kind', 'Changes by kind')]
             };
         }
 
