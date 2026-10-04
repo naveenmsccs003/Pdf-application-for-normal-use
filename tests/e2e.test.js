@@ -201,6 +201,12 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('Split/Compress/Convert need a document; Merge does not', toolsDisabled.every(Boolean) &&
         !(await page.$eval('button[aria-label="Merge"]', b => b.disabled)), toolsDisabled);
     await shot('01-empty');
+    const brand = await page.evaluate(() => ({ title: document.title, header: document.querySelector('.app-title').textContent.trim(),
+        links: [...document.querySelectorAll('a[href="privacy.html"]')].map(a => a.textContent.trim()) }));
+    check('app named Naveen PDF Editor; privacy policy linked from the start screen and the File menu',
+        brand.title === 'Naveen PDF Editor' && brand.header === 'Naveen PDF Editor' && brand.links.join('|') === 'Privacy policy|Privacy policy', brand);
+    const privacy = await page.evaluate(() => fetch('privacy.html').then(async r => ({ status: r.status, text: await r.text() })));
+    check('privacy policy page is served', privacy.status === 200 && /<h1>Privacy Policy<\/h1>/.test(privacy.text) && /60 minutes/.test(privacy.text), privacy.status);
 
     // ===== Invalid files (before any document is open) =====
     await open('notes.txt'); s = await state();

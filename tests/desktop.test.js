@@ -148,6 +148,8 @@ async function startHost() {
         check('desktop mode: Open PDF is a button (native dialog), no file input', s.openIsButton);
         check('desktop mode: large-file hint', /very large files/.test(s.hint), s.hint);
         check('desktop mode: UI told host it is ready', s.sent.includes('ready'), s.sent);
+        const brand = await page.evaluate(() => ({ title: document.title, links: document.querySelectorAll('a[href="privacy.html"]').length }));
+        check('desktop mode: named Naveen PDF Editor, no web privacy link (nothing is uploaded)', brand.title === 'Naveen PDF Editor' && brand.links === 0, brand);
 
         // ----- Invalid files -----
         await open('notes.txt'); s = await state(); check('non-PDF rejected', s.error === 'The selected file is not a valid PDF.', s.error); await dismiss();

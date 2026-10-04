@@ -28,7 +28,7 @@ public sealed record SignResult(string Signer, bool Visible);
 /// <summary>
 /// Password protection and digital signatures, with PDFsharp (MIT). PDFsharp reads the whole document into memory,
 /// so these work on documents up to <see cref="MaxFileBytes"/>.
-///   - Protect: AES-256 encryption (PDF 2.0, readable by Acrobat 9 and later and every current viewer) with an open
+///   - Protect: AES-256 encryption (PDF 2.0, readable by every current PDF viewer) with an open
 ///     password and / or an owner password that guards the permissions.
 ///   - Remove password: a copy without encryption (needs the owner password, or the open password when no owner
 ///     password restricts the document).
@@ -121,7 +121,7 @@ public static class PdfSecurity
                 Reason = Clean(options.Reason),
                 Location = Clean(options.Location),
                 ContactInfo = Clean(options.ContactInfo),
-                AppName = "PDF Viewer",
+                AppName = "Naveen PDF Editor",
                 PageIndex = Math.Max(0, options.Page - 1),
                 // An empty rectangle makes the signature invisible.
                 Rectangle = visible ? Box(document.Pages[options.Page - 1], options.Corner) : new XRect(0, 0, 0, 0),

@@ -4,10 +4,10 @@ using PdfViewer.Desktop.Services;
 namespace PdfViewer.Desktop;
 
 /// <summary>
-/// Desktop PDF viewer: the shared AngularJS UI in a native window (Photino), with pages rendered
+/// Naveen PDF Editor (desktop): the shared AngularJS UI in a native window (Photino), with pages rendered
 /// by PDFium straight from disk, so large PDFs open without being uploaded or copied.
 ///
-/// Usage: PdfViewer.Desktop [file.pdf]
+/// Usage: NaveenPdfEditor [file.pdf]
 /// Test mode (no window, fixed port, extra test endpoint): set PDFVIEWER_TEST_PORT.
 /// </summary>
 public static class Program
@@ -36,7 +36,7 @@ public static class Program
         _ = Task.Run(pdfium.WarmUp);
 
         var window = new PhotinoWindow()
-            .SetTitle("PDF Viewer")
+            .SetTitle("Naveen PDF Editor")
             .SetUseOsDefaultSize(false)
             .SetSize(1280, 860)
             .SetMinSize(640, 480)

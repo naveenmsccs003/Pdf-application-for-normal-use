@@ -1,6 +1,6 @@
-# PDF Viewer
+# Naveen PDF Editor
 
-A simple, lightweight web PDF viewer: **Open → View → Zoom → Fit → Highlight.**
+A simple, lightweight PDF editor for the web and the desktop: **Open → View → Zoom → Fit → Highlight.**
 
 - Backend: ASP.NET Core (.NET 10) — PDF upload, validation and file access
 - Frontend: AngularJS 1.8 + pdf.js 3.11 + tesseract.js 7 for OCR (bundled in `frontend/lib`, no internet or npm needed)
@@ -12,7 +12,7 @@ Two ways to use it:
 | --- | --- | --- |
 | Runs in | your browser | its own window (Linux, Windows) |
 | Opening a file | uploaded to the local server | read directly from disk, no copy |
-| Page rendering | pdf.js in the browser | PDFium (Chrome's PDF engine) on the C# side |
+| Page rendering | pdf.js in the browser | PDFium (open-source PDF engine) on the C# side |
 | File size | up to 50 MB | very large files (see limits below) |
 
 ## Run the web app
@@ -40,11 +40,11 @@ Build a standalone app folder (includes .NET, no install needed on the target PC
 
 ```bash
 cd desktop
-dotnet publish -c Release -r win-x64   --self-contained -o ../dist/PdfViewer-win-x64     # Windows: PdfViewer.exe
-dotnet publish -c Release -r linux-x64 --self-contained -o ../dist/PdfViewer-linux-x64   # Linux: ./PdfViewer
+dotnet publish -c Release -r win-x64   --self-contained -o ../dist/NaveenPdfEditor-win-x64     # Windows: NaveenPdfEditor.exe
+dotnet publish -c Release -r linux-x64 --self-contained -o ../dist/NaveenPdfEditor-linux-x64   # Linux: ./NaveenPdfEditor
 ```
 
-Copy the whole folder to the target computer and run `PdfViewer.exe` / `PdfViewer`.
+Copy the whole folder to the target computer and run `NaveenPdfEditor.exe` / `NaveenPdfEditor`.
 
 ### Large file limits (desktop)
 
@@ -56,12 +56,11 @@ PDFium reads only the parts of a file it needs, so opening is fast regardless of
   compressed index (cross-reference stream) cannot be read above 4 GB; the app says so immediately
   instead of hanging.
 - **Above ~9.3 GB**: not possible with PDFium; the classic index cannot address beyond 10 digits.
-  (Adobe Acrobat's own documented maximum PDF size is 10 GB.)
 - Damaged PDFs without a page index can only be repaired up to 512 MB (repair means scanning the whole file).
 
 ## Layout
 
-A desktop-style PDF workspace (layout inspired by professional PDF markup tools such as Bluebeam Revu):
+A desktop-style PDF workspace with a ribbon of tool tabs:
 
 - **Title bar** with the open file name and the light/dark switch
 - **Menu bar**: **File** (New PDF, Open, Close PDF, Save, Save as, Save copy with markups, Recent files, Clear recent files),
@@ -263,7 +262,7 @@ server / desktop host, which reads the whole document into memory, so these work
 
 - **Opening a protected PDF** asks for its password (again, with a message, when it is wrong; **Esc** cancels). The
   password stays in memory while the document is open and is never stored. Properties (**Ctrl+D**) show the security.
-- **Protect with password**: saves a copy encrypted with AES-256 (readable by Acrobat 9 and later and every current
+- **Protect with password**: saves a copy encrypted with AES-256 (readable by every current PDF
   viewer), with an open password, a permissions (owner) password, or both, and what readers may do without the
   permissions password: print, copy, comment, fill in forms, change the document, insert / delete / rotate pages.
   Without a permissions password a random one is used, so nobody can lift the restrictions.
@@ -364,8 +363,8 @@ Notes:
   **Ctrl+Shift+S** save as, **Ctrl+L** full screen, **Ctrl+=** / **Ctrl+−**
   zoom, **Ctrl+0** actual size. Close has no shortcut because browsers reserve Ctrl+W.
 - **Recent files** in the File menu and on the start screen:
-  - Desktop: the last 10 file paths, reopened from disk, stored in `~/.config/PdfViewer/recent-files.json`
-    (Windows: `%APPDATA%\PdfViewer`). Moved or deleted files are marked *Missing* and removed when clicked.
+  - Desktop: the last 10 file paths, reopened from disk, stored in `~/.config/NaveenPdfEditor/recent-files.json`
+    (Windows: `%APPDATA%\NaveenPdfEditor`). Moved or deleted files are marked *Missing* and removed when clicked.
     The host only reopens paths that are on that list.
   - Web: a browser cannot reopen a file by its path and uploads expire after an hour, so the last 5 PDFs
     are kept in the browser's own storage (IndexedDB) and never leave the computer. Empty in private windows.
@@ -385,12 +384,33 @@ Notes:
     The original PDF is never modified.
   - **Save with highlights** (toolbar save icon, or the button under the Markups list) writes a *copy* of the
     PDF with the highlights as standard PDF Highlight annotations (yellow, printable, with appearance
-    streams), so Adobe Reader, browsers and other PDF tools show them and can edit them.
+    streams), so other PDF readers, browsers and PDF tools show them and can edit them.
     Web: downloads `<name>-highlighted.pdf`. Desktop: asks where to save; it refuses to overwrite the open file.
     Reopening a saved copy shows the highlights as part of the page (they are not loaded back into the
     Markups list for editing).
 - Light and dark mode: follows the system setting; the sun/moon button in the header switches it and the
   choice is remembered in the browser. The PDF page itself always stays white.
+
+## Hosting on a server
+
+Publish the web app with `cd backend && dotnet publish -c Release -o ../dist/web` and copy `dist/web` together with the
+`frontend` folder next to it (the app serves `../frontend`). Run it as a service in the **Production** environment
+(the default for a published app; `dotnet run` uses Development).
+
+- **HTTPS**: outside Development, HTTP requests are redirected to HTTPS and HSTS is sent (`Https` in
+  `appsettings.json`: `Redirect`, `Port` (default 443), `HstsDays`). Put the app behind a reverse proxy that holds the
+  certificate (for example nginx with a free Let's Encrypt certificate) and forwards to `http://localhost:5000` with
+  the `X-Forwarded-For` and `X-Forwarded-Proto` headers; proxies on the same computer are trusted, others must be listed
+  in `ReverseProxy:KnownProxies`. Set `Https:Redirect` to `false` only on a trusted internal network without a
+  certificate.
+- **Rate limiting**: requests per client address and minute (`RateLimiting` in `appsettings.json`): uploads and page
+  edits 30, tools 20, other API requests 1200 (pdf.js reads large files in many small requests). Pages, scripts and
+  styles are not limited. Over the limit the server answers `429 Too Many Requests` with a message the app shows.
+  Development (`appsettings.Development.json`) uses much higher limits so the tests are not slowed down.
+- **Privacy policy**: `frontend/privacy.html`, linked from the start screen and the File menu (web only). Add your
+  contact details where the page says so, and keep its "60 minutes" in line with `PdfStorage:RetentionMinutes`.
+- There is no login: anyone who can reach the site can use it. For a company-only tool, host it on the internal
+  network or behind a VPN or a login at the proxy.
 
 ## API
 
@@ -428,7 +448,7 @@ backend/
   Controllers/ToolsController.cs  merge / split / compress / convert endpoints
   Controllers/PagesController.cs  new PDF and page edits (stored as new uploads), extract
   Models/PdfFileModel.cs          response model, options, validation exception
-  Program.cs                      serves ../frontend, security headers, size limits, error handling
+  Program.cs                      serves ../frontend, security headers, HTTPS, rate limiting, size limits, error handling
   appsettings.json
 frontend/
   index.html
@@ -455,6 +475,7 @@ frontend/
   app/directives/menuBarDirective.js    File / Edit / Zoom menu bar (WAI-ARIA menubar keyboard handling)
   app/directives/toolTipsDirective.js   name and shortcut shown on hover over the icon buttons
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
+  privacy.html                    privacy policy (web)
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker
   lib/tesseract/                  tesseract.js, its worker, the WebAssembly engine (3 builds) and English data (Apache 2.0)

@@ -4,8 +4,8 @@ namespace PdfViewer.Desktop.Services;
 
 /// <summary>
 /// The most recently opened PDFs (newest first), kept in a small JSON file in the user's
-/// application data folder (Linux: ~/.config/PdfViewer, Windows: %APPDATA%\PdfViewer).
-/// Set PDFVIEWER_RECENT_FILE to use another file (the tests do, so they never touch the real list).
+/// application data folder (Linux: ~/.config/NaveenPdfEditor, Windows: %APPDATA%\NaveenPdfEditor; a list from the old
+/// PdfViewer folder is copied over once). Set PDFVIEWER_RECENT_FILE to use another file (the tests do, so they never touch the real list).
 /// A missing or damaged file just means an empty list.
 /// </summary>
 public class RecentFiles(ILogger<RecentFiles> logger)
@@ -16,7 +16,27 @@ public class RecentFiles(ILogger<RecentFiles> logger)
     private readonly object _lock = new();
     private readonly string _file = Environment.GetEnvironmentVariable("PDFVIEWER_RECENT_FILE") is { Length: > 0 } custom
         ? custom
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PdfViewer", "recent-files.json");
+        : DefaultFile();
+
+    private static string DefaultFile()
+    {
+        var data = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var file = Path.Combine(data, "NaveenPdfEditor", "recent-files.json");
+        var old = Path.Combine(data, "PdfViewer", "recent-files.json");
+        try
+        {
+            if (!File.Exists(file) && File.Exists(old))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                File.Copy(old, file);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Not copied: the list starts empty.
+        }
+        return file;
+    }
 
     public record Entry(string Path, DateTime OpenedAt);
 

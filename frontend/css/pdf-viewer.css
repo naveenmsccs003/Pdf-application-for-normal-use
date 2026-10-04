@@ -212,6 +212,7 @@ html, body {
     cursor: pointer;
 }
 .menu-item > span { flex: 1; min-width: 0; }
+a.menu-item { color: inherit; text-decoration: none; }
 .menu-item:hover:not(:disabled), .menu-item:focus { background: var(--active-bg); outline: none; }
 .menu-item:disabled { opacity: 0.4; cursor: default; }
 .menu-item[aria-checked="true"] { color: var(--primary); font-weight: 600; }
@@ -1091,6 +1092,7 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 .empty-state h2 { margin: 0; font-size: 18px; }
 .empty-state p { margin: 0 0 12px; color: var(--muted); }
 .empty-state .hint { margin: 10px 0 0; font-size: 12px; }
+.empty-state .hint a { color: var(--primary); }
 
 /* Recent files on the start screen */
 .recent-start { width: min(440px, 100%); margin-top: 24px; text-align: left; }

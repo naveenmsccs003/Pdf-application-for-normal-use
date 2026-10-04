@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PdfViewer.Desktop</RootNamespace>
-    <AssemblyName>PdfViewer</AssemblyName>
+    <AssemblyName>NaveenPdfEditor</AssemblyName>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- No console window on Windows. -->
     <OutputType Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">WinExe</OutputType>

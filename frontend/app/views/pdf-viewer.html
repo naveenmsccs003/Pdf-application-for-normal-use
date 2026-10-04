@@ -109,7 +109,7 @@
 <!-- Title bar -->
 <header class="titlebar">
     <img class="app-icon" src="assets/favicon.svg" alt="">
-    <h1 class="app-title">PDF Viewer</h1>
+    <h1 class="app-title">Naveen PDF Editor</h1>
 
     <!-- Menu bar (keyboard: menuBarDirective.js) -->
     <nav class="menubar" role="menubar" aria-label="Menu" menu-bar>
@@ -148,6 +148,9 @@
                 <div class="menu-empty" role="presentation" ng-if="!vm.recentFiles.length">No recent files</div>
                 <button type="button" class="menu-item" role="menuitem" ng-if="vm.recentFiles.length" ng-click="vm.clearRecent()">
                     <svg class="icon icon-sm"><use href="#i-clear"></use></svg><span>Clear recent files</span></button>
+                <div class="menu-separator" role="separator" ng-if="!vm.isDesktop"></div>
+                <a class="menu-item" role="menuitem" href="privacy.html" target="_blank" rel="noopener" ng-if="!vm.isDesktop">
+                    <svg class="icon icon-sm"><use href="#i-info"></use></svg><span>Privacy policy</span></a>
             </div>
         </div>
 
@@ -1136,7 +1139,7 @@
                 <button type="button" class="tool tool-labelled tool-primary tool-large" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy">
                     <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
                 </button>
-                <p class="hint" ng-if="!vm.isDesktop">PDF files up to 50 MB</p>
+                <p class="hint" ng-if="!vm.isDesktop">PDF files up to 50 MB &middot; <a href="privacy.html" target="_blank" rel="noopener">Privacy policy</a></p>
                 <p class="hint" ng-if="vm.isDesktop">Opens PDFs directly from your computer, including very large files</p>
 
                 <section class="recent-start" ng-if="vm.recentFiles.length" aria-labelledby="recent-start-title">
