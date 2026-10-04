@@ -36,7 +36,8 @@
             var CLOSE_POLYGON_PX = 8;       // area / perimeter: a click this close to the first corner finishes
             var MIN_CORNER_STEP_PX = 3;     // area / perimeter: clicks closer than this to the last corner are ignored
             var MAX_CORNERS = 500;
-            var LINE_TOOLS = { line: true, arrow: true, distance: true, hdistance: true, vdistance: true, calibrate: true };
+            var LINE_TOOLS = { line: true, arrow: true, distance: true, hdistance: true, vdistance: true, calibrate: true, perpendicular: true };
+            var MAX_COUNT = 200;            // items in one count
             var POLYGON_TOOLS = { area: true, perimeter: true };
             var TEXT_MARK_TOOLS = { strikeout: true, underline: true, replace: true };   // drawn over text like a highlight
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
@@ -875,6 +876,7 @@
                             case 'hdistance':
                             case 'vdistance':
                             case 'calibrate':
+                            case 'perpendicular':
                                 if (event && event.shiftKey && scope.tool !== 'hdistance' && scope.tool !== 'vdistance') {
                                     // Shift: snap to 45° steps (horizontal / vertical dimension lines).
                                     var angle = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / (Math.PI / 4)) * (Math.PI / 4);
@@ -884,6 +886,10 @@
                                 if (Math.hypot(b.x - a.x, b.y - a.y) < minSize) { return null; }
                                 if (scope.tool === 'line' || scope.tool === 'arrow') {
                                     return angular.extend(m, { x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+                                }
+                                if (scope.tool === 'perpendicular') {
+                                    // The reference line; the point comes next (see perpendicular below).
+                                    return angular.extend(m, { type: 'line', x1: round2(a.x), y1: round2(a.y), x2: round2(b.x), y2: round2(b.y) });
                                 }
                                 // Measurements (the calibration line is drawn as a distance).
                                 if (scope.tool === 'hdistance' && Math.abs(b.x - a.x) < minSize) { return null; }
@@ -983,6 +989,85 @@
                         hideDraft();
                     }
 
+                    // ----- Count: each click adds a marker to the count; Enter starts a new count -----
+                    var counting = null;    // { id, page } of the count that clicks add to
+
+                    function findMarkup(id) {
+                        var list = scope.highlights || [];
+                        for (var i = 0; i < list.length; i++) { if (list[i].id === id) { return list[i]; } }
+                        return null;
+                    }
+
+                    function addCount(point) {
+                        var s = scope.rendered.scale, page = scope.rendered.page;
+                        var x = round2(point.x / s), y = round2(point.y / s);
+                        var current = counting && counting.page === page ? findMarkup(counting.id) : null;
+                        scope.$apply(function () {
+                            if (current) {
+                                if (current.points.length / 2 >= MAX_COUNT) { return; }
+                                scope.onMoveMarkup({ id: current.id, markup: angular.extend({}, current, { points: current.points.concat([x, y]) }) });
+                                return;
+                            }
+                            var sizes = pageSizes();
+                            var added = scope.onCreateMarkup({ pageNumber: page, markup: {
+                                type: 'count', color: scope.markupColor, strokeWidth: sizes.strokeWidth,
+                                fontSize: measureFontSize(sizes), points: [x, y] } });
+                            counting = added ? { id: added.id, page: page } : null;
+                        });
+                    }
+
+                    function removeLastCount() {
+                        var current = findMarkup(counting.id);
+                        if (!current) { counting = null; return; }
+                        if (current.points.length <= 2) {
+                            counting = null;
+                            scope.onRemoveHighlight({ id: current.id });
+                        } else {
+                            scope.onMoveMarkup({ id: current.id, markup: angular.extend({}, current, { points: current.points.slice(0, -2) }) });
+                        }
+                    }
+
+                    // ----- Perpendicular distance: drag the reference line, then click the point -----
+                    var perpendicular = null;   // { page, line: [ax, ay, bx, by] } once the line is drawn
+
+                    function perpendicularDraft(point) {
+                        var s = scope.rendered.scale, sizes = pageSizes();
+                        return { type: 'perpendicular', pageNumber: perpendicular.page, color: scope.markupColor, strokeWidth: sizes.strokeWidth,
+                                 fontSize: measureFontSize(sizes), points: perpendicular.line.concat([round2(point.x / s), round2(point.y / s)]) };
+                    }
+
+                    function cancelPerpendicular() {
+                        perpendicular = null;
+                        hideDraft();
+                    }
+
+                    function onMeasureKey(event) {
+                        if (!polygon && !counting && !perpendicular) { return; }
+                        var tag = event.target && event.target.tagName;
+                        if (tag === 'INPUT' || tag === 'TEXTAREA') { return; }
+                        if (perpendicular && !polygon) {
+                            if (event.key !== 'Escape') { return; }
+                            cancelPerpendicular();      // Esc drops the line; the tool stays
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                            return;
+                        }
+                        if (counting && !polygon) {
+                            if (event.key === 'Enter') {
+                                counting = null;        // the next click starts a new count
+                            } else if (event.key === 'Backspace' || event.key === 'Delete') {
+                                scope.$apply(removeLastCount);
+                            } else {
+                                if (event.key === 'Escape') { counting = null; }   // and the viewer goes back to Pan
+                                return;
+                            }
+                            event.preventDefault();
+                            event.stopImmediatePropagation();
+                            return;
+                        }
+                        onPolygonKey(event);
+                    }
+
                     function onPolygonKey(event) {
                         if (!polygon) { return; }
                         var tag = event.target && event.target.tagName;
@@ -1001,15 +1086,23 @@
                         event.preventDefault();
                         event.stopImmediatePropagation();
                     }
-                    document.addEventListener('keydown', onPolygonKey, true);
+                    document.addEventListener('keydown', onMeasureKey, true);
                     interactionLayer.addEventListener('dblclick', function (event) {
                         if (polygon) { finishPolygon(); return; }
                         if (scope.drawing()) { return; }
                         var hit = highlightAt(pointFromEvent(event));
                         if (hit) { scope.$apply(function () { scope.onEditMarkup({ id: hit.id }); }); }
                     });
-                    scope.$watch('tool', function () { if (polygon) { cancelPolygon(); } });
-                    scope.$watch('rendered.page', function () { if (polygon) { cancelPolygon(); } });
+                    scope.$watch('tool', function () {
+                        if (polygon) { cancelPolygon(); }
+                        if (perpendicular) { cancelPerpendicular(); }
+                        counting = null;
+                    });
+                    scope.$watch('rendered.page', function () {
+                        if (polygon) { cancelPolygon(); }
+                        if (perpendicular) { cancelPerpendicular(); }
+                        counting = null;
+                    });
 
                     interactionLayer.addEventListener('pointerdown', function (event) {
                         if (event.button !== 0 || !scope.rendered.page) {
@@ -1032,7 +1125,11 @@
                             showDraft(polygonDraft({ x: round2(hover.x / hs), y: round2(hover.y / hs) }));
                             return;
                         }
-                        if (!start || !scope.drawing() || POLYGON_TOOLS[scope.tool]) {
+                        if (perpendicular && scope.tool === 'perpendicular' && !scope.spacePan) {
+                            showDraft(perpendicularDraft(pointFromEvent(event)));
+                            return;
+                        }
+                        if (!start || !scope.drawing() || POLYGON_TOOLS[scope.tool] || scope.tool === 'count') {
                             return;
                         }
                         var point = pointFromEvent(event);
@@ -1060,6 +1157,28 @@
                         start = null;
                         if (POLYGON_TOOLS[scope.tool] && !scope.spacePan) {
                             addCorner(end);
+                            return;
+                        }
+                        if (scope.tool === 'count' && !scope.spacePan) {
+                            addCount(end);
+                            return;
+                        }
+                        if (scope.tool === 'perpendicular' && !scope.spacePan) {
+                            if (perpendicular) {
+                                // The point: the measurement is done.
+                                var done = perpendicularDraft(end), donePage = perpendicular.page;
+                                delete done.pageNumber;
+                                cancelPerpendicular();
+                                scope.$apply(function () { scope.onCreateMarkup({ pageNumber: donePage, markup: done }); });
+                                return;
+                            }
+                            var reference = draftMarkup(begin.point, end, event);
+                            if (reference) {
+                                perpendicular = { page: scope.rendered.page, line: [reference.x1, reference.y1, reference.x2, reference.y2] };
+                                showDraft(perpendicularDraft(end));
+                            } else {
+                                hideDraft();
+                            }
                             return;
                         }
                         hideDraft();
@@ -1142,7 +1261,7 @@
                         cancelAnimationFrame(scrollFrame);
                         imageSeq++;
                         document.removeEventListener('keydown', onSpace);
-                        document.removeEventListener('keydown', onPolygonKey, true);
+                        document.removeEventListener('keydown', onMeasureKey, true);
                         document.removeEventListener('keyup', onSpace);
                         window.removeEventListener('blur', onBlur);
                     });

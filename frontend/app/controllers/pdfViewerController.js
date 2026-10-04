@@ -462,7 +462,7 @@
             // viewer's and find shortcuts must not act on the page behind it. Capture phase, so this runs first.
             function onCustomZoomKey(event) {
                 if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog &&
-                    !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog) { return; }
+                    !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog && !vm.unitsDialog) { return; }
                 // The colour pop-up (Edit markup dialog) handles its own keys, Esc included.
                 var popover = $document[0].querySelector('.color-popover');
                 if (popover && popover.contains(event.target)) { return; }
@@ -472,7 +472,7 @@
                         vm.closeCustomZoom(); vm.closeNoteDialog(); vm.closeScaleDialog(); vm.closeEditDialog();
                         vm.revisionsDialog = null; vm.reportDialog = null;
                         if (!vm.pagesDialog || !vm.pagesDialog.busy) { vm.pagesDialog = null; }
-                        vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null;
+                        vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null; vm.unitsDialog = null;
                     });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
@@ -868,12 +868,32 @@
                 area: 'Area: click each corner; double-click, Enter or click the first corner to finish. Backspace removes the last corner, Esc cancels.',
                 perimeter: 'Perimeter: click each corner of the boundary; double-click, Enter or click the first corner to finish.',
                 calibrate: 'Calibrate: drag along a dimension you know (e.g. a grid line distance), then enter its real length.',
+                count: 'Count: click each item to count. Enter starts a new count; Backspace removes the last marker.',
+                perpendicular: 'Perpendicular distance: drag along the reference line (e.g. a grid line), then click the point to measure from.',
                 comment: 'Comment: click where the comment goes, then type it.',
                 strikeout: 'Strikeout: drag over the incorrect text.',
                 underline: 'Underline: drag over the important text.',
                 replace: 'Replace text: drag over the text to replace, then type the correction.',
                 revtag: 'Revision tag: click where the tag goes (it shows the current revision).'
             };
+
+            // One key per tool (no Ctrl), shown on hover. Pressing the active tool's key again goes back to Pan.
+            var TOOL_KEYS = {
+                pan: 'V', highlight: 'H', rect: 'R', ellipse: 'E', cloud: 'C', line: 'L', arrow: 'A', pen: 'F',
+                text: 'T', callout: 'Q', distance: 'D', hdistance: 'X', vdistance: 'Y', perpendicular: 'N',
+                area: 'G', perimeter: 'O', count: 'K', calibrate: 'B', comment: 'M', strikeout: 'S', underline: 'U',
+                replace: 'Shift+T', revtag: 'Shift+R'
+            };
+            var TOOL_BY_KEY = {};
+            Object.keys(TOOL_KEYS).forEach(function (tool) { TOOL_BY_KEY[TOOL_KEYS[tool]] = tool; });
+
+            vm.toolKey = function (tool) { return TOOL_KEYS[tool] || ''; };
+
+            /** The tool for a key press (letters, with or without Shift), or null. */
+            function toolForKey(event) {
+                if (event.ctrlKey || event.metaKey || event.altKey || !/^[a-z]$/i.test(event.key)) { return null; }
+                return TOOL_BY_KEY[(event.shiftKey ? 'Shift+' : '') + event.key.toUpperCase()] || null;
+            }
 
             /** Picks a tool; picking the active markup tool again goes back to Pan. Esc also returns to Pan. */
             vm.selectTool = function (tool) {
@@ -906,7 +926,9 @@
                 if (revision && !markup.revision) { markup = angular.extend({}, markup, { revision: revision.label }); }
                 var added = highlightService.add(pageNumber, markup);
                 vm.selectedHighlightId = added.id;
-                if (markupGeometry.isMeasure(added)) {
+                if (added.type === 'count') {
+                    vm.status = vm.markupLabel(added) + '. Click the next item; Enter starts a new count.';
+                } else if (markupGeometry.isMeasure(added)) {
                     vm.status = vm.markupLabel(added) + (scaleService.forPage(pageNumber).isDefault
                         ? ' (paper size: no scale set; use Calibrate or Scale on the Measure tab)' : '');
                 }
@@ -1052,7 +1074,10 @@
                 vm.status = vm.markupLabel(updated) + ' changed.';
             };
 
-            vm.moveMarkup = function (id, markup) { highlightService.update(id, markup); };
+            vm.moveMarkup = function (id, markup) {
+                var updated = highlightService.update(id, markup);
+                if (updated && updated.type === 'count') { vm.status = vm.markupLabel(updated) + '.'; }
+            };
 
             // ----- Revision: compare / overlay with another revision -----
             vm.compare = { fileName: '', pageCount: 0, mode: 'diff', busy: false, result: null, active: -1 };
@@ -1304,6 +1329,20 @@
             // ----- Measurement scale -----
             vm.scaleUnits = scaleService.UNITS;
             vm.scaleRatios = scaleService.PRESET_RATIOS;
+            // Common architectural and engineering scales for the Custom mode.
+            vm.customScales = [
+                ['1/16', 'in', '1', 'ft'], ['3/32', 'in', '1', 'ft'], ['1/8', 'in', '1', 'ft'], ['3/16', 'in', '1', 'ft'],
+                ['1/4', 'in', '1', 'ft'], ['3/8', 'in', '1', 'ft'], ['1/2', 'in', '1', 'ft'], ['3/4', 'in', '1', 'ft'],
+                ['1', 'in', '1', 'ft'], ['1 1/2', 'in', '1', 'ft'], ['3', 'in', '1', 'ft'],
+                ['1', 'in', '10', 'ft'], ['1', 'in', '20', 'ft'], ['1', 'in', '30', 'ft'], ['1', 'in', '40', 'ft'],
+                ['1', 'in', '50', 'ft'], ['1', 'in', '60', 'ft'], ['1', 'in', '100', 'ft'],
+                ['1', 'cm', '1', 'm'], ['1', 'cm', '5', 'm']
+            ].map(function (c) {
+                var name = c[1] === 'in' && c[3] === 'ft' && c[2] === '1' ? c[0] + '" = 1\'-0"'
+                    : c[0] + (c[1] === 'in' ? '"' : ' ' + c[1]) + ' = ' + c[2] + (c[3] === 'ft' ? '\'' : ' ' + c[3]);
+                return { label: name, paper: c[0], paperUnit: c[1], real: c[2], realUnit: c[3] };
+            });
+            vm.paperUnits = ['in', 'mm', 'cm'];
             vm.scaleDialog = null;  // { pageNumber, measured, mode, length, ratio, unit, allPages, error } while open
 
             /** Scale of the current page, as shown on the Measure tab. */
@@ -1324,6 +1363,7 @@
                     length: '',
                     ratio: current.label.indexOf('1:') === 0 && !current.isDefault ? current.label.slice(2) : '100',
                     unit: current.isDefault ? 'mm' : current.unit,
+                    paper: '1/4', paperUnit: 'in', real: '1', realUnit: 'ft', preset: '',
                     allPages: true,
                     error: ''
                 };
@@ -1335,6 +1375,15 @@
 
             vm.closeScaleDialog = function () { vm.scaleDialog = null; };
 
+            /** Custom mode: a common scale picked from the list fills in both sides. */
+            vm.applyCustomPreset = function () {
+                var d = vm.scaleDialog, preset = d && vm.customScales[Number(d.preset)];
+                if (!preset) { return; }
+                d.mode = 'custom';
+                d.paper = preset.paper; d.paperUnit = preset.paperUnit; d.real = preset.real; d.realUnit = preset.realUnit;
+                d.error = '';
+            };
+
             function parseNumber(text) {
                 var value = parseFloat(String(text || '').replace(/,/g, '').trim());
                 return isFinite(value) && value > 0 ? value : null;
@@ -1345,9 +1394,17 @@
                 if (!d) { return; }
                 var scale;
                 if (d.mode === 'known') {
-                    var length = parseNumber(d.length);
-                    if (!length || length > 1e7) { d.error = 'Enter the real length of the line you drew, e.g. 6000 (mm) or 6 (m).'; return; }
+                    var length = scaleService.parseLength(d.length, d.unit);
+                    if (!length || length > 1e7) { d.error = 'Enter the real length of the line you drew, e.g. 6000 (mm), 6 (m) or 12\'6" (feet and inches).'; return; }
                     scale = scaleService.fromCalibration(d.measured, length, d.unit);
+                } else if (d.mode === 'custom') {
+                    var paper = scaleService.parseLength(d.paper, d.paperUnit), real = scaleService.parseLength(d.real, d.realUnit);
+                    if (!paper || paper > 1e5) { d.error = 'Enter the length on the drawing, e.g. 1/4 (in) or 10 (mm).'; return; }
+                    if (!real || real > 1e7) { d.error = 'Enter the real length it stands for, e.g. 1 (ft) or 20 (ft).'; return; }
+                    var label = String(d.paper).trim() + (d.paperUnit === 'in' ? '"' : ' ' + d.paperUnit) + ' = ' +
+                                String(d.real).trim() + (d.realUnit === 'ft' ? (/^\d+$/.test(String(d.real).trim()) ? '\'-0"' : '\'')
+                                                                             : d.realUnit === 'in' ? '"' : ' ' + d.realUnit);
+                    scale = scaleService.fromCustom(paper, d.paperUnit, real, d.realUnit, label);
                 } else {
                     var ratio = parseNumber(String(d.ratio || '').replace(/^\s*1\s*:/, ''));
                     if (!ratio || ratio > 100000) { d.error = 'Enter the scale as a number, e.g. 100 for 1:100.'; return; }
@@ -1360,6 +1417,51 @@
                 vm.status = (d.mode === 'known'
                     ? 'Scale calibrated (the line is ' + d.length + ' ' + d.unit + ') for ' + where
                     : 'Scale ' + scale.label + ' (' + scale.unit + ') set for ' + where) + '. Measurements use it now.';
+            };
+
+            // ----- Units and precision of measurements (global, remembered) -----
+            var UNITS_KEY = 'pdfViewer.measureUnits';
+            vm.lengthChoices = scaleService.LENGTH_CHOICES;
+            vm.areaChoices = scaleService.AREA_CHOICES;
+            vm.fractionChoices = [1, 2, 4, 8, 16, 32, 64];
+            vm.unitsDialog = null;      // { unit, area, decimals, fraction } while open
+            (function () {
+                try {
+                    var saved = JSON.parse($window.localStorage.getItem(UNITS_KEY) || 'null');
+                    if (saved) { scaleService.setDisplay(saved); }
+                } catch (e) { /* defaults */ }
+            }());
+
+            /** "m · 0.00", "ft-in · 1/16"" or "As scale" for the Measure tab. */
+            vm.unitsLabel = function () {
+                var d = scaleService.getDisplay();
+                var unit = d.unit === 'scale' ? 'Scale unit' : d.unit;
+                var precision = d.unit === 'ft-in' ? (d.fraction === 1 ? '1"' : '1/' + d.fraction + '"')
+                    : d.decimals === 'auto' ? 'auto' : d.decimals === 0 ? '0' : '0.' + new Array(d.decimals + 1).join('0');
+                return unit + ' \u00b7 ' + precision;
+            };
+
+            vm.openUnitsDialog = function () {
+                var d = scaleService.getDisplay();
+                vm.unitsDialog = { unit: d.unit, area: d.area, decimals: String(d.decimals), fraction: d.fraction };
+            };
+
+            vm.applyUnitsDialog = function () {
+                var d = vm.unitsDialog;
+                if (!d) { return; }
+                var settings = { unit: d.unit, area: d.area, decimals: d.decimals === 'auto' ? 'auto' : Number(d.decimals), fraction: Number(d.fraction) };
+                scaleService.setDisplay(settings);
+                try { $window.localStorage.setItem(UNITS_KEY, JSON.stringify(scaleService.getDisplay())); } catch (e) { /* not remembered */ }
+                vm.unitsDialog = null;
+                vm.status = 'Measurements are shown in ' + vm.unitsLabel().replace(' \u00b7 ', ', precision ') + '.';
+            };
+
+            /** How 3.5 m looks with the dialog's settings. */
+            vm.unitsSample = function () {
+                var d = vm.unitsDialog;
+                if (!d) { return ''; }
+                var unit = d.unit === 'scale' ? scaleService.forPage(vm.currentPage).unit : d.unit;
+                return scaleService.formatMetres(3.5, unit, d.decimals === 'auto' ? 'auto' : Number(d.decimals), Number(d.fraction));
             };
 
             vm.onCalibrate = function (pageNumber, length) { vm.openScaleDialog(pageNumber, length); };
@@ -1478,6 +1580,14 @@
                 if (tag === 'INPUT' || tag === 'TEXTAREA' || !vm.hasDocument()) {
                     return;
                 }
+                var keyTool = toolForKey(event);
+                if (keyTool) {
+                    event.preventDefault();
+                    $scope.$apply(function () {
+                        if (keyTool === 'pan') { vm.selectPanTool(); } else { vm.selectTool(keyTool); }
+                    });
+                    return;
+                }
                 $scope.$apply(function () {
                     if ((event.key === 'Delete' || event.key === 'Backspace') && vm.selectedHighlightId !== null) {
                         vm.removeSelectedHighlight();
@@ -1490,6 +1600,12 @@
                     } else if (event.key === 'ArrowRight' || (vm.fullScreen && event.key === 'PageDown')) {
                         vm.nextPage();
                         if (event.key !== 'ArrowRight') { event.preventDefault(); }
+                    } else if (event.key === 'Home') {
+                        vm.firstPage();
+                        event.preventDefault();
+                    } else if (event.key === 'End') {
+                        vm.lastPage();
+                        event.preventDefault();
                     } else if (event.key === 'ArrowLeft' || (vm.fullScreen && event.key === 'PageUp')) {
                         vm.previousPage();
                         if (event.key !== 'ArrowLeft') { event.preventDefault(); }

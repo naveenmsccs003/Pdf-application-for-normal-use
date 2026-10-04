@@ -63,6 +63,8 @@
     <symbol id="i-continuous" viewBox="0 0 24 24"><rect x="6" y="1" width="12" height="9" rx="1"/><rect x="6" y="14" width="12" height="9" rx="1"/><path d="M21 5v14M19 17l2 2 2-2"/></symbol>
     <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
     <symbol id="i-fullscreen-exit" viewBox="0 0 24 24"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></symbol>
+    <symbol id="i-count" viewBox="0 0 24 24"><circle cx="6" cy="7" r="3"/><circle cx="18" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M15 17h6M18 14v6"/></symbol>
+    <symbol id="i-perpendicular" viewBox="0 0 24 24"><path d="M3 20h18M12 20V5M12 15h4v5"/><circle cx="12" cy="5" r="1.5"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -191,25 +193,26 @@
                         aria-label="New PDF" title="Create a new PDF with blank pages">
                     <svg class="icon"><use href="#i-new"></use></svg><span>New</span>
                 </button>
-                <label class="tool tool-labelled tool-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}" title="Open a PDF from your computer">
+                <label class="tool tool-labelled tool-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}" title="Open a PDF from your computer"
+                       aria-label="Open PDF" data-shortcut="{{ vm.modKey }}O">
                     <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
                            on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
                     <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
                 </label>
                 <button type="button" class="tool tool-labelled tool-primary" ng-if="vm.isDesktop" ng-click="vm.openFile()" ng-disabled="vm.busy"
-                        aria-label="Open PDF" title="Open a PDF from your computer">
+                        aria-label="Open PDF" title="Open a PDF from your computer" data-shortcut="{{ vm.modKey }}O">
                     <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.save(false)" ng-disabled="!vm.canSave()"
-                        aria-label="Save" title="{{ vm.isDesktop ? 'Save the page changes to the file' : 'Download the PDF with its page changes' }}">
+                        aria-label="Save" title="{{ vm.isDesktop ? 'Save the page changes to the file' : 'Download the PDF with its page changes' }}" data-shortcut="{{ vm.modified ? vm.modKey + 'S' : '' }}">
                     <svg class="icon"><use href="#i-save"></use></svg><span>Save</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.save(true)" ng-disabled="!vm.canSave()"
-                        aria-label="Save as" title="Save the PDF as another file ({{ vm.modKey }}Shift+S)">
+                        aria-label="Save as" title="Save the PDF as another file ({{ vm.modKey }}Shift+S)" data-shortcut="{{ vm.modKey }}Shift+S">
                     <svg class="icon"><use href="#i-save-as"></use></svg><span>Save as</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
-                        aria-label="Save copy" title="Save a copy of the PDF with the markups (the open PDF is not changed)">
+                        aria-label="Save copy" title="Save a copy of the PDF with the markups (the open PDF is not changed)" data-shortcut="{{ vm.modified ? '' : vm.modKey + 'S' }}">
                     <svg class="icon"><use href="#i-save"></use></svg><span>Save copy</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.closeDocument()" ng-disabled="!vm.hasDocument() || vm.busy"
@@ -306,13 +309,13 @@
         <div class="ribbon-group" role="group" aria-label="Zoom level">
             <div class="ribbon-tools">
                 <button type="button" class="tool" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()"
-                        aria-label="Zoom out" title="Zoom out ({{ vm.modKey }}&minus;)">
+                        aria-label="Zoom out" title="Zoom out ({{ vm.modKey }}&minus;)" data-shortcut="{{ vm.modKey }}−">
                     <svg class="icon"><use href="#i-zoom-out"></use></svg>
                 </button>
                 <button type="button" class="tool ribbon-zoom-level" ng-click="vm.openCustomZoom()" ng-disabled="!vm.hasDocument()"
                         aria-label="Custom zoom" title="Custom zoom: type a percentage">{{ vm.hasDocument() ? vm.zoomPercent() : '&ndash;' }}</button>
                 <button type="button" class="tool" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()"
-                        aria-label="Zoom in" title="Zoom in ({{ vm.modKey }}+)">
+                        aria-label="Zoom in" title="Zoom in ({{ vm.modKey }}+)" data-shortcut="{{ vm.modKey }}+">
                     <svg class="icon"><use href="#i-zoom-in"></use></svg>
                 </button>
             </div>
@@ -332,7 +335,7 @@
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.resetZoom()" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': !vm.fitMode && vm.hasDocument() && vm.zoomPercent() === '100%'}"
-                        aria-label="Actual size" title="Actual size: 100% ({{ vm.modKey }}0)">
+                        aria-label="Actual size" title="Actual size: 100% ({{ vm.modKey }}0)" data-shortcut="{{ vm.modKey }}0">
                     <svg class="icon"><use href="#i-actual-size"></use></svg><span>Actual size</span>
                 </button>
             </div>
@@ -345,20 +348,20 @@
         <div class="ribbon-group" role="group" aria-label="Pages">
             <div class="ribbon-tools">
                 <button type="button" class="tool tool-labelled" ng-click="vm.firstPage()" ng-disabled="!vm.canGoPrevious()"
-                        aria-label="First page" title="First page">
+                        aria-label="First page" title="First page" data-shortcut="Home">
                     <svg class="icon"><use href="#i-first"></use></svg><span>First</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()"
-                        aria-label="Previous page" title="Previous page (&larr;)">
+                        aria-label="Previous page" title="Previous page (&larr;)" data-shortcut="←">
                     <svg class="icon"><use href="#i-prev"></use></svg><span>Previous</span>
                 </button>
                 <span class="ribbon-page" aria-live="polite">Page {{ vm.hasDocument() ? vm.currentPage : '&ndash;' }} of {{ vm.pageCount || '&ndash;' }}</span>
                 <button type="button" class="tool tool-labelled" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()"
-                        aria-label="Next page" title="Next page (&rarr;)">
+                        aria-label="Next page" title="Next page (&rarr;)" data-shortcut="→">
                     <span>Next</span><svg class="icon"><use href="#i-next"></use></svg>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.lastPage()" ng-disabled="!vm.canGoNext()"
-                        aria-label="Last page" title="Last page">
+                        aria-label="Last page" title="Last page" data-shortcut="End">
                     <span>Last</span><svg class="icon"><use href="#i-last"></use></svg>
                 </button>
             </div>
@@ -377,10 +380,10 @@
                     <svg class="icon"><use href="#i-continuous"></use></svg><span>Continuous</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.toggleFullScreen()" ng-disabled="!vm.hasDocument()"
-                        aria-label="Full screen" title="Full screen ({{ vm.modKey }}L; Esc leaves)">
+                        aria-label="Full screen" title="Full screen ({{ vm.modKey }}L; Esc leaves)" data-shortcut="{{ vm.modKey }}L">
                     <svg class="icon"><use href="#i-fullscreen"></use></svg><span>Full screen</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" data-shortcut="V" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('pan')}" aria-pressed="{{ vm.isTool('pan') }}"
                         aria-label="Pan tool" title="Pan: drag the page to move around (Space or the middle button pans in any tool)">
                     <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
@@ -392,7 +395,7 @@
             <div class="ribbon-tools">
                 <button type="button" class="tool tool-labelled" ng-click="find.isOpen ? find.close() : find.show()" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': find.isOpen}" aria-pressed="{{ find.isOpen }}"
-                        aria-label="Find" title="Find text ({{ vm.modKey }}F)">
+                        aria-label="Find" title="Find text ({{ vm.modKey }}F)" data-shortcut="{{ vm.modKey }}F">
                     <svg class="icon"><use href="#i-search"></use></svg><span>Find</span>
                 </button>
             </div>
@@ -404,12 +407,12 @@
     <div class="ribbon-panel" role="tabpanel" id="ribbon-markup" aria-labelledby="ribbon-tab-markup" ng-show="vm.ribbonTab === 'markup'">
         <div class="ribbon-group" role="group" aria-label="Markup tools">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" data-shortcut="V" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('pan')}" aria-pressed="{{ vm.isTool('pan') }}"
                         aria-label="Pan" title="Pan: drag the page to move around (middle mouse button or hold Space in any tool)">
                     <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
                 </button>
-                <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.selectTool('highlight')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled tool-highlight" ng-click="vm.selectTool('highlight')" data-shortcut="{{ vm.toolKey('highlight') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('highlight')}" aria-pressed="{{ vm.isTool('highlight') }}" aria-label="Highlight"
                         title="Highlight: drag over the page (Esc to exit)">
                     <svg class="icon"><use href="#i-highlight"></use></svg><span>Highlight</span>
@@ -419,32 +422,32 @@
         </div>
         <div class="ribbon-group" role="group" aria-label="Shapes">
             <div class="ribbon-tools">
-                <button type="button" class="tool" ng-click="vm.selectTool('rect')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool" ng-click="vm.selectTool('rect')" data-shortcut="{{ vm.toolKey('rect') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('rect')}" aria-pressed="{{ vm.isTool('rect') }}"
                         aria-label="Rectangle" title="Rectangle: mark an area (Shift: square)">
                     <svg class="icon"><use href="#i-rect"></use></svg>
                 </button>
-                <button type="button" class="tool" ng-click="vm.selectTool('ellipse')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool" ng-click="vm.selectTool('ellipse')" data-shortcut="{{ vm.toolKey('ellipse') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('ellipse')}" aria-pressed="{{ vm.isTool('ellipse') }}"
                         aria-label="Ellipse" title="Ellipse: circle a detail (Shift: circle)">
                     <svg class="icon"><use href="#i-ellipse"></use></svg>
                 </button>
-                <button type="button" class="tool" ng-click="vm.selectTool('cloud')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool" ng-click="vm.selectTool('cloud')" data-shortcut="{{ vm.toolKey('cloud') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('cloud')}" aria-pressed="{{ vm.isTool('cloud') }}"
                         aria-label="Cloud" title="Cloud: mark a revision or problem area">
                     <svg class="icon"><use href="#i-cloud"></use></svg>
                 </button>
-                <button type="button" class="tool" ng-click="vm.selectTool('line')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool" ng-click="vm.selectTool('line')" data-shortcut="{{ vm.toolKey('line') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('line')}" aria-pressed="{{ vm.isTool('line') }}"
                         aria-label="Line" title="Line: dimensions or rebar direction (Shift: 45° steps)">
                     <svg class="icon"><use href="#i-line"></use></svg>
                 </button>
-                <button type="button" class="tool" ng-click="vm.selectTool('arrow')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool" ng-click="vm.selectTool('arrow')" data-shortcut="{{ vm.toolKey('arrow') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('arrow')}" aria-pressed="{{ vm.isTool('arrow') }}"
                         aria-label="Arrow" title="Arrow: point to a location (Shift: 45° steps)">
                     <svg class="icon"><use href="#i-arrow"></use></svg>
                 </button>
-                <button type="button" class="tool" ng-click="vm.selectTool('pen')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool" ng-click="vm.selectTool('pen')" data-shortcut="{{ vm.toolKey('pen') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('pen')}" aria-pressed="{{ vm.isTool('pen') }}"
                         aria-label="Freehand" title="Freehand: draw on the drawing">
                     <svg class="icon"><use href="#i-pen"></use></svg>
@@ -454,12 +457,12 @@
         </div>
         <div class="ribbon-group" role="group" aria-label="Notes">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('text')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('text')" data-shortcut="{{ vm.toolKey('text') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('text')}" aria-pressed="{{ vm.isTool('text') }}"
                         aria-label="Text note" title="Text note: click where the note goes">
                     <svg class="icon"><use href="#i-text"></use></svg><span>Text</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('callout')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('callout')" data-shortcut="{{ vm.toolKey('callout') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('callout')}" aria-pressed="{{ vm.isTool('callout') }}"
                         aria-label="Callout" title="Callout: drag from the point to where the note goes">
                     <svg class="icon"><use href="#i-callout"></use></svg><span>Callout</span>
@@ -483,7 +486,7 @@
         <div class="ribbon-group" role="group" aria-label="Markup actions">
             <div class="ribbon-tools">
                 <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
-                        aria-label="Remove" title="Remove selected markup (Delete)">
+                        aria-label="Remove" title="Remove selected markup (Delete)" data-shortcut="Delete">
                     <svg class="icon"><use href="#i-trash"></use></svg><span>Remove</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.clearHighlights()" ng-disabled="!vm.highlights.length"
@@ -503,32 +506,37 @@
     <div class="ribbon-panel" role="tabpanel" id="ribbon-measure" aria-labelledby="ribbon-tab-measure" ng-show="vm.ribbonTab === 'measure'">
         <div class="ribbon-group" role="group" aria-label="Length">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('distance')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('distance')" data-shortcut="{{ vm.toolKey('distance') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('distance')}" aria-pressed="{{ vm.isTool('distance') }}"
                         aria-label="Distance" title="Distance: check a distance on the drawing (Shift: 45° steps)">
                     <svg class="icon"><use href="#i-distance"></use></svg><span>Distance</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('hdistance')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('hdistance')" data-shortcut="{{ vm.toolKey('hdistance') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('hdistance')}" aria-pressed="{{ vm.isTool('hdistance') }}"
                         aria-label="Horizontal distance" title="Horizontal distance: check a horizontal dimension">
                     <svg class="icon"><use href="#i-hdistance"></use></svg><span>Horizontal</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('vdistance')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('vdistance')" data-shortcut="{{ vm.toolKey('vdistance') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('vdistance')}" aria-pressed="{{ vm.isTool('vdistance') }}"
                         aria-label="Vertical distance" title="Vertical distance: check a vertical dimension">
                     <svg class="icon"><use href="#i-vdistance"></use></svg><span>Vertical</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('perpendicular')" data-shortcut="{{ vm.toolKey('perpendicular') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('perpendicular')}" aria-pressed="{{ vm.isTool('perpendicular') }}"
+                        aria-label="Perpendicular distance" title="Perpendicular distance: drag along a reference line, then click the point">
+                    <svg class="icon"><use href="#i-perpendicular"></use></svg><span>Perpendicular</span>
                 </button>
             </div>
             <span class="ribbon-caption">Length</span>
         </div>
         <div class="ribbon-group" role="group" aria-label="Area">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('area')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('area')" data-shortcut="{{ vm.toolKey('area') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('area')}" aria-pressed="{{ vm.isTool('area') }}"
                         aria-label="Area" title="Area: measure a slab or structural area (click the corners)">
                     <svg class="icon"><use href="#i-area"></use></svg><span>Area</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('perimeter')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('perimeter')" data-shortcut="{{ vm.toolKey('perimeter') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('perimeter')}" aria-pressed="{{ vm.isTool('perimeter') }}"
                         aria-label="Perimeter" title="Perimeter: measure a boundary (click the corners)">
                     <svg class="icon"><use href="#i-perimeter"></use></svg><span>Perimeter</span>
@@ -536,9 +544,19 @@
             </div>
             <span class="ribbon-caption">Area</span>
         </div>
+        <div class="ribbon-group" role="group" aria-label="Count">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('count')" data-shortcut="{{ vm.toolKey('count') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('count')}" aria-pressed="{{ vm.isTool('count') }}"
+                        aria-label="Count" title="Count: click each item (columns, piles, fixtures); Enter starts a new count">
+                    <svg class="icon"><use href="#i-count"></use></svg><span>Count</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Count</span>
+        </div>
         <div class="ribbon-group" role="group" aria-label="Scale">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('calibrate')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('calibrate')" data-shortcut="{{ vm.toolKey('calibrate') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('calibrate')}" aria-pressed="{{ vm.isTool('calibrate') }}"
                         aria-label="Calibrate" title="Scale calibration: drag along a dimension you know, then enter its length">
                     <svg class="icon"><use href="#i-ruler"></use></svg><span>Calibrate</span>
@@ -548,8 +566,12 @@
                         aria-label="Drawing scale" title="Drawing scale of this page: click to set a scale such as 1:100">
                     <span>{{ vm.hasDocument() ? vm.scaleLabel() : 'Scale' }}</span>
                 </button>
+                <button type="button" class="tool tool-labelled ribbon-units" ng-click="vm.openUnitsDialog()"
+                        aria-label="Units and precision" title="Units and precision: show measurements in other units, with more or fewer decimals">
+                    <span>{{ vm.unitsLabel() }}</span>
+                </button>
             </div>
-            <span class="ribbon-caption">Scale</span>
+            <span class="ribbon-caption">Scale &amp; units</span>
         </div>
     </div>
 
@@ -557,12 +579,12 @@
     <div class="ribbon-panel" role="tabpanel" id="ribbon-review" aria-labelledby="ribbon-tab-review" ng-show="vm.ribbonTab === 'review'">
         <div class="ribbon-group" role="group" aria-label="Comments">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('comment')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('comment')" data-shortcut="{{ vm.toolKey('comment') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('comment')}" aria-pressed="{{ vm.isTool('comment') }}"
                         aria-label="Comment" title="Comment: add a review comment (a note icon; select it to read)">
                     <svg class="icon"><use href="#i-comment"></use></svg><span>Comment</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('text')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('text')" data-shortcut="{{ vm.toolKey('text') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('text')}" aria-pressed="{{ vm.isTool('text') }}"
                         aria-label="Add note" title="Add note: an explanation shown on the page">
                     <svg class="icon"><use href="#i-note"></use></svg><span>Add note</span>
@@ -572,17 +594,17 @@
         </div>
         <div class="ribbon-group" role="group" aria-label="Text marks">
             <div class="ribbon-tools">
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('strikeout')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('strikeout')" data-shortcut="{{ vm.toolKey('strikeout') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('strikeout')}" aria-pressed="{{ vm.isTool('strikeout') }}"
                         aria-label="Strikeout" title="Strikeout: mark incorrect information (drag over the text)">
                     <svg class="icon"><use href="#i-strikeout"></use></svg><span>Strikeout</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('underline')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('underline')" data-shortcut="{{ vm.toolKey('underline') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('underline')}" aria-pressed="{{ vm.isTool('underline') }}"
                         aria-label="Underline" title="Underline: mark important text (drag over the text)">
                     <svg class="icon"><use href="#i-underline"></use></svg><span>Underline</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('replace')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('replace')" data-shortcut="{{ vm.toolKey('replace') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('replace')}" aria-pressed="{{ vm.isTool('replace') }}"
                         aria-label="Replace text" title="Replace text: strike out text and show the correction">
                     <svg class="icon"><use href="#i-replace"></use></svg><span>Replace text</span>
@@ -597,7 +619,7 @@
                     <svg class="icon"><use href="#i-edit"></use></svg><span>Edit</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
-                        aria-label="Delete markup" title="Delete markup: remove the selected annotation (Delete)">
+                        aria-label="Delete markup" title="Delete markup: remove the selected annotation (Delete)" data-shortcut="Delete">
                     <svg class="icon"><use href="#i-trash"></use></svg><span>Delete</span>
                 </button>
             </div>
@@ -665,7 +687,7 @@
                         aria-label="Revisions" title="Revisions: the document's revision list; new markups belong to the current one">
                     <svg class="icon"><use href="#i-revisions"></use></svg><span>{{ vm.currentRevision() ? 'Rev ' + vm.currentRevision().label : 'Revisions' }}</span>
                 </button>
-                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('revtag')" ng-disabled="!vm.hasDocument()"
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('revtag')" data-shortcut="{{ vm.toolKey('revtag') }}" ng-disabled="!vm.hasDocument()"
                         ng-class="{'is-active': vm.isTool('revtag')}" aria-pressed="{{ vm.isTool('revtag') }}"
                         aria-label="Revision tag" title="Revision tag: a triangle with the current revision's label">
                     <svg class="icon"><use href="#i-revtag"></use></svg><span>Tag</span>
@@ -751,14 +773,14 @@
 
             <!-- Full screen: page controls over the page -->
             <div class="fullscreen-bar" role="toolbar" aria-label="Full screen controls" ng-if="vm.fullScreen">
-                <button type="button" class="tool" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()" aria-label="Previous page" title="Previous page">
+                <button type="button" class="tool" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()" aria-label="Previous page" title="Previous page" data-shortcut="←">
                     <svg class="icon"><use href="#i-prev"></use></svg></button>
                 <span class="fullscreen-page">{{ vm.currentPage }} / {{ vm.pageCount }}</span>
-                <button type="button" class="tool" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()" aria-label="Next page" title="Next page">
+                <button type="button" class="tool" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()" aria-label="Next page" title="Next page" data-shortcut="→">
                     <svg class="icon"><use href="#i-next"></use></svg></button>
-                <button type="button" class="tool" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()" aria-label="Zoom out" title="Zoom out">
+                <button type="button" class="tool" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()" aria-label="Zoom out" title="Zoom out" data-shortcut="{{ vm.modKey }}−">
                     <svg class="icon"><use href="#i-zoom-out"></use></svg></button>
-                <button type="button" class="tool" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()" aria-label="Zoom in" title="Zoom in">
+                <button type="button" class="tool" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()" aria-label="Zoom in" title="Zoom in" data-shortcut="{{ vm.modKey }}+">
                     <svg class="icon"><use href="#i-zoom-in"></use></svg></button>
                 <button type="button" class="tool" ng-click="vm.fitPage()" ng-class="{'is-active': vm.fitMode === 'page'}" aria-label="Fit Page" title="Fit page">
                     <svg class="icon"><use href="#i-fit-page"></use></svg></button>
@@ -768,7 +790,7 @@
                         ng-class="{'is-active': vm.viewMode === 'continuous'}" aria-pressed="{{ vm.viewMode === 'continuous' }}"
                         aria-label="Continuous scrolling" title="Continuous scrolling">
                     <svg class="icon"><use href="#i-continuous"></use></svg></button>
-                <button type="button" class="tool" ng-click="vm.toggleFullScreen()" aria-label="Exit full screen" title="Exit full screen (Esc)">
+                <button type="button" class="tool" ng-click="vm.toggleFullScreen()" aria-label="Exit full screen" title="Exit full screen (Esc)" data-shortcut="Esc">
                     <svg class="icon"><use href="#i-fullscreen-exit"></use></svg></button>
             </div>
 
@@ -877,11 +899,11 @@
 <footer class="status-bar">
     <div class="nav-group" role="group" aria-label="Page navigation">
         <button type="button" class="tool tool-sm" ng-click="vm.firstPage()" ng-disabled="!vm.canGoPrevious()"
-                aria-label="First page" title="First page">
+                aria-label="First page" title="First page" data-shortcut="Home">
             <svg class="icon"><use href="#i-first"></use></svg>
         </button>
         <button type="button" class="tool tool-sm" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()"
-                aria-label="Previous page" title="Previous page (←)">
+                aria-label="Previous page" title="Previous page (←)" data-shortcut="←">
             <svg class="icon"><use href="#i-prev"></use></svg>
         </button>
         <form class="page-form" novalidate ng-submit="vm.submitPageInput()">
@@ -890,11 +912,11 @@
             <span class="page-total">of {{ vm.pageCount || '–' }}</span>
         </form>
         <button type="button" class="tool tool-sm" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()"
-                aria-label="Next page" title="Next page (→)">
+                aria-label="Next page" title="Next page (→)" data-shortcut="→">
             <svg class="icon"><use href="#i-next"></use></svg>
         </button>
         <button type="button" class="tool tool-sm" ng-click="vm.lastPage()" ng-disabled="!vm.canGoNext()"
-                aria-label="Last page" title="Last page">
+                aria-label="Last page" title="Last page" data-shortcut="End">
             <svg class="icon"><use href="#i-last"></use></svg>
         </button>
     </div>
@@ -903,7 +925,7 @@
 
     <div class="zoom-group" role="group" aria-label="Zoom">
         <button type="button" class="tool tool-sm" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()"
-                aria-label="Zoom out" title="Zoom out">
+                aria-label="Zoom out" title="Zoom out" data-shortcut="{{ vm.modKey }}−">
             <svg class="icon"><use href="#i-zoom-out"></use></svg>
         </button>
         <form class="zoom-form" novalidate ng-submit="vm.applyZoomInput()">
@@ -912,7 +934,7 @@
                    ng-blur="vm.applyZoomInput()" ng-keydown="$event.key === 'Escape' && vm.revertZoomInput()" autocomplete="off">
         </form>
         <button type="button" class="tool tool-sm" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()"
-                aria-label="Zoom in" title="Zoom in">
+                aria-label="Zoom in" title="Zoom in" data-shortcut="{{ vm.modKey }}+">
             <svg class="icon"><use href="#i-zoom-in"></use></svg>
         </button>
     </div>
@@ -1093,13 +1115,29 @@
                        aria-label="Drawing scale ratio">
                 <datalist id="scale-ratios"><option ng-repeat="r in vm.scaleRatios" value="{{ r }}"></option></datalist>
             </label>
-            <label class="choice-indent">Unit
+            <label class="choice-indent" ng-show="vm.scaleDialog.mode !== 'custom'">Unit
                 <select ng-model="vm.scaleDialog.unit" ng-options="u for u in vm.scaleUnits" aria-label="Unit"></select>
             </label>
+            <label class="choice">
+                <input type="radio" name="scale-mode" value="custom" ng-model="vm.scaleDialog.mode"> Custom
+                <select class="scale-presets" ng-model="vm.scaleDialog.preset" ng-change="vm.applyCustomPreset()" aria-label="Common scales">
+                    <option value="">Common scales&hellip;</option>
+                    <option ng-repeat="c in vm.customScales" value="{{ $index }}">{{ c.label }}</option>
+                </select>
+            </label>
+            <div class="choice-indent scale-custom" ng-show="vm.scaleDialog.mode === 'custom'">
+                <input type="text" id="scale-paper-input" class="inline-text scale-number" autocomplete="off" ng-model="vm.scaleDialog.paper"
+                       ng-change="vm.scaleDialog.error = ''" aria-label="Length on the drawing" placeholder="1/4">
+                <select ng-model="vm.scaleDialog.paperUnit" ng-options="u for u in vm.paperUnits" aria-label="Drawing unit"></select>
+                <span>=</span>
+                <input type="text" id="scale-real-input" class="inline-text scale-number" autocomplete="off" ng-model="vm.scaleDialog.real"
+                       ng-change="vm.scaleDialog.error = ''" aria-label="Real length" placeholder="1">
+                <select ng-model="vm.scaleDialog.realUnit" ng-options="u for u in vm.scaleUnits" aria-label="Real unit"></select>
+            </div>
             <label class="choice"><input type="checkbox" ng-model="vm.scaleDialog.allPages"> Use for all pages
                 (otherwise page {{ vm.scaleDialog.pageNumber }} only)</label>
             <p class="dialog-note">Calibrate with a long dimension you trust, such as the distance between two grid lines.
-                Areas are shown in m&sup2; (mm, cm, m) or ft&sup2; (in, ft).</p>
+                Lengths can be typed as 6000, 1/4, 1 1/2 or 12'6". How values are shown (units, precision) is set with Units.</p>
             <div class="dialog-message is-error" role="alert" ng-if="vm.scaleDialog.error">{{ vm.scaleDialog.error }}</div>
         </form>
         <div class="dialog-footer">
@@ -1258,6 +1296,47 @@
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.unsavedDialog = null">Cancel</button>
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.discardAndContinue()">Don't save</button>
             <button type="button" class="tool tool-labelled tool-primary" id="unsaved-save" ng-click="vm.saveAndContinue()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Units and precision dialog (Measure > Units) -->
+<div class="dialog-backdrop" ng-if="vm.unitsDialog" ng-click="vm.unitsDialog = null">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="units-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="units-dialog-title">Units and precision</h2>
+            <button type="button" class="panel-close" ng-click="vm.unitsDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body pages-form" novalidate ng-submit="vm.applyUnitsDialog()" id="units-form">
+            <div class="pages-field">
+                <label for="units-length">Lengths in</label>
+                <select id="units-length" ng-model="vm.unitsDialog.unit" ng-options="c.value as c.label for c in vm.lengthChoices"></select>
+            </div>
+            <div class="pages-field">
+                <label for="units-area">Areas in</label>
+                <select id="units-area" ng-model="vm.unitsDialog.area" ng-options="c.value as c.label for c in vm.areaChoices"></select>
+            </div>
+            <div class="pages-field" ng-if="vm.unitsDialog.unit !== 'ft-in'">
+                <label for="units-decimals">Precision</label>
+                <select id="units-decimals" ng-model="vm.unitsDialog.decimals">
+                    <option value="auto">Automatic</option><option value="0">0</option><option value="1">0.0</option>
+                    <option value="2">0.00</option><option value="3">0.000</option><option value="4">0.0000</option>
+                </select>
+            </div>
+            <div class="pages-field" ng-if="vm.unitsDialog.unit === 'ft-in'">
+                <label for="units-fraction">Round to</label>
+                <select id="units-fraction" ng-model="vm.unitsDialog.fraction"
+                        ng-options="f as (f === 1 ? '1&quot;' : '1/' + f + '&quot;') for f in vm.fractionChoices"></select>
+            </div>
+            <p class="dialog-note">Example: 3.5 m shows as <strong class="units-sample">{{ vm.unitsSample() }}</strong>.
+                Scales keep their own unit; this only changes how values are shown (on the page, in the list, the report
+                and saved copies). Applies to every document.</p>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.unitsDialog = null">Cancel</button>
+            <button type="submit" form="units-form" class="tool tool-labelled tool-primary">Apply</button>
         </div>
     </div>
 </div>

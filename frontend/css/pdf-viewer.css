@@ -322,6 +322,39 @@ html, body {
 .tool.is-active { background: var(--tool-active); border-color: var(--primary); color: var(--primary); }
 .tool-labelled { padding: 0 7px 0 5px; }
 
+/* The ribbon shows icons only; the name (and shortcut) appears on hover (toolTipsDirective.js).
+   Buttons without an icon (scale, units, zoom level) keep their text. */
+.ribbon-panel .tool-labelled:has(> svg) { min-width: 30px; height: 30px; padding: 0 6px; }
+.ribbon-panel .tool-labelled:has(> svg) > span { display: none; }
+.ribbon-panel .tool-labelled:has(> svg) .icon { width: 19px; height: 19px; }
+
+.tool-tip {
+    position: fixed;
+    z-index: 300;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 320px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: #24292f;
+    color: #ffffff;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+}
+.tool-tip[hidden] { display: none; }
+.tool-tip kbd {
+    padding: 0 5px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 3px;
+    color: #d0d7de;
+    font: inherit;
+    font-size: 11px;
+}
+
 .tool-primary { background: var(--primary); color: var(--on-primary); }
 .tool-primary:hover:not(:disabled):not(.is-disabled) { background: var(--primary-hover); }
 .tool-primary:focus-within { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -864,6 +897,19 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 .ribbon-scale { min-width: 92px; font-variant-numeric: tabular-nums; }
 .ribbon-scale.is-unset { color: var(--error-text); }
 .scale-form .scale-number { width: 90px; }
+.scale-form .scale-custom { flex-wrap: wrap; }
+.scale-form .scale-custom .scale-number { width: 64px; }
+.scale-form select, .scale-presets {
+    height: 26px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+}
+.scale-presets { margin-left: 8px; }
+.ribbon-units { min-width: 92px; font-variant-numeric: tabular-nums; }
 .scale-form .choice { align-items: center; }
 
 

@@ -67,8 +67,9 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
 - **Menu bar**: **File** (New PDF, Open, Close PDF, Save, Save as, Save copy with markups, Recent files, Clear recent files),
   **Edit** (Find, Find next, Find previous) and **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
   through and between menus, Esc closes them
-- **Tool bar** (ribbon): category tabs, each showing its tools in captioned groups; panel switches on the right.
-  Arrow keys, Home and End move between the tabs.
+- **Tool bar** (ribbon): category tabs, each showing its tools as icons in captioned groups; panel switches on the
+  right. Hovering over an icon (or reaching it with Tab) shows its name and shortcut key. Arrow keys, Home and End
+  move between the tabs.
   - **File**: New, Open PDF, Save, Save as, Save copy, Close; Merge, Split, Compress, Convert
   - **Pages**: Blank page, From file; Move, Duplicate, Delete; Rotate left / right; Extract, Replace (see below)
   - **Zoom**: zoom out / level (click for a custom zoom) / zoom in; Fit page, Fit width, Actual size
@@ -98,15 +99,24 @@ On the **Measure** tab (web and desktop):
 | --- | --- | --- |
 | **Distance** | drag between two points (Shift: 45° steps) | straight-line length |
 | **Horizontal** / **Vertical** | drag between two points | only the horizontal / vertical part, drawn as a dimension line |
-| **Area** | click each corner; double-click, **Enter** or click the first corner to finish | area in m² (mm, cm, m) or ft² (in, ft) |
+| **Perpendicular** | drag along a reference line (e.g. a grid line), then click a point | the distance from the point square to the line (extended past its ends if needed), with a right-angle mark |
+| **Area** | click each corner; double-click, **Enter** or click the first corner to finish | area (m² or ft² by default) |
 | **Perimeter** | click each corner of the boundary, finish the same way | length of the closed boundary |
+| **Count** | click each item (columns, piles, fixtures); **Enter** starts a new count, **Backspace** removes the last item | the number of items, a marker on each (up to 200 per count) |
 | **Calibrate** | drag along a dimension you know (e.g. between two grid lines), enter its real length | sets the scale |
 
 - **Backspace** removes the last corner, **Esc** cancels the unfinished area. Measurements use the colour chosen on the
   Markup tab and are listed (with their values) in the Markups panel.
 - The **scale** button shows the current page's scale; click it to pick a ratio such as 1:100 and the unit (mm, cm, m,
-  in, ft). A scale applies to all pages or to one page (drawing sets often mix scales). Until a scale is set (shown in
-  red), values are paper sizes at 1:1. Changing the scale updates every measurement on those pages.
+  in, ft), or a **Custom** scale: a length on the drawing = a real length, such as 1/4" = 1'-0" or 1" = 20' (common
+  architectural and engineering scales are in a list). A scale applies to all pages or to one page (drawing sets often
+  mix scales). Until a scale is set (shown in red), values are paper sizes at 1:1. Changing the scale updates every
+  measurement on those pages.
+- Lengths can be typed as `6000`, `1,250.5`, `1/4`, `1 1/2`, or in feet and inches (`12'6"`, `12'-6 1/2"`, `6"`).
+- **Units** (next to the scale) sets how values are shown, for every document: lengths in the scale's own unit or
+  converted to mm, cm, m, km, in, ft, yd or feet-and-inches (`12'-6 1/2"`); areas automatically (m² or ft²) or in
+  mm², cm², m², ha, km², in², ft², yd² or acres; precision of 0–4 decimals (or automatic), or for feet-and-inches the
+  nearest 1", 1/2" … 1/64". The setting is remembered and also used by the Markups panel, the report and saved copies.
 - Scales are kept for the open document only. **Save copy with markups** writes each measurement as a Stamp annotation
   with its lines, area fill and value, so it looks the same in other PDF viewers.
 
@@ -145,6 +155,25 @@ On the **Revision** tab (web and desktop):
 - **Markup report**: every markup with page, type, content (text or measured value), colour, revision and time, with
   counts by type and page; for all markups or one revision. **Save CSV** (opens in Excel) or **Save printable
   report** (an HTML page to print or save as PDF). Web: downloads; desktop: asks where to save.
+
+## Keyboard shortcuts
+
+One key picks a tool (when not typing in a box); pressing it again goes back to Pan. Esc also goes back to Pan.
+
+| Key | Tool | Key | Tool | Key | Tool |
+| --- | --- | --- | --- | --- | --- |
+| V | Pan | H | Highlight | R | Rectangle |
+| E | Ellipse | C | Cloud | L | Line |
+| A | Arrow | F | Freehand | T | Text note |
+| Q | Callout | D | Distance | X | Horizontal distance |
+| Y | Vertical distance | N | Perpendicular distance | G | Area |
+| O | Perimeter | K | Count | B | Calibrate |
+| M | Comment | S | Strikeout | U | Underline |
+| Shift+T | Replace text | Shift+R | Revision tag | | |
+
+Also (Cmd on macOS): ← / → previous / next page, **Home** / **End** first / last page, **Ctrl+O** open,
+**Ctrl+S** save, **Ctrl+Shift+S** save as, **Ctrl+F** find (**F3** next), **Ctrl+L** full screen,
+**Ctrl+=** / **Ctrl+−** zoom, **Ctrl+0** actual size, **Delete** removes the selected markup, **Space** (hold) pans.
 
 ## Drawing navigation
 
@@ -307,6 +336,7 @@ frontend/
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
   app/directives/menuBarDirective.js    File / Edit / Zoom menu bar (WAI-ARIA menubar keyboard handling)
+  app/directives/toolTipsDirective.js   name and shortcut shown on hover over the icon buttons
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker

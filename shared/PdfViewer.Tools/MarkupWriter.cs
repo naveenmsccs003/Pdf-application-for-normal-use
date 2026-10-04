@@ -33,12 +33,13 @@ internal static partial class MarkupWriter
     private const int AnnotFlagPrint = 4;           // FPDF_ANNOT_FLAG_PRINT
     private const int FillModeNone = 0, FillModeAlternate = 1;
     private const int LineCapRound = 1, LineJoinRound = 1;
-    private const int MaxStrokes = 50, MaxStrokeCoordinates = 20_000, MaxTextLength = 1000, MaxLines = 200;
+    // A count has two circles per item, up to 200 items.
+    private const int MaxStrokes = 500, MaxStrokeCoordinates = 20_000, MaxTextLength = 1000, MaxLines = 200;
 
     private const uint AreaFillAlpha = 31;          // 12 %, as on screen
 
     private static readonly HashSet<string> InkTypes = ["line", "arrow", "pen", "cloud"];
-    private static readonly HashSet<string> MeasureTypes = ["distance", "hdistance", "vdistance", "area", "perimeter"];
+    private static readonly HashSet<string> MeasureTypes = ["distance", "hdistance", "vdistance", "area", "perimeter", "count", "perpendicular"];
 
     // PDFiumCore passes a single point here; the native call takes an array.
     [StructLayout(LayoutKind.Sequential)]
@@ -224,6 +225,8 @@ internal static partial class MarkupWriter
         "hdistance" => "Horizontal distance",
         "vdistance" => "Vertical distance",
         "area" => "Area",
+        "count" => "Count",
+        "perpendicular" => "Perpendicular distance",
         _ => "Perimeter"
     };
 

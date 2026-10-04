@@ -816,6 +816,46 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('ribbon: the markup tool stays active on another tab', (await state()).status.startsWith('Rectangle:'));
     await page.keyboard.press('Escape'); await sleep(100);
 
+    // ===== Icon-only ribbon: name and shortcut on hover; one-key tool shortcuts =====
+    const isPressed = label => page.$eval(`button[aria-label="${label}"]`, b => b.getAttribute('aria-pressed') === 'true');
+    const tipState = () => page.evaluate(() => {
+        const t = document.querySelector('.tool-tip');
+        return { shown: !!t && !t.hidden, text: t ? t.textContent : '', key: t && t.querySelector('kbd') ? t.querySelector('kbd').textContent : '' };
+    });
+    await page.click('#ribbon-tab-markup'); await sleep(100);
+    const labelsShown = await page.$$eval('#ribbon-markup .tool-labelled', bs => bs.filter(b => b.querySelector('svg') &&
+        [...b.querySelectorAll('span')].some(sp => sp.offsetParent)).length);
+    check('ribbon: buttons show only their icon', labelsShown === 0, labelsShown);
+    await page.hover('#ribbon-markup button[aria-label="Rectangle"]'); await sleep(500); let tip = await tipState();
+    check('ribbon: hovering shows the name and its shortcut', tip.shown && tip.text === 'RectangleR' && tip.key === 'R', tip);
+    const titleHeld = await page.$eval('#ribbon-markup button[aria-label="Rectangle"]', b => !b.hasAttribute('title'));
+    check("ribbon: the browser's own tooltip does not show over it", titleHeld);
+    await page.hover('#ribbon-markup button[aria-label="Ellipse"]'); await sleep(100); tip = await tipState();
+    check('ribbon: moving to the next button shows its name at once', tip.shown && tip.text === 'EllipseE', tip);
+    await page.mouse.move(640, 500); await sleep(150); tip = await tipState();
+    check('ribbon: the name goes away when the mouse leaves', !tip.shown &&
+        await page.$eval('#ribbon-markup button[aria-label="Ellipse"]', b => b.hasAttribute('title')), tip);
+    await page.click('#ribbon-tab-zoom'); await page.hover('#ribbon-zoom button[aria-label="Zoom in"]'); await sleep(500); tip = await tipState();
+    check('ribbon: shortcuts with Ctrl are shown too', tip.shown && /^Zoom in/.test(tip.text) && /\+$/.test(tip.key), tip);
+    await page.mouse.move(640, 500); await sleep(100);
+    await page.evaluate(() => document.activeElement && document.activeElement.blur());
+    await page.keyboard.press('r'); await sleep(100); s = await state();
+    check('shortcut: R picks Rectangle', s.status.startsWith('Rectangle:') && await isPressed('Rectangle'), s.status);
+    await page.keyboard.press('d'); await sleep(100);
+    check('shortcut: D picks Distance', await isPressed('Distance'));
+    await page.keyboard.press('d'); await sleep(100);
+    check('shortcut: the same key again goes back to Pan', !(await isPressed('Distance')) && await page.$eval('#ribbon-navigation button[aria-label="Pan tool"]', b => b.getAttribute('aria-pressed') === 'true'));
+    await page.keyboard.down('Shift'); await page.keyboard.press('KeyT'); await page.keyboard.up('Shift'); await sleep(100);
+    check('shortcut: Shift+T picks Replace text', await isPressed('Replace text'));
+    await page.keyboard.press('v'); await sleep(100);
+    check('shortcut: V goes back to Pan', await page.$eval('#ribbon-navigation button[aria-label="Pan tool"]', b => b.getAttribute('aria-pressed') === 'true'));
+    await page.focus('.page-input'); await page.keyboard.press('r'); await sleep(100);
+    check('shortcut: letters typed in a box are not shortcuts', !(await isPressed('Rectangle')));
+    await page.evaluate(() => document.activeElement.blur()); await page.keyboard.press('End'); await settle(); s = await state();
+    check('shortcut: End goes to the last page', s.pageStatus === 'Page: 10 / 10', s.pageStatus);
+    await page.keyboard.press('Home'); await settle(); s = await state();
+    check('shortcut: Home goes to the first page', s.pageStatus === 'Page: 1 / 10', s.pageStatus);
+
     // ===== More colours: any colour for markups =====
     const picker = () => page.evaluate(() => ({
         open: !!document.querySelector('.color-popover'),
@@ -961,6 +1001,87 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
         }
     }
     await click('Fit Page');
+
+    // ===== Measure: custom scale, units and precision, count, perpendicular distance =====
+    const unitsDialog = async (settings) => {
+        await page.click('button[aria-label="Units and precision"]'); await sleep(200);
+        for (const [id, value] of Object.entries(settings)) {
+            const option = await page.$eval('#' + id, (e, v) => [...e.options].find(o => o.value === v || o.value === 'string:' + v || o.value === 'number:' + v).value, value);
+            await page.select('#' + id, option); await sleep(50);
+        }
+        const sample = await page.$eval('.units-sample', e => e.textContent.trim());
+        await page.click('[aria-labelledby="units-dialog-title"] .tool-primary'); await sleep(150);
+        return sample;
+    };
+    const label = async prefix => (await measureLabels()).filter(l => l.startsWith(prefix));
+    await open('one-page.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-measure'); await sleep(100);
+    await page.click('.ribbon-scale'); await sleep(200);
+    const quarterInch = await page.$eval('.scale-presets', s => [...s.options].find(o => o.textContent.trim() === '1/4" = 1\'-0"').value);
+    await page.select('.scale-presets', quarterInch); await page.click('[aria-labelledby="scale-dialog-title"] .tool-primary'); await sleep(150);
+    await page.click('button[aria-label="Distance"]'); await drag(100, 300, 172, 300);
+    check('measure: custom scale from the common list (1/4" = 1\'-0"): 1 inch on paper is 4 ft',
+        (await scaleButton()).text === '1/4" = 1\'-0" · ft' && (await label('Distance'))[0] === 'Distance: 4.00 ft', [await scaleButton(), await measureLabels()]);
+    await page.click('.ribbon-scale'); await sleep(200);
+    await page.click('input[name="scale-mode"][value="custom"]');
+    await page.$eval('#scale-paper-input', e => { e.value = ''; }); await page.type('#scale-paper-input', '1');
+    await page.$eval('#scale-real-input', e => { e.value = ''; }); await page.type('#scale-real-input', '20');
+    await page.click('[aria-labelledby="scale-dialog-title"] .tool-primary'); await sleep(150);
+    check('measure: custom scale typed in (1" = 20\'): the distance is 20 ft',
+        (await scaleButton()).text === '1" = 20\'-0" · ft' && (await label('Distance'))[0] === 'Distance: 20.00 ft', [await scaleButton(), await measureLabels()]);
+
+    let sample = await unitsDialog({ 'units-length': 'ft-in', 'units-fraction': '16' });
+    check('units: feet and inches (the example shows 3.5 m = 11\'-5 13/16")', sample === '11\'-5 13/16"' &&
+        (await label('Distance'))[0] === 'Distance: 20\'-0"' && /ft-in/.test(await page.$eval('.ribbon-units', b => b.textContent)), [sample, await measureLabels()]);
+    await page.click('button[aria-label="Area"]'); await corners([[100, 350], [172, 350], [172, 422], [100, 422]], 'enter');
+    sample = await unitsDialog({ 'units-length': 'm', 'units-decimals': '3' });
+    check('units: converted to metres with 3 decimals; the area follows (20 ft square = 37.161 m²)',
+        (await label('Distance'))[0] === 'Distance: 6.096 m' && (await label('Area'))[0] === 'Area: 37.161 m²', await measureLabels());
+    await unitsDialog({ 'units-area': 'ft²', 'units-decimals': '0' });
+    check('units: area in ft², no decimals', (await label('Area'))[0] === 'Area: 400 ft²' && (await label('Distance'))[0] === 'Distance: 6 m', await measureLabels());
+    check('units: the choice is remembered', await page.evaluate(() => JSON.parse(localStorage.getItem('pdfViewer.measureUnits')).area === 'ft²'));
+    await unitsDialog({ 'units-length': 'scale', 'units-area': 'auto', 'units-decimals': 'auto' });
+
+    await page.click('button[aria-label="Calibrate"]'); await drag(100, 560, 244, 560); await sleep(200);
+    await page.keyboard.type('12\'6"'); await page.keyboard.press('Enter'); await sleep(150);
+    check('measure: calibration accepts feet and inches (144 pt = 12\'6", so 72 pt = 6.25 ft)',
+        (await scaleButton()).text === 'Calibrated · ft' && (await label('Distance'))[0] === 'Distance: 6.25 ft', [await scaleButton(), await measureLabels()]);
+
+    await page.click('button[aria-label="Count"]');
+    for (const [x, y] of [[300, 150], [350, 150], [400, 150]]) await clickAt(x, y);
+    s = await state();
+    check('count: each click adds an item to the count', (await label('Count'))[0] === 'Count: 3 items' && /^Count: 3 items/.test(s.status), [await measureLabels(), s.status]);
+    await page.keyboard.press('Backspace'); await sleep(150);
+    check('count: Backspace removes the last item', (await label('Count'))[0] === 'Count: 2 items', await measureLabels());
+    await page.keyboard.press('Enter'); await clickAt(450, 250); await sleep(100);
+    check('count: Enter starts a new count', (await label('Count')).join('|') === 'Count: 2 items|Count: 1 item', await measureLabels());
+    const markers = await page.$$eval('.markup-layer g.markup[data-type="count"]', gs => gs.length);
+    check('count: the counts are drawn on the page', markers === 2, markers);
+
+    await page.click('button[aria-label="Perpendicular distance"]'); await drag(100, 500, 400, 500); await clickAt(250, 400);
+    check('perpendicular: drag the reference line, click the point: the distance square to the line (100 pt = 8.68 ft)',
+        (await label('Perpendicular'))[0] === 'Perpendicular distance: 8.68 ft', await measureLabels());
+    await drag(300, 540, 380, 540); await clickAt(480, 440);
+    check('perpendicular: a point beyond the end of the line measures to the line extended',
+        (await label('Perpendicular'))[1] === 'Perpendicular distance: 8.68 ft', await measureLabels());
+    await drag(300, 540, 380, 540); await page.keyboard.press('Escape'); await sleep(100); await clickAt(480, 440);
+    check('perpendicular: Esc drops the reference line, the tool stays', (await label('Perpendicular')).length === 2 && await pressed('Perpendicular distance'),
+        await measureLabels());
+    await page.keyboard.press('Escape'); await sleep(100);
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('count / perpendicular: they save into the PDF copy', /with 6 markups/.test(s.status), s.status);
+    if (canCheckDownloads) {
+        await sleep(500);
+        const saved = fs.readdirSync(DOWNLOADS).filter(f => /^one-page-highlighted.*\.pdf$/.test(f))
+            .map(f => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+        const raw = saved ? fs.readFileSync(saved).toString('latin1') : '';
+        check('count / perpendicular: the copy has their values', raw.includes('/Contents(Count: 2 items)') &&
+            raw.includes('/Contents(Perpendicular distance: 8.68 ft)'), saved);
+    }
+    await click('Clear Markups'); await click('Fit Page');
 
     // ===== Review: comments, notes, strikeout, underline, replace text, edit, delete =====
     const reviewLabels = () => page.$$eval('.markup-row .markup-title', els => els.map(e => e.textContent.trim()));

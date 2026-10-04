@@ -14,6 +14,8 @@
      *   callout                           as text, plus tipX, tipY (the point the leader arrow points at)
      *   distance, hdistance, vdistance    points [x0, y0, x1, y1], fontSize (value label)
      *   area, perimeter                   points [x0, y0, ...] of the closed outline, fontSize
+     *   count                             points [x0, y0, ...]: one marker per counted item, fontSize
+     *   perpendicular                     points [ax, ay, bx, by, px, py]: reference line A-B and the point P, fontSize
      *   strikeout, underline              x, y, width, height (the text the line goes through / under)
      *   replace                           as strikeout, plus text (the correction) and fontSize
      *   comment                           x, y, width, height (the icon), text
@@ -26,12 +28,12 @@
             highlight: 'Highlight', rect: 'Rectangle', ellipse: 'Ellipse', cloud: 'Cloud', line: 'Line',
             arrow: 'Arrow', pen: 'Freehand', text: 'Text note', callout: 'Callout',
             distance: 'Distance', hdistance: 'Horizontal distance', vdistance: 'Vertical distance',
-            area: 'Area', perimeter: 'Perimeter',
+            area: 'Area', perimeter: 'Perimeter', count: 'Count', perpendicular: 'Perpendicular distance',
             comment: 'Comment', strikeout: 'Strikeout', underline: 'Underline', replace: 'Replace text',
             revtag: 'Revision tag'
         };
         var TEXT_TYPES = { text: true, callout: true, comment: true, replace: true };   // markups with typed text
-        var MEASURES = { distance: true, hdistance: true, vdistance: true, area: true, perimeter: true };
+        var MEASURES = { distance: true, hdistance: true, vdistance: true, area: true, perimeter: true, count: true, perpendicular: true };
         var LINE_HEIGHT = 1.25;     // times the font size
         var PADDING = 0.4;          // text box padding, times the font size
         var ASCENT = 0.8;           // first baseline below the padding, times the font size
@@ -129,7 +131,57 @@
             return [x - nx, y - ny, x + nx, y + ny];
         }
 
+        // ----- Count: a ringed dot per item -----
+        function markerRadius(m) { return m.fontSize * 0.45; }
+
+        function circle(cx, cy, r) {
+            var out = [], STEPS = 16;
+            for (var i = 0; i <= STEPS; i++) {
+                var a = 2 * Math.PI * i / STEPS;
+                out.push(Math.round((cx + r * Math.cos(a)) * 100) / 100, Math.round((cy + r * Math.sin(a)) * 100) / 100);
+            }
+            return out;
+        }
+
+        function countStrokes(m) {
+            var p = m.points, r = markerRadius(m), out = [];
+            for (var i = 0; i + 1 < p.length; i += 2) {
+                out.push(circle(p[i], p[i + 1], r), circle(p[i], p[i + 1], r * 0.3));
+            }
+            return out;
+        }
+
+        // ----- Perpendicular distance: from the point P square to the line through A and B -----
+        /** The foot of the perpendicular from P to the line A-B, and where it is along A-B (0 = A, 1 = B). */
+        function perpendicularFoot(m) {
+            var p = m.points, ax = p[0], ay = p[1], dx = p[2] - ax, dy = p[3] - ay;
+            var t = dx || dy ? ((p[4] - ax) * dx + (p[5] - ay) * dy) / (dx * dx + dy * dy) : 0;
+            return { x: ax + t * dx, y: ay + t * dy, t: t };
+        }
+
+        function perpendicularStrokes(m) {
+            var p = m.points, f = perpendicularFoot(m), size = m.fontSize * 0.35;
+            var out = [[p[0], p[1], p[2], p[3]]];
+            // The line is extended (A-B is the reference) when the foot is beyond its ends.
+            if (f.t < 0) { out.push([p[0], p[1], f.x, f.y]); }
+            if (f.t > 1) { out.push([p[2], p[3], f.x, f.y]); }
+            var dx = p[4] - f.x, dy = p[5] - f.y, length = Math.hypot(dx, dy);
+            out.push([p[4], p[5], f.x, f.y]);
+            if (length > size * 2) {
+                out.push(tick(p[4], p[5], dx, dy, size));
+                // Right-angle mark at the foot, on the side of the line towards the middle of A-B.
+                var ux = p[2] - p[0], uy = p[3] - p[1], ul = Math.hypot(ux, uy) || 1;
+                var toward = f.t > 0.5 ? -1 : 1, q = Math.min(size * 1.6, length / 3);
+                ux = ux / ul * q * toward; uy = uy / ul * q * toward;
+                var vx = dx / length * q, vy = dy / length * q;
+                out.push([f.x + ux, f.y + uy, f.x + ux + vx, f.y + uy + vy, f.x + vx, f.y + vy]);
+            }
+            return out;
+        }
+
         function measureStrokes(m) {
+            if (m.type === 'count') { return countStrokes(m); }
+            if (m.type === 'perpendicular') { return perpendicularStrokes(m); }
             var p = m.points, t = m.fontSize * 0.35;
             var x0 = p[0], y0 = p[1], x1 = p[2], y1 = p[3];
             switch (m.type) {
@@ -173,6 +225,12 @@
                 case 'hdistance': return scaleService.formatLength(Math.abs(p[2] - p[0]), m.pageNumber);
                 case 'vdistance': return scaleService.formatLength(Math.abs(p[3] - p[1]), m.pageNumber);
                 case 'area': return scaleService.formatArea(polygonArea(p), m.pageNumber);
+                case 'count':
+                    var n = p.length / 2;
+                    return n.toLocaleString('en-US') + (n === 1 ? ' item' : ' items');
+                case 'perpendicular':
+                    var f = perpendicularFoot(m);
+                    return scaleService.formatLength(Math.hypot(p[4] - f.x, p[5] - f.y), m.pageNumber);
                 default: return scaleService.formatLength(outlineLength(p), m.pageNumber);
             }
         }
@@ -183,6 +241,14 @@
             if (m.type === 'distance') { return [(p[0] + p[2]) / 2, (p[1] + p[3]) / 2]; }
             if (m.type === 'hdistance') { return [(p[0] + p[2]) / 2, p[1]]; }
             if (m.type === 'vdistance') { return [p[0], (p[1] + p[3]) / 2]; }
+            if (m.type === 'perpendicular') {
+                var foot = perpendicularFoot(m);
+                return [(p[4] + foot.x) / 2, (p[5] + foot.y) / 2];
+            }
+            if (m.type === 'count') {
+                // Above the first marker.
+                return [p[0], p[1] - markerRadius(m) - m.fontSize * 1.1];
+            }
             // Centroid of the polygon; the average of the corners if it has no area.
             var a = 0, cx = 0, cy = 0, n = p.length / 2;
             for (var i = 0; i < p.length; i += 2) {
@@ -300,6 +366,11 @@
             if (near) { return true; }
             if (isMeasure(m)) {
                 var l = measureLabel(m);
+                if (m.type === 'count') {
+                    for (var i = 0; i + 1 < m.points.length; i += 2) {
+                        if (Math.hypot(x - m.points[i], y - m.points[i + 1]) <= markerRadius(m) + tolerance) { return true; }
+                    }
+                }
                 return (x >= l.x && x <= l.x + l.width && y >= l.y && y <= l.y + l.height) ||
                        (m.type === 'area' && insidePolygon(m.points, x, y));
             }
