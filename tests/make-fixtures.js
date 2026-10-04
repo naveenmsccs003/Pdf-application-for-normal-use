@@ -39,7 +39,11 @@ function buildPdf(pages, extra = {}) {
             content += `BT /F2 26 Tf 50 ${p.height - 70} Td (${p.title}) Tj ET\n`;
         }
         for (let i = 0; i < (p.lines || 0); i++) {
+            if (p.skipLines && p.skipLines.includes(i)) continue;
             content += `BT /F1 12 Tf 50 ${p.height - 120 - i * 20} Td (Line ${i} - The quick brown fox jumps over the lazy dog. Sample text for highlighting.) Tj ET\n`;
+        }
+        if (p.drawing) {
+            content += p.drawing + '\n';
         }
         const contents = add(stream('', Buffer.from(content)));
         const annots = [];
@@ -105,6 +109,8 @@ const write = (name, data) => { fs.writeFileSync(path.join(OUT, name), data); co
 
 console.log('Writing fixtures to ' + OUT);
 write('one-page.pdf', buildPdf([textPage(1)]));
+// A later revision of one-page.pdf for Compare / Overlay: line 5 removed, a rectangle added.
+write('one-page-rev-b.pdf', buildPdf([textPage(1, 595, 842, { skipLines: [5], drawing: '2 w 380 300 150 80 re S' })]));
 const tenPages = buildPdf(range(10).map(n => textPage(n)));
 write('ten-pages.pdf', tenPages);
 write('large-150.pdf', buildPdf(range(150).map(n => textPage(n, 612, 792))));

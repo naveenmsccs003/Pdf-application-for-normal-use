@@ -198,9 +198,26 @@
                 });
             }
 
+            /**
+             * Saves the markup report (`format` 'csv' or 'html'): a download on the web, the save dialog on desktop.
+             * CSV gets a byte order mark so Excel reads it as UTF-8.
+             */
+            function saveReport(fileName, format, content) {
+                if (desktopService.isDesktop) {
+                    return runDesktop('save-report', ['current'], { format: format, content: content });
+                }
+                var name = String(fileName || 'document').replace(/\.pdf$/i, '') + '-markups.' + format;
+                var blob = format === 'csv'
+                    ? new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8' })
+                    : new Blob([content], { type: 'text/html;charset=utf-8' });
+                saveBlob(blob, name);
+                return $q.when('Downloaded ' + name + '.');
+            }
+
             return {
                 isDesktop: desktopService.isDesktop,
                 saveHighlights: saveHighlights,
+                saveReport: saveReport,
                 validateFile: pdfService.validateFile,
                 pickDesktopFiles: pickDesktopFiles,
                 merge: merge,

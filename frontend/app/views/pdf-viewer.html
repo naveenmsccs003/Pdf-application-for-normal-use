@@ -16,6 +16,17 @@
     <symbol id="i-area" viewBox="0 0 24 24"><path d="M4 6l10-2 6 7-4 9H5z"/><path d="M7 15l5-5M8 19l8-8M11 7l-4 4" stroke-width="1.2"/></symbol>
     <symbol id="i-perimeter" viewBox="0 0 24 24"><path d="M4 6l10-2 6 7-4 9H5z" stroke-dasharray="3 2"/><circle cx="4" cy="6" r="1.4"/><circle cx="14" cy="4" r="1.4"/><circle cx="20" cy="11" r="1.4"/><circle cx="16" cy="20" r="1.4"/><circle cx="5" cy="20" r="1.4"/></symbol>
     <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 16L16 3l5 5L8 21z"/><path d="M7 12l2 2M10 9l2 2M13 6l2 2M5.5 14.5l1 1M8.5 11.5l1 1M11.5 8.5l1 1"/></symbol>
+    <symbol id="i-comment" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><path d="M7 9h10M7 12.5h6"/></symbol>
+    <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 11h8M8 14.5h8M8 18h5"/></symbol>
+    <symbol id="i-strikeout" viewBox="0 0 24 24"><path d="M16.5 7.5C16 5.5 14.3 4.5 12 4.5c-2.6 0-4.4 1.4-4.4 3.4 0 1.5 1 2.4 2.6 3"/><path d="M8 16.5c.5 2 2.2 3 4.5 3 2.7 0 4.5-1.4 4.5-3.5 0-.8-.3-1.5-.8-2"/><path d="M4 12h16"/></symbol>
+    <symbol id="i-underline" viewBox="0 0 24 24"><path d="M7 4v7a5 5 0 0 0 10 0V4"/><path d="M5 20h14"/></symbol>
+    <symbol id="i-replace" viewBox="0 0 24 24"><path d="M3 15h9"/><path d="M4 11l3.5-8L11 11M5 8.5h5"/><path d="M14 20l3-8 3 8M15 17.5h4"/><path d="M9 20l3-3"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></symbol>
+    <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><path d="M6 9h2M6 13h2M16 9h2M16 13h2M16 16h2"/></symbol>
+    <symbol id="i-overlay" viewBox="0 0 24 24"><rect x="3" y="3" width="12" height="14" rx="1"/><rect x="9" y="7" width="12" height="14" rx="1" stroke-dasharray="2.5 2"/></symbol>
+    <symbol id="i-revtag" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M10 16.5v-6h2.2a1.6 1.6 0 0 1 0 3.2H10M12.2 13.7l1.8 2.8"/></symbol>
+    <symbol id="i-revisions" viewBox="0 0 24 24"><path d="M12 3l3 5.5H9z"/><path d="M5 12h14M5 16h14M5 20h9"/></symbol>
+    <symbol id="i-report" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 17v-3M12 17v-6M15 17v-4"/></symbol>
     <symbol id="i-highlight" viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L10 18H6v-4z"/><path d="M13 7l4 4"/><path d="M4 21h16"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
     <symbol id="i-clear" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M7 17l-3-3 9-9 6 6-6 6H7z"/><path d="M10 8l6 6"/></symbol>
@@ -423,6 +434,137 @@
             <span class="ribbon-caption">Scale</span>
         </div>
     </div>
+
+    <!-- Review -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-review" aria-labelledby="ribbon-tab-review" ng-show="vm.ribbonTab === 'review'">
+        <div class="ribbon-group" role="group" aria-label="Comments">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('comment')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('comment')}" aria-pressed="{{ vm.isTool('comment') }}"
+                        aria-label="Comment" title="Comment: add a review comment (a note icon; select it to read)">
+                    <svg class="icon"><use href="#i-comment"></use></svg><span>Comment</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('text')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('text')}" aria-pressed="{{ vm.isTool('text') }}"
+                        aria-label="Add note" title="Add note: an explanation shown on the page">
+                    <svg class="icon"><use href="#i-note"></use></svg><span>Add note</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Comments</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Text marks">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('strikeout')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('strikeout')}" aria-pressed="{{ vm.isTool('strikeout') }}"
+                        aria-label="Strikeout" title="Strikeout: mark incorrect information (drag over the text)">
+                    <svg class="icon"><use href="#i-strikeout"></use></svg><span>Strikeout</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('underline')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('underline')}" aria-pressed="{{ vm.isTool('underline') }}"
+                        aria-label="Underline" title="Underline: mark important text (drag over the text)">
+                    <svg class="icon"><use href="#i-underline"></use></svg><span>Underline</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('replace')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('replace')}" aria-pressed="{{ vm.isTool('replace') }}"
+                        aria-label="Replace text" title="Replace text: strike out text and show the correction">
+                    <svg class="icon"><use href="#i-replace"></use></svg><span>Replace text</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Text</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Manage markups">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openEditDialog()" ng-disabled="!vm.canEditSelected()"
+                        aria-label="Edit markup" title="Edit markup: change the selected markup's text or colour (or double-click it; drag it to move)">
+                    <svg class="icon"><use href="#i-edit"></use></svg><span>Edit</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.removeSelectedHighlight()" ng-disabled="vm.selectedHighlightId === null"
+                        aria-label="Delete markup" title="Delete markup: remove the selected annotation (Delete)">
+                    <svg class="icon"><use href="#i-trash"></use></svg><span>Delete</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Markups</span>
+        </div>
+    </div>
+
+    <!-- Revision -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-revision" aria-labelledby="ribbon-tab-revision" ng-show="vm.ribbonTab === 'revision'">
+        <div class="ribbon-group" role="group" aria-label="Compare revisions">
+            <div class="ribbon-tools">
+                <label class="tool tool-labelled" ng-if="!vm.isDesktop" ng-class="{'is-disabled': !vm.hasDocument()}"
+                       title="Compare: open another revision of this PDF to see what changed">
+                    <input type="file" accept="application/pdf,.pdf" class="visually-hidden compare-input" aria-label="Compare with a revision"
+                           on-file-selected="vm.openCompare(file)" ng-disabled="!vm.hasDocument()">
+                    <svg class="icon"><use href="#i-compare"></use></svg><span>Compare&hellip;</span>
+                </label>
+                <button type="button" class="tool tool-labelled" ng-if="vm.isDesktop" ng-click="vm.openCompare()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Compare with a revision" title="Compare: open another revision of this PDF to see what changed">
+                    <svg class="icon"><use href="#i-compare"></use></svg><span>Compare&hellip;</span>
+                </button>
+                <span class="compare-file" ng-if="vm.isComparing()" title="Comparing with {{ vm.compare.fileName }}">{{ vm.compare.fileName }}</span>
+                <button type="button" class="tool" ng-if="vm.isComparing()" ng-click="vm.closeCompare()"
+                        aria-label="Close comparison" title="Stop comparing">
+                    <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+                </button>
+            </div>
+            <span class="ribbon-caption">Compare</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Comparison view">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.setCompareMode('diff')" ng-disabled="!vm.isComparing()"
+                        ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'diff'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'diff' }}"
+                        aria-label="Differences" title="Differences: added in green, removed in red, changed areas boxed">
+                    <svg class="icon"><use href="#i-compare"></use></svg><span>Differences</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.setCompareMode('overlay')" ng-disabled="!vm.isComparing()"
+                        ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'overlay'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'overlay' }}"
+                        aria-label="Overlay" title="Overlay: this revision in blue, the other in red, unchanged in grey">
+                    <svg class="icon"><use href="#i-overlay"></use></svg><span>Overlay</span>
+                </button>
+                <button type="button" class="tool" ng-click="vm.setCompareMode('off')" ng-disabled="!vm.isComparing()"
+                        ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'off'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'off' }}"
+                        aria-label="Hide comparison" title="Show the page without the comparison">Off</button>
+                <button type="button" class="tool" ng-click="vm.goToChange(-1)" ng-disabled="!vm.isComparing() || vm.compare.busy"
+                        aria-label="Previous change" title="Previous changed area">
+                    <svg class="icon"><use href="#i-up"></use></svg>
+                </button>
+                <span class="compare-count" ng-if="vm.isComparing()" aria-live="polite">
+                    <span class="spinner spinner-sm" ng-if="vm.compare.busy"></span>{{ vm.compare.busy ? '' : vm.changeCount() + ' change' + (vm.changeCount() === 1 ? '' : 's') }}</span>
+                <button type="button" class="tool" ng-click="vm.goToChange(1)" ng-disabled="!vm.isComparing() || vm.compare.busy"
+                        aria-label="Next change" title="Next changed area">
+                    <svg class="icon"><use href="#i-down"></use></svg>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.cloudChanges()" ng-disabled="!vm.changeCount()"
+                        aria-label="Cloud changes" title="Mark every changed area on this page with a revision cloud">
+                    <svg class="icon"><use href="#i-cloud"></use></svg><span>Cloud changes</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">View</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Revision tracking">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openRevisionsDialog()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Revisions" title="Revisions: the document's revision list; new markups belong to the current one">
+                    <svg class="icon"><use href="#i-revisions"></use></svg><span>{{ vm.currentRevision() ? 'Rev ' + vm.currentRevision().label : 'Revisions' }}</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('revtag')" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('revtag')}" aria-pressed="{{ vm.isTool('revtag') }}"
+                        aria-label="Revision tag" title="Revision tag: a triangle with the current revision's label">
+                    <svg class="icon"><use href="#i-revtag"></use></svg><span>Tag</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Tracking</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Report">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openReport()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Markup report" title="Markup report: every markup in a table, to save as CSV or a printable page">
+                    <svg class="icon"><use href="#i-report"></use></svg><span>Markup report</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Report</span>
+        </div>
+    </div>
 </nav>
 
 <div class="alert" role="alert" ng-if="vm.error">
@@ -473,7 +615,11 @@
                         active-match="find.current"
                         api="vm.viewer"
                         on-create-markup="vm.addMarkup(pageNumber, markup)"
-                        on-request-text="vm.requestNoteText(pageNumber, at, tip)"
+                        on-request-text="vm.requestNoteText(pageNumber, at, tip, box)"
+                        on-move-markup="vm.moveMarkup(id, markup)"
+                        on-edit-markup="vm.openEditDialog(id)"
+                        on-place-tag="vm.placeTag(pageNumber, at)"
+                        revision="vm.revisionView"
                         on-calibrate="vm.onCalibrate(pageNumber, length)"
                         on-select-highlight="vm.selectHighlight(id)"
                         on-remove-highlight="vm.removeHighlight(id)"
@@ -559,7 +705,7 @@
                     <span class="markup-swatch" ng-class="{'is-shape': h.type !== 'highlight'}" ng-attr-style="{{ h.color ? '--swatch: ' + h.color : undefined }}"></span>
                     <span class="markup-text">
                         <span class="markup-title">{{ vm.markupLabel(h) }}</span>
-                        <span class="markup-meta">Page {{ h.pageNumber }} &middot; {{ h.createdAt | date:'HH:mm:ss' }}</span>
+                        <span class="markup-meta">Page {{ h.pageNumber }}<span ng-if="h.revision"> &middot; Rev {{ h.revision }}</span> &middot; {{ h.createdAt | date:'HH:mm:ss' }}</span>
                     </span>
                 </button>
                 <button type="button" class="markup-delete" ng-click="vm.removeHighlight(h.id)"
@@ -627,26 +773,154 @@
     </div>
 </footer>
 
-<!-- Note text dialog (Text note / Callout tools) -->
+<!-- Text dialog (Text note, Callout, Comment, Replace text tools) -->
 <div class="dialog-backdrop" ng-if="vm.noteDialog" ng-click="vm.closeNoteDialog()">
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="note-dialog-title" ng-click="$event.stopPropagation()">
         <div class="dialog-header">
-            <h2 id="note-dialog-title">{{ vm.noteDialog.type === 'callout' ? 'Callout' : 'Text note' }}</h2>
+            <h2 id="note-dialog-title">{{ vm.textKinds[vm.noteDialog.type].title }}</h2>
             <button type="button" class="panel-close" ng-click="vm.closeNoteDialog()" aria-label="Close dialog">
                 <svg class="icon icon-sm"><use href="#i-close"></use></svg>
             </button>
         </div>
         <form class="dialog-body" novalidate ng-submit="vm.applyNoteDialog()" id="note-form">
-            <label for="note-text-input" class="dialog-intro">Note on page {{ vm.noteDialog.pageNumber }}</label>
+            <label for="note-text-input" class="dialog-intro">{{ vm.textKinds[vm.noteDialog.type].label }} {{ vm.noteDialog.pageNumber }}</label>
             <textarea id="note-text-input" class="note-text" rows="4" maxlength="1000" ng-model="vm.noteDialog.text"
-                      ng-change="vm.noteDialog.error = ''" placeholder="e.g. Check lap length of B12 bars"></textarea>
-            <p class="dialog-note">Enter starts a new line; {{ vm.modKey }}Enter adds the note. Saved copies keep Latin letters,
+                      ng-change="vm.noteDialog.error = ''" placeholder="{{ vm.textKinds[vm.noteDialog.type].placeholder }}"></textarea>
+            <p class="dialog-note">Enter starts a new line; {{ vm.modKey }}Enter adds it. Saved copies keep Latin letters,
                 digits and common symbols.</p>
             <div class="dialog-message is-error" role="alert" ng-if="vm.noteDialog.error">{{ vm.noteDialog.error }}</div>
         </form>
         <div class="dialog-footer">
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeNoteDialog()">Cancel</button>
-            <button type="submit" form="note-form" class="tool tool-labelled tool-primary">Add note</button>
+            <button type="submit" form="note-form" class="tool tool-labelled tool-primary">{{ vm.textKinds[vm.noteDialog.type].button }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- Revisions dialog (Revision > Revisions) -->
+<div class="dialog-backdrop" ng-if="vm.revisionsDialog" ng-click="vm.revisionsDialog = null">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="revisions-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="revisions-dialog-title">Revisions</h2>
+            <button type="button" class="panel-close" ng-click="vm.revisionsDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body">
+            <div class="dialog-message" role="status" ng-if="vm.revisionsDialog.message">{{ vm.revisionsDialog.message }}</div>
+            <table class="revision-table" ng-if="vm.revisionsDialog.list.length">
+                <thead><tr><th>Current</th><th>Rev</th><th>Date</th><th>Description</th><th>By</th><th>Markups</th><th></th></tr></thead>
+                <tbody>
+                    <tr ng-repeat="r in vm.revisionsDialog.list track by r.id" ng-class="{'is-current': r.id === vm.revisionsDialog.current}">
+                        <td><input type="radio" name="current-revision" ng-checked="r.id === vm.revisionsDialog.current"
+                                   ng-click="vm.setCurrentRevision(r.id)" aria-label="Make revision {{ r.label }} current"></td>
+                        <td class="revision-label">{{ r.label }}</td>
+                        <td>{{ r.date }}</td>
+                        <td>{{ r.description }}</td>
+                        <td>{{ r.author }}</td>
+                        <td class="num">{{ vm.revisionMarkupCount(r.label) }}</td>
+                        <td><button type="button" class="markup-delete revision-delete" ng-click="vm.removeRevision(r.id)"
+                                    aria-label="Delete revision {{ r.label }}" title="Delete revision (its markups stay)">
+                            <svg class="icon icon-sm"><use href="#i-trash"></use></svg></button></td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="dialog-intro" ng-if="!vm.revisionsDialog.list.length">No revisions yet. Add the first one below.</p>
+            <form class="revision-form" novalidate ng-submit="vm.addRevision()" id="revision-form">
+                <label>Rev <input type="text" class="inline-text revision-label-input" maxlength="10" ng-model="vm.revisionsDialog.form.label"
+                                  aria-label="Revision label" ng-change="vm.revisionsDialog.error = ''"></label>
+                <label>Date <input type="text" class="inline-text revision-date-input" maxlength="20" ng-model="vm.revisionsDialog.form.date" aria-label="Revision date"></label>
+                <label class="revision-wide">Description <input type="text" id="revision-description-input" class="inline-text" maxlength="300"
+                                  ng-model="vm.revisionsDialog.form.description" placeholder="e.g. Issued for construction" aria-label="Revision description"></label>
+                <label>By <input type="text" class="inline-text revision-author-input" maxlength="60" ng-model="vm.revisionsDialog.form.author" aria-label="Revised by"></label>
+                <button type="submit" class="tool tool-labelled tool-outline">Add revision</button>
+            </form>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.revisionsDialog.error">{{ vm.revisionsDialog.error }}</div>
+            <p class="dialog-note">New markups and revision tags belong to the current revision. The list is remembered for this file
+                in this {{ vm.isDesktop ? 'app' : 'browser' }}.</p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-primary" ng-click="vm.revisionsDialog = null">Done</button>
+        </div>
+    </div>
+</div>
+
+<!-- Markup report dialog (Revision > Markup report) -->
+<div class="dialog-backdrop" ng-if="vm.reportDialog" ng-click="vm.reportDialog = null">
+    <div class="dialog dialog-wide" role="dialog" aria-modal="true" aria-labelledby="report-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="report-dialog-title">Markup report</h2>
+            <button type="button" class="panel-close" ng-click="vm.reportDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body">
+            <div class="report-bar">
+                <label>Revision
+                    <select ng-model="vm.reportDialog.revision" ng-change="vm.updateReport()" aria-label="Report revision">
+                        <option value="">All markups</option>
+                        <option ng-repeat="r in vm.reportRevisions()" value="{{ r }}">Revision {{ r }}</option>
+                        <option value="-">Without a revision</option>
+                    </select>
+                </label>
+                <span class="report-total">{{ vm.reportDialog.summary.total }} markup{{ vm.reportDialog.summary.total === 1 ? '' : 's' }}<span
+                      ng-repeat="t in vm.reportDialog.summary.byType track by t.name"> &middot; {{ t.count }} {{ t.name }}</span></span>
+            </div>
+            <div class="report-table-wrap" ng-if="vm.reportDialog.rows.length">
+                <table class="report-table">
+                    <thead><tr><th>No.</th><th>Page</th><th>Type</th><th>Content</th><th>Colour</th><th>Rev</th><th>Created</th></tr></thead>
+                    <tbody>
+                        <tr ng-repeat="r in vm.reportDialog.rows track by r.number">
+                            <td class="num">{{ r.number }}</td><td class="num">{{ r.page }}</td><td>{{ r.type }}</td><td>{{ r.content }}</td>
+                            <td><span class="report-swatch" ng-attr-style="--swatch: {{ r.color === 'Yellow' ? '#ffdd00' : r.color }}"></span>{{ r.color }}</td>
+                            <td>{{ r.revision }}</td><td class="report-time">{{ r.created }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="dialog-intro" ng-if="!vm.reportDialog.rows.length">No markups to report.</p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('csv')" ng-disabled="!vm.reportDialog.rows.length || vm.reportDialog.busy"
+                    title="A spreadsheet file (opens in Excel)">Save CSV&hellip;</button>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.exportReport('html')" ng-disabled="!vm.reportDialog.rows.length || vm.reportDialog.busy"
+                    title="A web page with the summary and table, ready to print or save as PDF">Save printable report&hellip;</button>
+            <button type="button" class="tool tool-labelled tool-primary" ng-click="vm.reportDialog = null">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit markup dialog (Review > Edit, or double-click a markup) -->
+<div class="dialog-backdrop" ng-if="vm.editDialog" ng-click="vm.closeEditDialog()">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="edit-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="edit-dialog-title">Edit {{ vm.editDialog.label }}</h2>
+            <button type="button" class="panel-close" ng-click="vm.closeEditDialog()" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applyEditDialog()" id="edit-form">
+            <p class="dialog-intro">On page {{ vm.editDialog.pageNumber }}. Drag a selected markup with the Pan tool to move it.</p>
+            <label for="edit-text-input" ng-if="vm.editDialog.hasText">Text</label>
+            <textarea id="edit-text-input" class="note-text" rows="4" maxlength="1000" ng-if="vm.editDialog.hasText"
+                      ng-model="vm.editDialog.text" ng-change="vm.editDialog.error = ''"></textarea>
+            <div class="edit-colour" ng-if="vm.editDialog.hasColor">
+                <span>Colour</span>
+                <div class="color-swatches" role="radiogroup" aria-label="Markup colour">
+                    <button type="button" class="color-swatch" ng-repeat="c in vm.markupColors" role="radio"
+                            ng-click="vm.setEditColor(c.value)" ng-class="{'is-active': vm.editDialog.color === c.value}"
+                            aria-checked="{{ vm.editDialog.color === c.value }}" aria-label="Edit colour {{ c.name }}" title="{{ c.name }}"
+                            ng-attr-style="--swatch: {{ c.value }}"></button>
+                </div>
+                <markup-color-picker color="vm.editDialog.color" basics="vm.markupColors" on-pick="vm.setEditColor(color)"></markup-color-picker>
+                <span class="edit-colour-value" ng-attr-style="--swatch: {{ vm.editDialog.color }}">{{ vm.editDialog.color }}</span>
+            </div>
+            <p class="dialog-note" ng-if="!vm.editDialog.hasColor && !vm.editDialog.hasText">Highlights are always yellow; you can move or delete them.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.editDialog.error">{{ vm.editDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeEditDialog()">Cancel</button>
+            <button type="submit" form="edit-form" class="tool tool-labelled tool-primary">Save changes</button>
         </div>
     </div>
 </div>

@@ -78,6 +78,8 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
     square, hue slider and hex code box (`#f80` or `#ff8800`), 72 presets, and the last 10 custom colours
     (remembered in this browser / app). Saved copies keep the exact colour.
   - **Measure**: Distance, Horizontal, Vertical; Area, Perimeter; Calibrate and the page's scale (see below)
+  - **Review**: Comment, Add note; Strikeout, Underline, Replace text; Edit, Delete (see below)
+  - **Revision**: Compare, Differences / Overlay, previous / next change, Cloud changes; Revisions, Tag; Markup report (see below)
 - **Thumbnails panel** (left): page previews; click to jump; badges show highlights per page.
   Only visible thumbnails are created and rendered, so 100,000-page documents stay fast.
 - **Document tab** with the file name and a close button
@@ -106,6 +108,42 @@ On the **Measure** tab (web and desktop):
   red), values are paper sizes at 1:1. Changing the scale updates every measurement on those pages.
 - Scales are kept for the open document only. **Save copy with markups** writes each measurement as a Stamp annotation
   with its lines, area fill and value, so it looks the same in other PDF viewers.
+
+## Review
+
+On the **Review** tab (web and desktop):
+
+| Tool | How | Saved in the copy as |
+| --- | --- | --- |
+| **Comment** | click where it goes, type the comment; a note icon marks it, select it to read the text | Text annotation (sticky note) |
+| **Add note** | click, type the explanation; shown in a box on the page (same as Text note) | Stamp with the box and text |
+| **Strikeout** | drag over incorrect text: a line through the middle | StrikeOut annotation |
+| **Underline** | drag over important text: a line along the bottom | Underline annotation |
+| **Replace text** | drag over the text, type the correction: the text is struck out and the correction shown above it | Stamp; the comment text is "Replace with: …" |
+| **Edit** | change the selected markup's text and colour (or double-click a markup) | |
+| **Delete** | remove the selected markup (or press Delete) | |
+
+- With the **Pan** tool, drag a selected markup to move it; dragging anywhere else still pans.
+- Review marks use the colour chosen on the Markup tab. Strikeout and underline follow the box you drag, like Highlight;
+  mark one line of text at a time.
+
+## Revision
+
+On the **Revision** tab (web and desktop):
+
+- **Compare…**: open another revision of the PDF (usually the previous issue). Page N is compared with page N.
+  - **Differences**: what this revision added in green, what it removed (only in the other revision) in red, changed
+    areas boxed; unchanged content is faded. **↑ / ↓** go to the previous / next changed area, on later or earlier
+    pages too. **Cloud changes** marks every changed area on the page with a revision cloud.
+  - **Overlay**: both revisions drawn together: this one in blue, the other in red, unchanged content in grey.
+  - **Off** shows the plain page; **×** stops comparing. Pages are compared at about 1800 px (a moment per page).
+- **Revisions**: the document's revision list (label, date, description, by) and the current revision. New markups belong
+  to the current revision (shown in the Markups panel and the report). The list is remembered for the file (name and
+  size) in this browser / app.
+- **Tag**: a revision triangle with the current revision's label (saved in the copy as a Stamp).
+- **Markup report**: every markup with page, type, content (text or measured value), colour, revision and time, with
+  counts by type and page; for all markups or one revision. **Save CSV** (opens in Excel) or **Save printable
+  report** (an HTML page to print or save as PDF). Web: downloads; desktop: asks where to save.
 
 ## PDF tools
 

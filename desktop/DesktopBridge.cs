@@ -10,10 +10,13 @@ namespace PdfViewer.Desktop;
 ///   UI -> host: { type: "ready" } | { type: "open" } | { type: "close" }
 ///               | { type: "open-recent", path } | { type: "clear-recent" }
 ///               | { type: "pick-pdfs" } | { type: "run-tool", tool, inputs, options }
+///               | { type: "open-compare" } | { type: "close-compare" }
 ///   host -> UI: { type: "opening", fileName } | { type: "opened", token, fileName, size, pageCount }
 ///             | { type: "open-error", message } | { type: "open-cancelled" }
 ///             | { type: "recent-files", files: [{ path, fileName, folder, exists }] }
 ///             | { type: "picked-pdfs", files } | { type: "tool-done" | "tool-error", message } | { type: "tool-cancelled" }
+///             | { type: "compare-opened", token, fileName, pageCount } | { type: "compare-error", message }
+///             | { type: "compare-cancelled" }
 /// </summary>
 public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles recent, ILogger<DesktopBridge> logger)
 {
@@ -93,6 +96,18 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
                 pdfium.Close();
                 break;
 
+            case "open-compare":
+                var revision = dialogs.OpenFiles("Open the revision to compare with", false, PdfFilter);
+                if (revision is { Length: > 0 } && !string.IsNullOrEmpty(revision[0]))
+                    await OpenCompareAsync(revision[0]);
+                else
+                    Send(new { type = "compare-cancelled" });
+                break;
+
+            case "close-compare":
+                pdfium.CloseCompare();
+                break;
+
             case "pick-pdfs":
                 Send(tools.PickPdfs(dialogs));
                 break;
@@ -122,6 +137,24 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
         {
             logger.LogError(ex, "Failed to open {Path}", path);
             Send(new { type = "open-error", message = "Unable to open this PDF." });
+        }
+    }
+
+    private async Task OpenCompareAsync(string path)
+    {
+        try
+        {
+            var info = await Task.Run(() => pdfium.OpenCompare(path));
+            Send(new { type = "compare-opened", info.Token, info.FileName, info.PageCount });
+        }
+        catch (LocalPdfException ex)
+        {
+            Send(new { type = "compare-error", message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to open {Path} for comparing", path);
+            Send(new { type = "compare-error", message = "Unable to open this PDF." });
         }
     }
 

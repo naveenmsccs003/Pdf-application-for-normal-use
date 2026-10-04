@@ -302,6 +302,46 @@ async function startHost() {
         await open(highlightedPath); await click('Actual size');
         check('desktop: reopened copy shows the highlight (PDFium)', (await state()).highlights.length === 0 && await yellowCount() > 5000, await yellowCount());
 
+        // ----- Revision: compare with another revision (opened by the host), save the markup report -----
+        const revisionState = () => page.evaluate(() => ({
+            status: document.querySelector('.status-text').textContent.trim(),
+            regions: document.querySelectorAll('.revision-region').length,
+            file: (document.querySelector('.compare-file') || { textContent: '' }).textContent.trim()
+        }));
+        await open('one-page-rev-b.pdf'); await click('Actual size');
+        await page.click('#ribbon-tab-revision');
+        await page.evaluate(p => { window.__dialog = { files: [p] }; }, fixture('one-page.pdf'));
+        await click('Compare with a revision');
+        await page.waitForFunction(() => /changed area|no differences|Unable/.test(document.querySelector('.status-text').textContent), { timeout: 30000 });
+        let rvs = await revisionState();
+        check('desktop: Compare opens the other revision on the host (PDFium) and finds the 2 changed areas',
+            rvs.regions === 2 && rvs.file === 'one-page.pdf' && /2 changed areas/.test(rvs.status), rvs);
+        await page.evaluate(() => { window.__dialog = { files: [] }; });
+        await click('Compare with a revision'); await sleep(500); rvs = await revisionState();
+        check('desktop: cancelling the open dialog keeps the comparison', rvs.regions === 2 && rvs.file === 'one-page.pdf', rvs);
+        await click('Cloud changes'); await sleep(300);
+        await page.click('button[aria-label="Markup report"]'); await sleep(200);
+        const reportPath = path.join(outDir, 'report');
+        const saveReport = async (dialog, button) => {
+            const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
+            await page.click(button);
+            await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 30000 }, before);
+            await sleep(200);
+            return page.$eval('.status-text', e => e.textContent.trim());
+        };
+        status = await saveReport({ save: reportPath }, '.dialog-footer .tool-outline');
+        const csvText = fs.existsSync(reportPath + '.csv') ? fs.readFileSync(reportPath + '.csv', 'utf8') : '';
+        check('desktop: markup report saved as CSV where chosen (extension added, UTF-8 with BOM)',
+            status === 'Saved report.csv.' && csvText.startsWith('\ufeffNo.,Page,Type,Content,Colour,Revision,Created') &&
+            csvText.trim().split('\r\n').length === 3, [status, csvText.slice(0, 120)]);
+        status = await saveReport({ save: reportPath + '.html' }, '.dialog-footer .tool-outline:nth-child(2)');
+        check('desktop: printable report saved as HTML', status === 'Saved report.html.' &&
+            /<h1>Markup report<\/h1>/.test(fs.readFileSync(reportPath + '.html', 'utf8')), status);
+        await page.click('[aria-labelledby="report-dialog-title"] .dialog-footer .tool-primary'); await sleep(100);
+        await click('Close comparison'); rvs = await revisionState();
+        check('desktop: closing the comparison tells the host and clears the view',
+            rvs.regions === 0 && rvs.file === '' && (await state()).sent.includes('close-compare'), rvs);
+
         const leftovers = fs.readdirSync(outDir).filter(f => f.endsWith('.tmp'));
         check('no temporary files left behind', leftovers.length === 0, leftovers);
         fs.rmSync(outDir, { recursive: true, force: true });

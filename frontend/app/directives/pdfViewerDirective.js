@@ -20,6 +20,7 @@
             var MAX_CORNERS = 500;
             var LINE_TOOLS = { line: true, arrow: true, distance: true, hdistance: true, vdistance: true, calibrate: true };
             var POLYGON_TOOLS = { area: true, perimeter: true };
+            var TEXT_MARK_TOOLS = { strikeout: true, underline: true, replace: true };   // drawn over text like a highlight
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var RESIZE_DEBOUNCE_MS = 150;
 
@@ -39,6 +40,10 @@
                     onCreateMarkup: '&',
                     onRequestText: '&',     // text note / callout: the host asks for the text
                     onCalibrate: '&',       // scale calibration: a line of known length was drawn
+                    onMoveMarkup: '&',      // the selected markup was dragged: (id, markup) is the moved copy
+                    onEditMarkup: '&',      // a markup was double-clicked
+                    onPlaceTag: '&',        // revision tag tool: (pageNumber, at) where the page was clicked
+                    revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay', url, regions, active }
                     onSelectHighlight: '&',
                     onRemoveHighlight: '&',
                     onResize: '&',
@@ -47,8 +52,16 @@
                 },
                 template:
                     '<div class="viewer-scroll" ng-class="{\'is-rendering\': rendering}">' +
-                    '  <div class="pdf-page" ng-show="rendered.page" ng-style="{width: rendered.width + \'px\', height: rendered.height + \'px\'}">' +
+                    '  <div class="pdf-page" ng-show="rendered.page" ng-style="{width: rendered.width + \'px\', height: rendered.height + \'px\'}"' +
+                    '       ng-class="{\'is-comparing\': revisionOn() && revision.mode === \'diff\'}">' +
                     '    <div class="canvas-layer"></div>' +
+                    '    <img class="revision-image" ng-if="revisionOn()" ng-src="{{ revision.url }}" alt=""' +
+                    '         ng-class="{\'is-overlay\': revision.mode === \'overlay\'}">' +
+                    '    <div class="revision-regions" ng-if="revisionOn() && revision.mode === \'diff\'">' +
+                    '      <div class="revision-region" ng-repeat="r in revision.regions track by $index" ng-class="{\'is-active\': $index === revision.active}"' +
+                    '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
+                    '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}"></div>' +
+                    '    </div>' +
                     '    <div class="search-layer">' +
                     '      <div class="search-hit" ng-repeat="r in pageHits track by $index" ng-class="{\'is-current\': r.current}"' +
                     '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
@@ -72,6 +85,8 @@
                     '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' +
                     '        <path ng-if="shape(m).area" class="markup-area" ng-attr-d="{{ shape(m).area }}" ng-attr-fill="{{ m.color }}" stroke="none"></path>' +
                     '        <path ng-attr-d="{{ shape(m).outline }}" ng-attr-fill="{{ shape(m).fill }}"></path>' +
+                    '        <path ng-if="shape(m).iconLines" ng-attr-d="{{ shape(m).iconLines }}" stroke="#ffffff" fill="none"' +
+                    '              ng-attr-stroke-width="{{ m.width / 12 }}"></path>' +
                     '        <path ng-if="shape(m).leader" ng-attr-d="{{ shape(m).leader }}" fill="none"></path>' +
                     '        <rect ng-if="shape(m).label" class="markup-label" ng-attr-x="{{ shape(m).label.x }}" ng-attr-y="{{ shape(m).label.y }}"' +
                     '              ng-attr-width="{{ shape(m).label.width }}" ng-attr-height="{{ shape(m).label.height }}" stroke="none"></rect>' +
@@ -82,6 +97,7 @@
                     '      <path class="markup-draft" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>' +
                     '      <g class="markup-draft-label" display="none"><rect class="markup-label" stroke="none"></rect><text stroke="none"></text></g>' +
                     '    </svg>' +
+                    '    <div class="comment-popup" ng-if="commentPopup()" ng-style="commentPopup().style">{{ commentPopup().text }}</div>' +
                     '    <div class="markup-selection" ng-if="selectedBox()" ng-style="selectedBox()">' +
                     '      <button type="button" class="highlight-remove" title="Remove markup" aria-label="Remove markup"' +
                     '              ng-click="onRemoveHighlight({id: selectedId})">&times;</button>' +
@@ -159,12 +175,17 @@
                     function scrollToActiveMatch() {
                         var match = scope.activeMatch;
                         if (!match || match.pageNumber !== scope.rendered.page) { return; }
+                        scrollIntoView(match.rects);
+                    }
+
+                    /** Scrolls the area around the rects (PDF units) into view, if it is not already. */
+                    function scrollIntoView(rects) {
                         // After the page's new size is in the DOM.
                         setTimeout(function () {
                             var pageEl = element[0].querySelector('.pdf-page');
                             var s = scope.rendered.scale;
                             var x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-                            match.rects.forEach(function (r) {
+                            rects.forEach(function (r) {
                                 x1 = Math.min(x1, r.x); y1 = Math.min(y1, r.y);
                                 x2 = Math.max(x2, r.x + r.width); y2 = Math.max(y2, r.y + r.height);
                             });
@@ -181,6 +202,15 @@
                             }
                         });
                     }
+
+                    // Revision compare: scroll to the change picked with Previous / Next change.
+                    scope.revisionOn = function () {
+                        return !!(scope.revision && scope.revision.url && scope.revision.page === scope.rendered.page);
+                    };
+                    scope.$watchGroup(['revision.active', 'revision.page', 'rendered.page'], function () {
+                        var r = scope.revision;
+                        if (scope.revisionOn() && r.active >= 0 && r.regions[r.active]) { scrollIntoView([r.regions[r.active]]); }
+                    });
 
                     scope.$watchCollection('searchMatches', updateHits);
                     scope.$watchGroup(['activeMatch', 'rendered.page'], function () {
@@ -244,6 +274,27 @@
                             shapes[m.id] = cached;
                             return cached;
                         }
+                        if (m.type === 'revtag') {
+                            cached = { markup: m, scaleVersion: scaleService.version, outline: markupGeometry.path(m), fill: '#ffffff',
+                                       lines: markupGeometry.revtagLines(m) };
+                            shapes[m.id] = cached;
+                            return cached;
+                        }
+                        if (m.type === 'comment' || m.type === 'replace') {
+                            var icon = m.type === 'comment' ? markupGeometry.commentIcon(m) : null;
+                            var correction = m.type === 'replace' ? markupGeometry.replaceLabel(m) : null;
+                            cached = {
+                                markup: m,
+                                scaleVersion: scaleService.version,
+                                outline: icon ? icon.bubble : markupGeometry.path(m),
+                                fill: icon ? m.color : 'none',
+                                iconLines: icon ? icon.lines : null,
+                                label: correction,
+                                lines: correction ? correction.lines : null
+                            };
+                            shapes[m.id] = cached;
+                            return cached;
+                        }
                         var isNote = m.type === 'text' || m.type === 'callout';
                         cached = {
                             markup: m,
@@ -278,6 +329,19 @@
                     function polylinePath(p) {
                         return p.reduce(function (d, v, k) { return d + (k % 2 ? ' ' + v : (k ? 'L' : 'M') + v); }, '');
                     }
+
+                    // The selected comment's text, next to its icon. Same object while unchanged (see selectedBox).
+                    var lastPopup = null;
+                    scope.commentPopup = function () {
+                        var m = selectedMarkup();
+                        if (!m || m.type !== 'comment') { lastPopup = null; return null; }
+                        var s = scope.rendered.scale;
+                        var left = (m.x + m.width) * s + 8 + 'px', top = m.y * s + 'px';
+                        if (!lastPopup || lastPopup.text !== m.text || lastPopup.style.left !== left || lastPopup.style.top !== top) {
+                            lastPopup = { text: m.text, style: { left: left, top: top } };
+                        }
+                        return lastPopup;
+                    };
 
                     function selectedMarkup() {
                         var list = scope.highlights || [];
@@ -357,6 +421,48 @@
                     document.addEventListener('keyup', onSpace);
                     window.addEventListener('blur', onBlur);
 
+                    // ----- Move: drag the selected markup with the Pan tool -----
+                    var move = null;    // { id, origin, x, y, moved } while dragging a markup
+
+                    function selectedUnder(event) {
+                        if (scope.selectedId === null || scope.selectedId === undefined || scope.drawing()) { return null; }
+                        var hit = highlightAt(pointFromEvent(event));
+                        return hit && hit.id === scope.selectedId ? hit : null;
+                    }
+
+                    interactionLayer.addEventListener('pointerdown', function (event) {
+                        if (!scope.rendered.page || event.button !== 0 || scope.spacePan) { return; }
+                        var hit = selectedUnder(event);
+                        if (!hit) { return; }
+                        move = { id: hit.id, origin: hit, x: event.clientX, y: event.clientY, moved: false };
+                        interactionLayer.setPointerCapture(event.pointerId);
+                        event.preventDefault();
+                        event.stopImmediatePropagation();
+                    });
+
+                    interactionLayer.addEventListener('pointermove', function (event) {
+                        if (!move) {
+                            // Show that the selected markup can be dragged.
+                            if (!pan && !start) { interactionLayer.classList.toggle('is-over-selected', !!selectedUnder(event)); }
+                            return;
+                        }
+                        var dx = event.clientX - move.x, dy = event.clientY - move.y;
+                        event.stopImmediatePropagation();
+                        if (!move.moved && Math.abs(dx) < MIN_PAN_PX && Math.abs(dy) < MIN_PAN_PX) { return; }
+                        move.moved = true;
+                        var s = scope.rendered.scale, m = move;
+                        scope.$apply(function () {
+                            scope.onMoveMarkup({ id: m.id, markup: markupGeometry.translate(m.origin, dx / s, dy / s) });
+                        });
+                    });
+
+                    function endMove(event) {
+                        move = null;
+                        event.stopImmediatePropagation();
+                    }
+                    interactionLayer.addEventListener('pointerup', function (event) { if (move) { endMove(event); } });
+                    interactionLayer.addEventListener('pointercancel', function (event) { if (move) { endMove(event); } });
+
                     interactionLayer.addEventListener('pointerdown', function (event) {
                         if (!scope.rendered.page || !wantsPan(event)) { return; }
                         pan = { x: event.clientX, y: event.clientY, left: scrollEl.scrollLeft, top: scrollEl.scrollTop,
@@ -417,6 +523,13 @@
                                 var r = rectBetween(a, b);
                                 if (r.width < minSize || r.height < minSize) { return null; }
                                 return angular.extend(m, r);
+                            case 'strikeout':
+                            case 'underline':
+                            case 'replace':
+                                var t = rectBetween(a, b);
+                                if (t.width < minSize || t.height < minSize) { return null; }
+                                // The line is a little thinner for small text.
+                                return angular.extend(m, t, { strokeWidth: round2(Math.max(0.8, Math.min(t.height * 0.08, sizes.strokeWidth))) });
                             case 'line':
                             case 'arrow':
                             case 'distance':
@@ -466,7 +579,12 @@
                             draftEl.classList.remove('ng-hide');
                             return;
                         }
-                        svgDraft.setAttribute('d', markupGeometry.path(m));
+                        var d = markupGeometry.path(m);
+                        if (TEXT_MARK_TOOLS[m.type]) {
+                            // The box being marked, and where its line goes.
+                            d += markupGeometry.path({ type: 'rect', x: m.x, y: m.y, width: m.width, height: m.height });
+                        }
+                        svgDraft.setAttribute('d', d);
                         svgDraft.setAttribute('stroke', m.color);
                         svgDraft.setAttribute('stroke-width', m.strokeWidth);
                         if (!markupGeometry.isMeasure(m)) {
@@ -545,7 +663,12 @@
                         event.stopImmediatePropagation();
                     }
                     document.addEventListener('keydown', onPolygonKey, true);
-                    interactionLayer.addEventListener('dblclick', function () { if (polygon) { finishPolygon(); } });
+                    interactionLayer.addEventListener('dblclick', function (event) {
+                        if (polygon) { finishPolygon(); return; }
+                        if (scope.drawing()) { return; }
+                        var hit = highlightAt(pointFromEvent(event));
+                        if (hit) { scope.$apply(function () { scope.onEditMarkup({ id: hit.id }); }); }
+                    });
                     scope.$watch('tool', function () { if (polygon) { cancelPolygon(); } });
                     scope.$watch('rendered.page', function () { if (polygon) { cancelPolygon(); } });
 
@@ -606,6 +729,25 @@
 
                         scope.$apply(function () {
                             var tool = scope.drawing() ? scope.tool : null;
+                            if (tool === 'revtag') {
+                                scope.onPlaceTag({ pageNumber: page, at: { x: end.x / s, y: end.y / s } });
+                                return;
+                            }
+                            if (tool === 'comment') {
+                                scope.onRequestText({ pageNumber: page, at: { x: end.x / s, y: end.y / s }, tip: null, box: null });
+                                return;
+                            }
+                            if (tool === 'replace') {
+                                // Mark the text to replace, then the host asks for the correction.
+                                var marked = draftMarkup(begin.point, end, event);
+                                if (marked) {
+                                    scope.onRequestText({ pageNumber: page, at: null, tip: null, box: marked });
+                                } else {
+                                    var picked = highlightAt(end);
+                                    scope.onSelectHighlight({ id: picked ? picked.id : null });
+                                }
+                                return;
+                            }
                             if (tool === 'text' || tool === 'callout') {
                                 // The note goes where the button was released; a callout points at where the drag began.
                                 var dragged = Math.hypot(end.x - begin.point.x, end.y - begin.point.y) >= MIN_HIGHLIGHT_PX;

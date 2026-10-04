@@ -12,6 +12,7 @@ namespace PdfViewer.Desktop;
 public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
 {
     private static readonly (string, string[])[] PdfFilter = [("PDF files", ["*.pdf"])];
+    private const int MaxReportLength = 20_000_000;
     private readonly Dictionary<string, string> _picked = new();
 
     /// <summary>Shows the open dialog (multi-select) and returns the picked files for the UI.</summary>
@@ -94,6 +95,25 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                         return 0;
                     });
                     return Done($"Saved {Path.GetFileName(output)} (text only).");
+                }
+                case "save-report":
+                {
+                    // The markup report, written by the UI (CSV or a printable HTML page).
+                    var (path, name) = Single(inputs);
+                    var format = options.GetProperty("format").GetString() == "html" ? "html" : "csv";
+                    var content = options.GetProperty("content").GetString() ?? "";
+                    if (content.Length > MaxReportLength)
+                        throw new ToolException("The report is too large.");
+                    var output = AskSaveFile(dialogs, "Save markup report", path, "." + format, inputs, $"{BaseName(name)}-markups");
+                    if (output is null) return Cancelled;
+                    // CSV with a byte order mark, so Excel reads the text as UTF-8.
+                    await WriteFileAsync(output, stream =>
+                    {
+                        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(format == "csv"));
+                        writer.Write(content);
+                        return 0;
+                    });
+                    return Done($"Saved {Path.GetFileName(output)}.");
                 }
                 case "save-highlights":
                 {
@@ -225,6 +245,8 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
         {
             ".docx" => ("Word documents", new[] { "*.docx" }),
             ".xlsx" => ("Excel workbooks", new[] { "*.xlsx" }),
+            ".csv" => ("CSV files", new[] { "*.csv" }),
+            ".html" => ("Web pages", new[] { "*.html" }),
             _ => PdfFilter[0]
         };
         var chosen = dialogs.SaveFile(suggestedName is null ? title : $"{title} (e.g. {suggestedName}{extension})",

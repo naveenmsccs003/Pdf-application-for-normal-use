@@ -6,7 +6,8 @@ using PdfViewer.Tools;
 namespace PdfViewer.Desktop.Services;
 
 /// <summary>
-/// Opens PDFs from disk with PDFium, renders single pages to PNG and finds text.
+/// Opens PDFs from disk with PDFium, renders single pages to PNG and finds text. Besides the document in the
+/// viewer, a second one can be open to compare revisions (Revision tab); it has its own token.
 /// PDFium reads only the parts of the file it needs, so very large files open quickly.
 /// PDFium is not thread-safe: every call goes through the process-wide <see cref="Pdfium.Lock"/>,
 /// shared with the merge/split/convert tools.
@@ -23,6 +24,8 @@ public sealed class PdfiumService : IDisposable
     private FpdfDocumentT? _document;
     private Guid _token;
     private string? _path;
+    private FpdfDocumentT? _compare;
+    private Guid _compareToken;
 
     public PdfiumService()
     {
@@ -73,30 +76,57 @@ public sealed class PdfiumService : IDisposable
         }
     }
 
-    /// <summary>Opens a PDF (closing the previous one). Throws <see cref="LocalPdfException"/>.</summary>
+    /// <summary>Opens a PDF (closing the previous one and any comparison). Throws <see cref="LocalPdfException"/>.</summary>
     public LocalPdfInfo Open(string path)
     {
         PdfPreflight.Check(path);
 
         lock (_gate)
         {
-            var document = fpdfview.FPDF_LoadDocument(path, null);
-            if (document == null)
-                throw new LocalPdfException(Pdfium.ErrorMessage(fpdfview.FPDF_GetLastError()));
-
-            var pageCount = fpdfview.FPDF_GetPageCount(document);
-            if (pageCount < 1)
-            {
-                fpdfview.FPDF_CloseDocument(document);
-                throw new LocalPdfException("This PDF has no pages.");
-            }
-
+            var (document, pageCount) = LoadDocument(path);
             CloseCurrent();
+            CloseCompareDocument();
             _document = document;
             _token = Guid.NewGuid();
             _path = path;
             return new LocalPdfInfo(_token, Path.GetFileName(path), new FileInfo(path).Length, pageCount);
         }
+    }
+
+    /// <summary>Opens another revision to compare with (closing the previous one). Throws <see cref="LocalPdfException"/>.</summary>
+    public LocalPdfInfo OpenCompare(string path)
+    {
+        PdfPreflight.Check(path);
+
+        lock (_gate)
+        {
+            var (document, pageCount) = LoadDocument(path);
+            CloseCompareDocument();
+            _compare = document;
+            _compareToken = Guid.NewGuid();
+            return new LocalPdfInfo(_compareToken, Path.GetFileName(path), new FileInfo(path).Length, pageCount);
+        }
+    }
+
+    public void CloseCompare()
+    {
+        lock (_gate)
+            CloseCompareDocument();
+    }
+
+    private static (FpdfDocumentT Document, int PageCount) LoadDocument(string path)
+    {
+        var document = fpdfview.FPDF_LoadDocument(path, null);
+        if (document == null)
+            throw new LocalPdfException(Pdfium.ErrorMessage(fpdfview.FPDF_GetLastError()));
+
+        var pageCount = fpdfview.FPDF_GetPageCount(document);
+        if (pageCount < 1)
+        {
+            fpdfview.FPDF_CloseDocument(document);
+            throw new LocalPdfException("This PDF has no pages.");
+        }
+        return (document, pageCount);
     }
 
     public PageSize? GetPageSize(Guid token, int pageNumber)
@@ -253,18 +283,35 @@ public sealed class PdfiumService : IDisposable
         }
     }
 
+    /// <summary>A page of the viewer's document or of the comparison, by token; null if there is no such page.</summary>
     private FpdfPageT? LoadPage(Guid token, int pageNumber)
     {
-        if (_document == null || token != _token || pageNumber < 1 || pageNumber > fpdfview.FPDF_GetPageCount(_document))
+        var document = _document != null && token == _token ? _document
+                     : _compare != null && token == _compareToken ? _compare
+                     : null;
+        if (document == null || pageNumber < 1 || pageNumber > fpdfview.FPDF_GetPageCount(document))
             return null;
-        return fpdfview.FPDF_LoadPage(_document, pageNumber - 1);
+        return fpdfview.FPDF_LoadPage(document, pageNumber - 1);
     }
 
-    /// <summary>Closes the document shown in the viewer (tab closed).</summary>
+    /// <summary>Closes the document shown in the viewer (tab closed), and the comparison with it.</summary>
     public void Close()
     {
         lock (_gate)
+        {
             CloseCurrent();
+            CloseCompareDocument();
+        }
+    }
+
+    private void CloseCompareDocument()
+    {
+        if (_compare != null)
+        {
+            fpdfview.FPDF_CloseDocument(_compare);
+            _compare = null;
+            _compareToken = Guid.Empty;
+        }
     }
 
     private void CloseCurrent()
@@ -280,6 +327,9 @@ public sealed class PdfiumService : IDisposable
     public void Dispose()
     {
         lock (_gate)
+        {
             CloseCurrent();
+            CloseCompareDocument();
+        }
     }
 }

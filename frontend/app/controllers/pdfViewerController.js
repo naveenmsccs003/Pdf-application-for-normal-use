@@ -4,9 +4,11 @@
     /** Menu bar, toolbar and status bar state: open, recent files, navigate, zoom, fit and highlight commands. */
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
-        'recentFilesService', 'markupGeometry', 'scaleService', 'VIEWER_CONFIG',
+        'recentFilesService', 'markupGeometry', 'scaleService', 'compareService', 'revisionService', 'reportService',
+        'toolsService', 'VIEWER_CONFIG',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
-                  recentFilesService, markupGeometry, scaleService, VIEWER_CONFIG) {
+                  recentFilesService, markupGeometry, scaleService, compareService, revisionService, reportService,
+                  toolsService, VIEWER_CONFIG) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -80,7 +82,7 @@
                     return pdfService.load(VIEWER_CONFIG.apiBase + '/' + uploaded.id).then(function (pageCount) {
                         vm.source = { kind: 'web', id: uploaded.id };
                         recentFilesService.add(file).then(refreshWebRecent);
-                        return showDocument(uploaded.fileName, pageCount);
+                        return showDocument(uploaded.fileName, pageCount, uploaded.size);
                     });
                 }).catch(openFailed).finally(function () {
                     vm.busy = false;
@@ -152,7 +154,7 @@
                 desktopService.on('opened', function (message) {
                     pdfService.loadLocal(message).then(function (pageCount) {
                         vm.source = { kind: 'desktop' };
-                        return showDocument(message.fileName, pageCount);
+                        return showDocument(message.fileName, pageCount, message.size);
                     }).catch(openFailed).finally(function () {
                         vm.busy = false;
                     });
@@ -190,7 +192,10 @@
                 vm.tool = 'pan';
                 vm.noteDialog = null;
                 vm.scaleDialog = null;
+                vm.editDialog = null;
                 scaleService.clear();
+                closeRevisionWork();
+                revisionService.useDocument(null);
                 vm.source = null;
                 vm.fileName = '';
                 vm.pageCount = 0;
@@ -203,13 +208,16 @@
                 vm.status = 'Open a PDF to get started.';
             };
 
-            function showDocument(fileName, pageCount) {
+            function showDocument(fileName, pageCount, size) {
                 highlightService.clear();
                 vm.selectedHighlightId = null;
                 vm.tool = 'pan';
                 vm.noteDialog = null;
                 vm.scaleDialog = null;
+                vm.editDialog = null;
                 scaleService.clear();
+                closeRevisionWork();
+                revisionService.useDocument(fileName, size);
                 vm.fileName = fileName;
                 vm.pageCount = pageCount;
                 setPage(1);
@@ -382,13 +390,19 @@
             // While a dialog (custom zoom, note text) is open, keys belong to it: Esc closes it, and the
             // viewer's and find shortcuts must not act on the page behind it. Capture phase, so this runs first.
             function onCustomZoomKey(event) {
-                if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog) { return; }
+                if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog) { return; }
+                // The colour pop-up (Edit markup dialog) handles its own keys, Esc included.
+                var popover = $document[0].querySelector('.color-popover');
+                if (popover && popover.contains(event.target)) { return; }
                 event.stopImmediatePropagation();
                 if (event.key === 'Escape') {
-                    $scope.$apply(function () { vm.closeCustomZoom(); vm.closeNoteDialog(); vm.closeScaleDialog(); });
-                } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && vm.noteDialog) {
+                    $scope.$apply(function () {
+                        vm.closeCustomZoom(); vm.closeNoteDialog(); vm.closeScaleDialog(); vm.closeEditDialog();
+                        vm.revisionsDialog = null; vm.reportDialog = null;
+                    });
+                } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
-                    $scope.$apply(vm.applyNoteDialog);
+                    $scope.$apply(vm.noteDialog ? vm.applyNoteDialog : vm.applyEditDialog);
                 }
             }
             $document[0].addEventListener('keydown', onCustomZoomKey, true);
@@ -432,7 +446,7 @@
             vm.ribbonTabs = [
                 { id: 'file', label: 'File' }, { id: 'zoom', label: 'Zoom' },
                 { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' },
-                { id: 'measure', label: 'Measure' }
+                { id: 'measure', label: 'Measure' }, { id: 'review', label: 'Review' }, { id: 'revision', label: 'Revision' }
             ];
             vm.ribbonTab = 'file';
 
@@ -470,12 +484,21 @@
                 vdistance: 'Vertical distance: drag between the two points; only the vertical part is measured.',
                 area: 'Area: click each corner; double-click, Enter or click the first corner to finish. Backspace removes the last corner, Esc cancels.',
                 perimeter: 'Perimeter: click each corner of the boundary; double-click, Enter or click the first corner to finish.',
-                calibrate: 'Calibrate: drag along a dimension you know (e.g. a grid line distance), then enter its real length.'
+                calibrate: 'Calibrate: drag along a dimension you know (e.g. a grid line distance), then enter its real length.',
+                comment: 'Comment: click where the comment goes, then type it.',
+                strikeout: 'Strikeout: drag over the incorrect text.',
+                underline: 'Underline: drag over the important text.',
+                replace: 'Replace text: drag over the text to replace, then type the correction.',
+                revtag: 'Revision tag: click where the tag goes (it shows the current revision).'
             };
 
             /** Picks a tool; picking the active markup tool again goes back to Pan. Esc also returns to Pan. */
             vm.selectTool = function (tool) {
                 if (!vm.hasDocument() || !(tool in TOOL_HINTS)) { return; }
+                if (tool === 'revtag' && vm.tool !== 'revtag' && !revisionService.current()) {
+                    vm.openRevisionsDialog('Add a revision first: the tag shows its label.');
+                    return;
+                }
                 vm.tool = vm.tool === tool ? 'pan' : tool;
                 vm.status = TOOL_HINTS[vm.tool] || pageStatus();
             };
@@ -496,6 +519,8 @@
             };
 
             vm.addMarkup = function (pageNumber, markup) {
+                var revision = revisionService.current();
+                if (revision && !markup.revision) { markup = angular.extend({}, markup, { revision: revision.label }); }
                 var added = highlightService.add(pageNumber, markup);
                 vm.selectedHighlightId = added.id;
                 if (markupGeometry.isMeasure(added)) {
@@ -516,8 +541,18 @@
                 });
             }
 
-            vm.requestNoteText = function (pageNumber, at, tip) {
-                vm.noteDialog = { pageNumber: pageNumber, at: at, tip: tip, type: tip ? 'callout' : 'text', text: '', error: '' };
+            // The dialog's wording for each kind of text.
+            vm.textKinds = {
+                text: { title: 'Text note', label: 'Note on page', button: 'Add note', empty: 'Type the note text.', placeholder: 'e.g. Check lap length of B12 bars' },
+                callout: { title: 'Callout', label: 'Note on page', button: 'Add note', empty: 'Type the note text.', placeholder: 'e.g. Check column C3' },
+                comment: { title: 'Comment', label: 'Review comment on page', button: 'Add comment', empty: 'Type the comment.', placeholder: 'e.g. Please confirm the slab thickness' },
+                replace: { title: 'Replace text', label: 'Replace the marked text on page', button: 'Replace', empty: 'Type the replacement text.', placeholder: 'e.g. 250 mm' }
+            };
+
+            /** Text note / callout / comment / replace text: ask for the text (`box` is the text marked for replacing). */
+            vm.requestNoteText = function (pageNumber, at, tip, box) {
+                var type = vm.tool === 'comment' || vm.tool === 'replace' ? vm.tool : tip ? 'callout' : 'text';
+                vm.noteDialog = { pageNumber: pageNumber, at: at, tip: tip, box: box || null, type: type, text: '', error: '' };
                 focusNoteInput();
             };
 
@@ -528,7 +563,7 @@
                 if (!note) { return; }
                 var text = String(note.text || '').replace(/\s+$/, '').replace(/^\s*\n/, '');
                 // On an error, put the cursor back in the text box (clicking Add note moved it to the button).
-                if (!text.trim()) { note.error = 'Type the note text.'; focusNoteInput(); return; }
+                if (!text.trim()) { note.error = vm.textKinds[note.type].empty; focusNoteInput(); return; }
                 if (text.length > MAX_NOTE_LENGTH) {
                     note.error = 'Keep the note under ' + MAX_NOTE_LENGTH + ' characters.';
                     focusNoteInput();
@@ -537,6 +572,11 @@
                 pdfService.getPageSize(note.pageNumber).then(function (size) {
                     if (vm.noteDialog !== note) { return; }
                     var sizes = markupGeometry.sizesFor(size.width, size.height);
+                    if (note.type === 'comment' || note.type === 'replace') {
+                        vm.addMarkup(note.pageNumber, reviewMarkup(note, text, sizes, size));
+                        vm.noteDialog = null;
+                        return;
+                    }
                     var box = markupGeometry.textBox(text, sizes.fontSize);
                     var markup = { type: note.type, color: vm.markupColor, strokeWidth: sizes.strokeWidth,
                                    fontSize: sizes.fontSize, text: text, width: box.width, height: box.height };
@@ -563,6 +603,319 @@
                 }, function () {
                     note.error = 'Unable to add the note to this page.';
                 });
+            };
+
+            function reviewMarkup(note, text, sizes, page) {
+                if (note.type === 'replace') {
+                    return angular.extend({}, note.box, { type: 'replace', color: vm.markupColor, text: text,
+                                                          fontSize: Math.max(8, Math.round(sizes.fontSize * 0.8)) });
+                }
+                // Comment: an icon centred where the page was clicked, kept on the page.
+                var icon = Math.round(sizes.fontSize * 1.6);
+                return { type: 'comment', color: vm.markupColor, text: text, width: icon, height: icon,
+                         x: Math.min(Math.max(note.at.x - icon / 2, 0), page.width - icon),
+                         y: Math.min(Math.max(note.at.y - icon / 2, 0), page.height - icon) };
+            }
+
+            // ----- Edit / move / delete markups (Review tab, double-click, drag with Pan) -----
+            vm.editDialog = null;   // { id, label, hasText, text, hasColor, color, error } while open
+
+            vm.canEditSelected = function () { return vm.selectedHighlightId !== null && !!highlightService.find(vm.selectedHighlightId); };
+
+            vm.openEditDialog = function (id) {
+                var m = highlightService.find(id === undefined ? vm.selectedHighlightId : id);
+                if (!m) { return; }
+                vm.selectedHighlightId = m.id;
+                vm.editDialog = {
+                    id: m.id,
+                    label: markupGeometry.label(m),
+                    pageNumber: m.pageNumber,
+                    hasText: markupGeometry.hasText(m),
+                    text: m.text || '',
+                    hasColor: m.type !== 'highlight',
+                    color: m.color,
+                    error: ''
+                };
+                $timeout(function () {
+                    var input = $document[0].getElementById('edit-text-input');
+                    if (input) { input.focus(); }
+                });
+            };
+
+            vm.closeEditDialog = function () { vm.editDialog = null; };
+            vm.setEditColor = function (color) { if (vm.editDialog) { vm.editDialog.color = color; } };
+
+            vm.applyEditDialog = function () {
+                var d = vm.editDialog;
+                if (!d) { return; }
+                var m = highlightService.find(d.id);
+                if (!m) { vm.editDialog = null; return; }
+                var changes = {};
+                if (d.hasText) {
+                    var text = String(d.text || '').replace(/\s+$/, '').replace(/^\s*\n/, '');
+                    if (!text.trim()) { d.error = 'The text cannot be empty.'; return; }
+                    if (text.length > MAX_NOTE_LENGTH) { d.error = 'Keep the text under ' + MAX_NOTE_LENGTH + ' characters.'; return; }
+                    changes.text = text;
+                    if (m.type === 'text' || m.type === 'callout') {
+                        // The note box fits the new text.
+                        var box = markupGeometry.textBox(text, m.fontSize);
+                        changes.width = box.width;
+                        changes.height = box.height;
+                    }
+                }
+                if (d.hasColor) { changes.color = d.color; }
+                var updated = highlightService.update(d.id, changes);
+                vm.editDialog = null;
+                vm.status = vm.markupLabel(updated) + ' changed.';
+            };
+
+            vm.moveMarkup = function (id, markup) { highlightService.update(id, markup); };
+
+            // ----- Revision: compare / overlay with another revision -----
+            vm.compare = { fileName: '', pageCount: 0, mode: 'diff', busy: false, result: null, active: -1 };
+            vm.revisionView = null;     // what the viewer shows over the page: { page, mode, url, regions, active }
+
+            vm.isComparing = function () { return compareService.isOpen(); };
+
+            function closeRevisionWork() {
+                compareService.close();
+                vm.compare = { fileName: '', pageCount: 0, mode: 'diff', busy: false, result: null, active: -1 };
+                vm.revisionView = null;
+                vm.revisionsDialog = null;
+                vm.reportDialog = null;
+            }
+
+            function compareOpened(info) {
+                if (!info) { vm.status = pageStatus(); return; }
+                vm.compare.fileName = info.fileName;
+                vm.compare.pageCount = info.pageCount;
+                vm.compare.mode = 'diff';
+                refreshCompare();
+            }
+
+            /** Web: the file picked in the Revision tab; desktop: shows the open dialog. */
+            vm.openCompare = function (file) {
+                if (!vm.hasDocument()) { return; }
+                vm.error = '';
+                vm.status = 'Opening the revision to compare with\u2026';
+                (file ? compareService.openFile(file) : compareService.openDesktop()).then(compareOpened, function (message) {
+                    showError(typeof message === 'string' ? message : 'Unable to open that PDF.');
+                });
+            };
+
+            vm.closeCompare = function () {
+                closeRevisionWork();
+                vm.status = pageStatus();
+            };
+
+            vm.setCompareMode = function (mode) {
+                if (!compareService.isOpen()) { return; }
+                vm.compare.mode = mode;
+                refreshCompare();
+            };
+
+            function viewFor(result, active) {
+                return { page: result.pageNumber, mode: vm.compare.mode, url: vm.compare.mode === 'overlay' ? compareService.overlayUrl(result) : result.diffUrl,
+                         regions: result.regions, active: active };
+            }
+
+            var pendingActive = null;   // { page, index }: the change to show once that page is compared
+
+            /** Compares the current page (cached per page) and shows the result. Resolves with it. */
+            function refreshCompare() {
+                if (!compareService.isOpen() || vm.compare.mode === 'off' || !vm.hasDocument()) {
+                    vm.revisionView = null;
+                    return null;
+                }
+                var page = vm.currentPage, mode = vm.compare.mode;
+                vm.compare.busy = true;
+                return compareService.comparePage(page).then(function (result) {
+                    if (vm.currentPage !== page || vm.compare.mode !== mode) { return result; }
+                    vm.compare.result = result;
+                    vm.compare.active = pendingActive && pendingActive.page === page ? pendingActive.index : -1;
+                    pendingActive = null;
+                    vm.revisionView = viewFor(result, vm.compare.active);
+                    vm.status = compareStatus(result);
+                    return result;
+                }, function (message) {
+                    showError(typeof message === 'string' ? message : 'Unable to compare this page.');
+                }).finally(function () { vm.compare.busy = false; });
+            }
+
+            function compareStatus(r) {
+                var name = vm.compare.fileName;
+                if (r.missing) { return 'Page ' + r.pageNumber + ' is not in ' + name + ': everything on it is new.'; }
+                if (!r.regions.length) { return 'Page ' + r.pageNumber + ': no differences from ' + name + '.'; }
+                return 'Page ' + r.pageNumber + ': ' + r.regions.length + ' changed area' + (r.regions.length === 1 ? '' : 's') +
+                       (vm.compare.mode === 'diff' ? ' (green: added, red: removed in this revision)' : ' (blue: this revision, red: ' + name + ')');
+            }
+
+            $scope.$watch(function () { return vm.currentPage; }, function (page, old) {
+                if (page !== old && compareService.isOpen()) { refreshCompare(); }
+            });
+
+            vm.changeCount = function () {
+                return vm.compare.result && vm.compare.result.pageNumber === vm.currentPage ? vm.compare.result.regions.length : 0;
+            };
+
+            /** Previous / next changed area: on this page first, then on the pages before / after it. */
+            vm.goToChange = function (step) {
+                var r = vm.compare.result;
+                if (!compareService.isOpen() || vm.compare.busy) { return; }
+                if (vm.compare.mode === 'off') { vm.compare.mode = 'diff'; }
+                if (r && r.pageNumber === vm.currentPage) {
+                    var next = vm.compare.active + step;
+                    if (vm.compare.active < 0 && step < 0) { next = r.regions.length - 1; }
+                    if (next >= 0 && next < r.regions.length) {
+                        vm.compare.active = next;
+                        vm.revisionView = viewFor(r, next);
+                        vm.status = 'Change ' + (next + 1) + ' of ' + r.regions.length + ' on page ' + r.pageNumber + '.';
+                        return;
+                    }
+                }
+                searchPages(vm.currentPage + step, step);
+            };
+
+            function searchPages(page, step) {
+                if (page < 1 || page > vm.pageCount) {
+                    vm.status = 'No more changes ' + (step > 0 ? 'after' : 'before') + ' page ' + vm.currentPage + '.';
+                    return;
+                }
+                vm.compare.busy = true;
+                vm.status = 'Looking for changes on page ' + page + '\u2026';
+                compareService.comparePage(page).then(function (result) {
+                    if (!result.regions.length) {
+                        vm.compare.busy = false;
+                        searchPages(page + step, step);
+                        return;
+                    }
+                    vm.compare.busy = false;
+                    // The page watcher compares the new page (from the cache) and shows this change.
+                    pendingActive = { page: page, index: step > 0 ? 0 : result.regions.length - 1 };
+                    goToPage(page);
+                }, function (message) {
+                    vm.compare.busy = false;
+                    showError(typeof message === 'string' ? message : 'Unable to compare page ' + page + '.');
+                });
+            }
+
+            /** Marks every changed area on this page with a revision cloud (in the current colour and revision). */
+            vm.cloudChanges = function () {
+                var r = vm.compare.result;
+                if (!r || r.pageNumber !== vm.currentPage || !r.regions.length) { return; }
+                pdfService.getPageSize(r.pageNumber).then(function (size) {
+                    var sizes = markupGeometry.sizesFor(size.width, size.height);
+                    r.regions.forEach(function (region) {
+                        vm.addMarkup(r.pageNumber, angular.extend({ type: 'cloud', color: vm.markupColor, strokeWidth: sizes.strokeWidth }, region));
+                    });
+                    vm.selectedHighlightId = null;
+                    vm.status = 'Added ' + r.regions.length + ' revision cloud' + (r.regions.length === 1 ? '' : 's') + ' on page ' + r.pageNumber + '.';
+                });
+            };
+
+            // ----- Revision tracking -----
+            vm.revisionsDialog = null;  // { list, form: { label, date, description, author }, message, error } while open
+            var AUTHOR_KEY = 'pdfViewer.author';
+
+            function rememberedAuthor() {
+                try { return $window.localStorage.getItem(AUTHOR_KEY) || ''; } catch (e) { return ''; }
+            }
+
+            vm.currentRevision = function () { return revisionService.current(); };
+
+            vm.openRevisionsDialog = function (message) {
+                if (!vm.hasDocument()) { return; }
+                vm.revisionsDialog = {
+                    list: revisionService.list(),
+                    current: revisionService.current() ? revisionService.current().id : '',
+                    form: { label: revisionService.nextLabel(), date: revisionService.today(), description: '', author: rememberedAuthor() },
+                    message: message || '',
+                    error: ''
+                };
+                $timeout(function () {
+                    var input = $document[0].getElementById('revision-description-input');
+                    if (input) { input.focus(); }
+                });
+            };
+
+            vm.addRevision = function () {
+                var d = vm.revisionsDialog;
+                if (!d) { return; }
+                var added = revisionService.add(d.form);
+                if (typeof added === 'string') { d.error = added; return; }
+                try { $window.localStorage.setItem(AUTHOR_KEY, added.author); } catch (e) { /* not remembered */ }
+                d.list = revisionService.list();
+                d.current = added.id;
+                d.error = '';
+                d.message = 'Revision ' + added.label + ' added; new markups belong to it.';
+                d.form = { label: revisionService.nextLabel(), date: revisionService.today(), description: '', author: added.author };
+            };
+
+            vm.setCurrentRevision = function (id) {
+                revisionService.setCurrent(id);
+                if (vm.revisionsDialog) { vm.revisionsDialog.current = id; }
+            };
+
+            vm.removeRevision = function (id) {
+                revisionService.remove(id);
+                if (vm.revisionsDialog) {
+                    vm.revisionsDialog.list = revisionService.list();
+                    vm.revisionsDialog.current = revisionService.current() ? revisionService.current().id : '';
+                }
+            };
+
+            vm.revisionMarkupCount = function (label) {
+                return vm.highlights.filter(function (m) { return m.revision === label; }).length;
+            };
+
+            /** Revision tag tool: a triangle with the current revision's label where the page was clicked. */
+            vm.placeTag = function (pageNumber, at) {
+                var revision = revisionService.current();
+                if (!revision) { vm.openRevisionsDialog('Add a revision first: the tag shows its label.'); return; }
+                pdfService.getPageSize(pageNumber).then(function (size) {
+                    var sizes = markupGeometry.sizesFor(size.width, size.height);
+                    var side = Math.round(sizes.fontSize * 2);
+                    vm.addMarkup(pageNumber, {
+                        type: 'revtag', color: vm.markupColor, strokeWidth: sizes.strokeWidth, text: revision.label,
+                        fontSize: Math.max(8, Math.round(sizes.fontSize * 0.85)), width: side, height: side,
+                        x: Math.min(Math.max(at.x - side / 2, 0), size.width - side),
+                        y: Math.min(Math.max(at.y - side / 2, 0), size.height - side)
+                    });
+                });
+            };
+
+            // ----- Markup report -----
+            vm.reportDialog = null;     // { revision, rows, summary, busy } while open
+
+            vm.openReport = function () {
+                if (!vm.hasDocument()) { return; }
+                vm.reportDialog = { revision: '', rows: [], summary: null, busy: false };
+                vm.updateReport();
+            };
+
+            vm.updateReport = function () {
+                var d = vm.reportDialog;
+                d.rows = reportService.rows(vm.highlights, d.revision);
+                d.summary = reportService.summary(d.rows);
+            };
+
+            vm.reportRevisions = function () {
+                var labels = [];
+                vm.highlights.forEach(function (m) { if (m.revision && labels.indexOf(m.revision) < 0) { labels.push(m.revision); } });
+                return labels.sort();
+            };
+
+            vm.exportReport = function (format) {
+                var d = vm.reportDialog;
+                if (!d || d.busy || !d.rows.length) { return; }
+                var revision = d.revision === '-' ? 'No revision' : d.revision ? 'Revision ' + d.revision : '';
+                var content = format === 'csv' ? reportService.toCsv(d.rows) : reportService.toHtml(d.rows, { fileName: vm.fileName, revision: revision });
+                d.busy = true;
+                toolsService.saveReport(vm.fileName, format, content).then(function (message) {
+                    vm.status = message || 'Not saved.';
+                }, function (message) {
+                    showError(typeof message === 'string' ? message : 'Unable to save the report.');
+                }).finally(function () { d.busy = false; });
             };
 
             // ----- Measurement scale -----

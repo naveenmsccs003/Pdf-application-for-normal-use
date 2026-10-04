@@ -14,6 +14,11 @@
      *   callout                           as text, plus tipX, tipY (the point the leader arrow points at)
      *   distance, hdistance, vdistance    points [x0, y0, x1, y1], fontSize (value label)
      *   area, perimeter                   points [x0, y0, ...] of the closed outline, fontSize
+     *   strikeout, underline              x, y, width, height (the text the line goes through / under)
+     *   replace                           as strikeout, plus text (the correction) and fontSize
+     *   comment                           x, y, width, height (the icon), text
+     *   revtag                            x, y, width, height (the triangle), text (revision label), fontSize
+     * Any markup may have `revision`: the label of the revision it was made in (revisionService).
      * Measurement values come from the page's scale (scaleService), so they follow a new calibration.
      */
     angular.module('pdfViewerApp').factory('markupGeometry', ['scaleService', function (scaleService) {
@@ -21,8 +26,11 @@
             highlight: 'Highlight', rect: 'Rectangle', ellipse: 'Ellipse', cloud: 'Cloud', line: 'Line',
             arrow: 'Arrow', pen: 'Freehand', text: 'Text note', callout: 'Callout',
             distance: 'Distance', hdistance: 'Horizontal distance', vdistance: 'Vertical distance',
-            area: 'Area', perimeter: 'Perimeter'
+            area: 'Area', perimeter: 'Perimeter',
+            comment: 'Comment', strikeout: 'Strikeout', underline: 'Underline', replace: 'Replace text',
+            revtag: 'Revision tag'
         };
+        var TEXT_TYPES = { text: true, callout: true, comment: true, replace: true };   // markups with typed text
         var MEASURES = { distance: true, hdistance: true, vdistance: true, area: true, perimeter: true };
         var LINE_HEIGHT = 1.25;     // times the font size
         var PADDING = 0.4;          // text box padding, times the font size
@@ -203,6 +211,15 @@
         function strokes(m) {
             if (isMeasure(m)) { return measureStrokes(m); }
             switch (m.type) {
+                case 'strikeout':
+                case 'replace':
+                    var mid = m.y + m.height / 2;
+                    return [[m.x, mid, m.x + m.width, mid]];
+                case 'underline':
+                    var base = m.y + m.height - m.strokeWidth / 2;
+                    return [[m.x, base, m.x + m.width, base]];
+                case 'revtag':
+                    return [[m.x + m.width / 2, m.y, m.x + m.width, m.y + m.height, m.x, m.y + m.height, m.x + m.width / 2, m.y]];
                 case 'line': return [[m.x1, m.y1, m.x2, m.y2]];
                 case 'arrow': return [[m.x1, m.y1, m.x2, m.y2], arrowHead(m.x1, m.y1, m.x2, m.y2, m.strokeWidth)];
                 case 'pen': return [m.points];
@@ -228,11 +245,16 @@
                     return 'M' + m.x + ' ' + cy + 'A' + rx + ' ' + ry + ' 0 1 0 ' + (m.x + m.width) + ' ' + cy +
                            'A' + rx + ' ' + ry + ' 0 1 0 ' + m.x + ' ' + cy + 'Z';
                 case 'cloud': return cloudPath(m);
+                case 'comment': return commentIcon(m).bubble;
                 default: return strokes(m).map(polylinePath).join('');
             }
         }
 
         function bounds(m) {
+            if (m.type === 'replace') {
+                var r = replaceLabel(m);
+                return boundsOf([[m.x, m.y, m.x + m.width, m.y + m.height], [r.x, r.y, r.x + r.width, r.y + r.height]]);
+            }
             if (isMeasure(m)) {
                 var l = measureLabel(m);
                 var all = strokes(m).concat([[l.x, l.y, l.x + l.width, l.y + l.height]]);
@@ -281,6 +303,10 @@
                 return (x >= l.x && x <= l.x + l.width && y >= l.y && y <= l.y + l.height) ||
                        (m.type === 'area' && insidePolygon(m.points, x, y));
             }
+            if (m.type === 'replace') {
+                var r = replaceLabel(m);
+                if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) { return true; }
+            }
             if (m.width === undefined) { return false; }
             return x >= m.x - tolerance && x <= m.x + m.width + tolerance && y >= m.y - tolerance && y <= m.y + m.height + tolerance;
         }
@@ -294,6 +320,49 @@
             }
             return inside;
         }
+
+        // ----- Review marks -----
+        /** Speech-bubble icon of a comment filling its box: the bubble and three text lines (SVG paths). */
+        function commentIcon(m) {
+            var x = m.x, y = m.y, w = m.width, h = m.height, r = w * 0.15;
+            var bottom = y + h * 0.75;
+            var bubble = 'M' + (x + r) + ' ' + y + 'H' + (x + w - r) + 'Q' + (x + w) + ' ' + y + ' ' + (x + w) + ' ' + (y + r) +
+                         'V' + (bottom - r) + 'Q' + (x + w) + ' ' + bottom + ' ' + (x + w - r) + ' ' + bottom +
+                         'H' + (x + w * 0.45) + 'L' + (x + w * 0.2) + ' ' + (y + h) + 'L' + (x + w * 0.25) + ' ' + bottom +
+                         'H' + (x + r) + 'Q' + x + ' ' + bottom + ' ' + x + ' ' + (bottom - r) + 'V' + (y + r) + 'Q' + x + ' ' + y + ' ' + (x + r) + ' ' + y + 'Z';
+            var lines = '';
+            [0.22, 0.38, 0.54].forEach(function (f, i) {
+                lines += 'M' + (x + w * 0.22) + ' ' + (y + h * f) + 'H' + (x + w * (i === 2 ? 0.6 : 0.78));
+            });
+            return { bubble: bubble, lines: lines };
+        }
+
+        /** The correction of a Replace text mark: a label just above the struck text (below it at the page top). */
+        function replaceLabel(m) {
+            var box = textBox(m.text, m.fontSize);
+            var gap = m.fontSize * 0.2;
+            var y = m.y - gap - box.height;
+            if (y < 0) { y = m.y + m.height + gap; }
+            var label = { text: m.text, fontSize: m.fontSize, x: m.x, y: y, width: box.width, height: box.height };
+            label.lines = textLayout(label);
+            return label;
+        }
+
+        /** The revision label centred in the lower part of a revision tag's triangle. */
+        function revtagLines(m) {
+            return [{ text: m.text, x: m.x + m.width / 2 - textWidth(m.text, m.fontSize) / 2, y: m.y + m.height * 0.82 }];
+        }
+
+        /** A copy of the markup moved by (dx, dy) PDF units. */
+        function translate(m, dx, dy) {
+            var moved = angular.extend({}, m);
+            ['x', 'x1', 'x2', 'tipX'].forEach(function (k) { if (typeof m[k] === 'number') { moved[k] = round(m[k] + dx); } });
+            ['y', 'y1', 'y2', 'tipY'].forEach(function (k) { if (typeof m[k] === 'number') { moved[k] = round(m[k] + dy); } });
+            if (m.points) { moved.points = m.points.map(function (v, i) { return round(v + (i % 2 ? dy : dx)); }); }
+            return moved;
+        }
+
+        function hasText(m) { return TEXT_TYPES[m.type] === true; }
 
         // ----- Text boxes -----
         var measureContext = null;
@@ -341,8 +410,33 @@
                 if (m.type === 'area') { saved.fill = m.points.map(round); }
                 return saved;
             }
-            if (m.type === 'highlight') {
+            if (m.type === 'highlight' || m.type === 'strikeout' || m.type === 'underline' || m.type === 'comment') {
                 saved.x = m.x; saved.y = m.y; saved.width = m.width; saved.height = m.height;
+                if (m.type !== 'highlight') { saved.color = m.color; }
+                if (m.type === 'comment') { saved.text = m.text; }
+                return saved;
+            }
+            if (m.type === 'revtag') {
+                // Saved like a note without a box: the triangle is the stroke.
+                saved.x = round(m.x); saved.y = round(m.y); saved.width = round(m.width); saved.height = round(m.height);
+                saved.color = m.color;
+                saved.strokeWidth = m.strokeWidth;
+                saved.strokes = strokes(m).map(function (p) { return p.map(round); });
+                saved.text = m.text;
+                saved.fontSize = m.fontSize;
+                saved.lines = revtagLines(m).map(function (line) { return { text: line.text, x: round(line.x), y: round(line.y) }; });
+                return saved;
+            }
+            if (m.type === 'replace') {
+                // Saved like a note: the correction is the box and text, the strike line is the stroke.
+                var rl = replaceLabel(m);
+                saved.x = round(rl.x); saved.y = round(rl.y); saved.width = round(rl.width); saved.height = round(rl.height);
+                saved.color = m.color;
+                saved.strokeWidth = m.strokeWidth;
+                saved.strokes = strokes(m).map(function (p) { return p.map(round); });
+                saved.text = m.text;
+                saved.fontSize = m.fontSize;
+                saved.lines = rl.lines.map(function (line) { return { text: line.text, x: round(line.x), y: round(line.y) }; });
                 return saved;
             }
             var b = bounds(m);
@@ -378,6 +472,11 @@
             toSaved: toSaved,
             label: label,
             isMeasure: isMeasure,
+            hasText: hasText,
+            commentIcon: commentIcon,
+            replaceLabel: replaceLabel,
+            revtagLines: revtagLines,
+            translate: translate,
             measureText: measureText,
             measureLabel: measureLabel
         };

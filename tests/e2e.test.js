@@ -794,7 +794,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }));
     await open('ten-pages.pdf'); await click('Actual size');
     await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
-    check('ribbon: File, Zoom, Navigation, Markup, Measure tabs; one panel shown', rb.tabs.join('|') === 'File|Zoom|Navigation|Markup|Measure' &&
+    check('ribbon: File, Zoom, Navigation, Markup, Measure, Review, Revision tabs; one panel shown', rb.tabs.join('|') === 'File|Zoom|Navigation|Markup|Measure|Review|Revision' &&
         rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
     await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
     check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
@@ -807,7 +807,8 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.keyboard.press('ArrowRight'); await settle(); rb = await ribbon(); s = await state();
     check('ribbon: arrow keys on the tabs move to the next tab, not the next page',
         rb.selected === 'Markup' && rb.focused === 'ribbon-tab-markup' && rb.visible.join() === 'ribbon-markup' && rb.page === 'Page 2 of 10', rb);
-    await page.keyboard.press('ArrowRight'); await sleep(100); await page.keyboard.press('ArrowRight'); await sleep(100); rb = await ribbon();
+    for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowRight'); await sleep(100); }
+    rb = await ribbon();
     check('ribbon: arrow keys wrap around', rb.selected === 'File' && rb.focused === 'ribbon-tab-file', rb);
     await page.click('#ribbon-tab-markup'); await sleep(100);
     await page.click('#ribbon-markup button[aria-label="Rectangle"]'); await sleep(100);
@@ -959,6 +960,229 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
                 line > 0.1 && fill > 0.3);
         }
     }
+    await click('Fit Page');
+
+    // ===== Review: comments, notes, strikeout, underline, replace text, edit, delete =====
+    const reviewLabels = () => page.$$eval('.markup-row .markup-title', els => els.map(e => e.textContent.trim()));
+    const textDialog = () => page.evaluate(() => {
+        const h = document.querySelector('#note-dialog-title, #edit-dialog-title');
+        const input = document.querySelector('#note-text-input, #edit-text-input');
+        return h ? { title: h.textContent.trim(), text: input ? input.value : null, focused: document.activeElement === input,
+                     button: document.querySelector('.dialog-footer .tool-primary').textContent.trim() } : null;
+    });
+    const reviewShape = type => page.$eval(`.markup-layer g.markup[data-type="${type}"]`, g => ({
+        stroke: g.getAttribute('stroke'), d: g.querySelector('path').getAttribute('d'),
+        text: [...g.querySelectorAll('tspan')].map(t => t.textContent).join('\n')
+    })).catch(() => null);
+    const okDialog = async () => { await page.click('.dialog-footer .tool-primary'); await sleep(200); };
+    await open('one-page.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-review'); await sleep(100);
+    check('review: Edit and Delete are off with nothing selected',
+        await page.$eval('button[aria-label="Edit markup"]', b => b.disabled) && await page.$eval('button[aria-label="Delete markup"]', b => b.disabled));
+    await page.click('button[aria-label="Strikeout"]'); await drag(50, 108, 200, 122);
+    let rs = await reviewShape('strikeout');
+    check('review: Strikeout draws a line through the middle of the marked text', !!rs && /^M50 115L200 115$/.test(rs.d) && rs.stroke === '#e01b24', rs);
+    await page.click('button[aria-label="Underline"]'); await drag(50, 128, 200, 142);
+    rs = await reviewShape('underline');
+    check('review: Underline draws a line along the bottom', !!rs && /^M50 14[01](\.\d+)?L200 14[01](\.\d+)?$/.test(rs.d), rs);
+    await drag(300, 300, 301, 301);
+    check('review: a click (no drag) with Underline adds nothing', (await reviewLabels()).length === 2);
+    await page.click('button[aria-label="Replace text"]'); await drag(220, 148, 300, 162); let td = await textDialog();
+    check('review: Replace text asks for the correction', td && td.title === 'Replace text' && td.focused && td.button === 'Replace', td);
+    await okDialog(); td = await textDialog();
+    check('review: an empty correction is refused', td && (await page.$eval('.dialog-message', e => e.textContent.trim())) === 'Type the replacement text.');
+    await page.keyboard.type('a quick red cat'); await okDialog(); rs = await reviewShape('replace');
+    check('review: Replace text strikes the text and shows the correction', !!rs && rs.text === 'a quick red cat' && /^M220 155L300 155/.test(rs.d), rs);
+    await page.click('button[aria-label="Comment"]'); await clickAt(470, 200); td = await textDialog();
+    check('review: Comment asks for the comment', td && td.title === 'Comment' && td.button === 'Add comment', td);
+    await page.keyboard.type('Please confirm the slab thickness'); await okDialog();
+    let popup = await page.$eval('.comment-popup', e => e.textContent).catch(() => null);
+    check('review: a new comment shows its icon and, selected, its text', !!(await reviewShape('comment')) && popup === 'Please confirm the slab thickness', popup);
+    await page.click('button[aria-label="Add note"]'); await clickAt(350, 300); td = await textDialog();
+    check('review: Add note is the text note tool', td && td.title === 'Text note' && await pressed('Add note') && await toolPressed('Text note'), td);
+    await page.keyboard.type('Explanation here'); await okDialog();
+    let rl = await reviewLabels();
+    check('review: Markups panel lists the review marks', rl.join('|') ===
+        'Strikeout|Underline|Replace text: a quick red cat|Comment: Please confirm the slab thickness|Text note: Explanation here', rl);
+    await page.keyboard.press('Escape'); await sleep(100);
+    await clickAt(470, 200); popup = await page.$eval('.comment-popup', e => e.textContent).catch(() => null);
+    check('review: Pan click on a comment icon selects it and shows the text', popup === 'Please confirm the slab thickness', popup);
+    await page.click('button[aria-label="Edit markup"]'); await sleep(200); td = await textDialog();
+    check('review: Edit opens with the text, cursor in it', td && td.title === 'Edit Comment' && td.text === 'Please confirm the slab thickness' && td.focused, td);
+    await page.$eval('#edit-text-input', e => e.select()); await page.keyboard.type('Slab is 250 mm?');
+    await page.click('.edit-colour .color-swatch[aria-label="Edit colour Blue"]'); await okDialog();
+    rs = await reviewShape('comment'); rl = await reviewLabels();
+    check('review: Edit changes the text and colour', rs.stroke === '#1c71d8' && rl[3] === 'Comment: Slab is 250 mm?', [rs.stroke, rl[3]]);
+    await clickAt(350, 300); await clickAt(350, 300); await page.mouse.click((await layerBox()).x + 360, (await layerBox()).y + 305, { clickCount: 2 }); await sleep(250);
+    td = await textDialog();
+    check('review: double-click a note opens Edit', td && td.title === 'Edit Text note' && td.text === 'Explanation here', td);
+    await page.$eval('#edit-text-input', e => e.select()); await page.keyboard.type('A longer explanation here');
+    await page.keyboard.down('Control'); await page.keyboard.press('Enter'); await page.keyboard.up('Control'); await sleep(200);
+    rs = await reviewShape('text'); const noteBox = await selectionBox();
+    check('review: editing a note resizes its box to the text', rs.text === 'A longer explanation here' && noteBox && noteBox.w > 140, [rs.text, noteBox]);   // 'Explanation here' was about 115
+    await clickAt(470, 200); const selBefore = await page.$eval('.markup-selection', e => [parseFloat(e.style.left), parseFloat(e.style.top)]);
+    await drag(470, 200, 520, 260); const selAfter = await page.$eval('.markup-selection', e => [parseFloat(e.style.left), parseFloat(e.style.top)]);
+    check('review: drag the selected markup to move it (Pan)', near(selAfter[0] - selBefore[0], 50) && near(selAfter[1] - selBefore[1], 60) &&
+        (await reviewLabels()).length === 5, [selBefore, selAfter]);
+    await drag(600, 400, 650, 450);
+    check('review: dragging elsewhere still pans, the markup stays', (await page.$eval('.markup-selection', e => parseFloat(e.style.left))) === selAfter[0]);
+    await page.click('button[aria-label="Delete markup"]'); await sleep(150); rl = await reviewLabels();
+    check('review: Delete removes the selected markup', rl.length === 4 && !rl.some(l => l.startsWith('Comment')), rl);
+    await page.click('button[aria-label="Comment"]'); await clickAt(470, 220); await page.keyboard.type('Second comment'); await okDialog();
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('review: review marks save into the PDF copy', /with 5 markups/.test(s.status), s.status);
+    if (canCheckDownloads) {
+        await sleep(500);
+        const saved = fs.readdirSync(DOWNLOADS).filter(f => /^one-page-highlighted.*\.pdf$/.test(f))
+            .map(f => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+        const raw = saved ? fs.readFileSync(saved).toString('latin1') : '';
+        const count = t => (raw.match(new RegExp('/Subtype\\s*/' + t + '\\b', 'g')) || []).length;
+        check('review: saved as StrikeOut, Underline, Text (comment) and Stamps, with the texts',
+            count('StrikeOut') === 1 && count('Underline') === 1 && count('Text') === 1 && count('Stamp') === 2 &&
+            raw.includes('/Contents(Replace with: a quick red cat)') && raw.includes('/Contents(Second comment)') &&
+            raw.includes('/Contents(A longer explanation here)'), ['StrikeOut', 'Underline', 'Text', 'Stamp'].map(t => t + count(t)));
+        if (saved) {
+            await (await page.$('.toolbar input[type=file]')).uploadFile(saved);
+            await sleep(300); await settle(); await click('Actual size');
+            const strike = await redShare({ x: 60, y: 113, w: 130, h: 5 });
+            const under = await redShare({ x: 60, y: 137, w: 130, h: 6 });
+            check(`review: saved copy draws the strikeout and underline (${Math.round(strike * 100)}%, ${Math.round(under * 100)}%)`, strike > 0.1 && under > 0.1);
+        }
+    }
+    await click('Fit Page');
+
+    // ===== Revision: compare, overlay, revision tracking, markup report =====
+    const revisionState = () => page.evaluate(() => ({
+        status: document.querySelector('.status-text').textContent.trim(),
+        regions: [...document.querySelectorAll('.revision-region')].map(e => ({
+            x: parseFloat(e.style.left), y: parseFloat(e.style.top), w: parseFloat(e.style.width), h: parseFloat(e.style.height),
+            active: e.classList.contains('is-active') })),
+        image: !!document.querySelector('.revision-image'),
+        overlay: !!document.querySelector('.revision-image.is-overlay'),
+        faded: !!document.querySelector('.pdf-page.is-comparing'),
+        count: (document.querySelector('.compare-count') || { textContent: '' }).textContent.trim(),
+        file: (document.querySelector('.compare-file') || { textContent: '' }).textContent.trim()
+    }));
+    // Red / green / blue / grey pixel counts of the comparison image in an area of the page (CSS px at the current zoom).
+    const revisionColours = rect => page.evaluate(r => {
+        const img = document.querySelector('.revision-image');
+        const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0);
+        const k = img.naturalWidth / img.getBoundingClientRect().width;
+        const d = ctx.getImageData(Math.round(r.x * k), Math.round(r.y * k), Math.round(r.w * k), Math.round(r.h * k)).data;
+        const n = { red: 0, green: 0, blue: 0, grey: 0 };
+        for (let i = 0; i < d.length; i += 4) {
+            if (d[i + 3] < 128) continue;
+            const [R, G, B] = [d[i], d[i + 1], d[i + 2]];
+            if (R > 180 && G < 90 && B < 90) n.red++;
+            else if (G > 120 && R < 60 && B < 120) n.green++;
+            else if (B > 180 && R < 80) n.blue++;
+            else if (Math.abs(R - G) < 10 && Math.abs(G - B) < 10 && R < 120) n.grey++;
+        }
+        return n;
+    }, rect);
+    await page.evaluate(() => Object.keys(localStorage).filter(k => k.startsWith('pdfViewer.revisions:')).forEach(k => localStorage.removeItem(k)));
+    await open('one-page-rev-b.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-revision'); await sleep(100);
+    check('revision: comparison view buttons are off until a revision is open',
+        await page.$eval('button[aria-label="Differences"]', b => b.disabled) && await page.$eval('button[aria-label="Next change"]', b => b.disabled));
+    await (await page.$('.compare-input')).uploadFile(path.join(FIXTURES, 'one-page.pdf'));
+    await page.waitForFunction(() => /changed area|no differences|Unable/.test(document.querySelector('.status-text').textContent), { timeout: 30000 });
+    let rv = await revisionState();
+    // Line 5 (y = 842 - 120 - 100 = 622 in PDF space, so about 210-222 from the top) is only in one-page.pdf;
+    // the rectangle 380,300 150x80 (y 462-542 from the top) only in this revision.
+    check('revision: Compare finds the 2 changed areas: removed line 5 and the added rectangle',
+        rv.regions.length === 2 && rv.count === '2 changes' && rv.file === 'one-page.pdf' && rv.image && rv.faded &&
+        near(rv.regions[0].y, 207, 6) && near(rv.regions[1].x, 376, 6) && near(rv.regions[1].y, 458, 6) && /2 changed areas/.test(rv.status), rv);
+    const line5 = { x: 50, y: 208, w: 300, h: 16 }, rectEdge = { x: 375, y: 470, w: 10, h: 60 }, line6 = { x: 50, y: 228, w: 300, h: 16 };
+    let c1 = await revisionColours(line5), c2 = await revisionColours(rectEdge), c3 = await revisionColours(line6);
+    check('revision: removed text in red, added lines in green, unchanged clear',
+        c1.red > 100 && c1.green === 0 && c2.green > 50 && c2.red === 0 && c3.red + c3.green === 0, [c1, c2, c3]);
+    await page.click('button[aria-label="Next change"]'); await sleep(200); rv = await revisionState();
+    check('revision: Next change selects the first changed area', rv.regions[0].active && !rv.regions[1].active && /Change 1 of 2/.test(rv.status), rv.status);
+    await page.click('button[aria-label="Next change"]'); await sleep(200);
+    await page.click('button[aria-label="Next change"]'); await sleep(300); rv = await revisionState();
+    check('revision: after the last change, says there are no more', rv.regions[1].active && /No more changes after page 1/.test(rv.status), rv.status);
+    await page.click('button[aria-label="Previous change"]'); await sleep(200); rv = await revisionState();
+    check('revision: Previous change goes back', rv.regions[0].active, rv.regions);
+    await page.click('button[aria-label="Overlay"]'); await sleep(400); rv = await revisionState();
+    c1 = await revisionColours(line5); c2 = await revisionColours(rectEdge); c3 = await revisionColours(line6);
+    check('revision: Overlay shows both revisions (other in red, this one in blue, both in grey), page not faded',
+        rv.overlay && !rv.faded && rv.regions.length === 0 && c1.red > 100 && c2.blue > 50 && c3.grey > 100 && c3.red + c3.blue === 0, [c1, c2, c3]);
+    await page.click('button[aria-label="Hide comparison"]'); await sleep(200); rv = await revisionState();
+    check('revision: Off shows the plain page', !rv.image && !rv.faded);
+    await page.click('button[aria-label="Differences"]'); await sleep(300);
+    await page.click('button[aria-label="Revision tag"]'); await sleep(200);
+    let rvd = await page.evaluate(() => {
+        const d = document.querySelector('[aria-labelledby="revisions-dialog-title"]');
+        return d ? { message: d.querySelector('.dialog-message').textContent.trim(), label: d.querySelector('.revision-label-input').value,
+                     focused: document.activeElement.id } : null;
+    });
+    check('revision: the tag tool asks for a revision first; the dialog suggests A', rvd && /Add a revision first/.test(rvd.message) &&
+        rvd.label === 'A' && rvd.focused === 'revision-description-input' && !(await pressed('Revision tag')), rvd);
+    await page.keyboard.type('Issued for review'); await page.keyboard.press('Enter'); await sleep(150);
+    await page.type('#revision-description-input', 'Opening added'); await page.keyboard.press('Enter'); await sleep(150);
+    const revRows = await page.$$eval('.revision-table tbody tr', rs => rs.map(r => ({ text: r.innerText.replace(/\s+/g, ' ').trim(), current: r.classList.contains('is-current') })));
+    check('revision: revisions A and B added, B current', revRows.length === 2 && revRows[0].text.startsWith('A ') &&
+        /Issued for review/.test(revRows[0].text) && revRows[1].current && /^B .*Opening added/.test(revRows[1].text), revRows);
+    await page.click('.revision-label-input', { clickCount: 3 }); await page.keyboard.type('a'); await page.keyboard.press('Enter'); await sleep(100);
+    check('revision: a label that already exists is refused',
+        (await page.$eval('[aria-labelledby="revisions-dialog-title"] .dialog-message.is-error', e => e.textContent.trim()).catch(() => '')) === 'Revision a already exists.' &&
+        (await page.$$('.revision-table tbody tr')).length === 2);
+    await page.click('[aria-labelledby="revisions-dialog-title"] .dialog-footer .tool-primary'); await sleep(100);
+    check('revision: the ribbon shows the current revision', (await page.$eval('button[aria-label="Revisions"]', b => b.textContent.trim())) === 'Rev B');
+    await page.click('button[aria-label="Cloud changes"]'); await sleep(300);
+    await page.click('button[aria-label="Revision tag"]'); await clickAt(545, 450); await sleep(300);
+    let ml2 = await page.$$eval('.markup-row', rs => rs.map(r => r.innerText.replace(/\s+/g, ' ').trim()));
+    const tag = await page.$eval('.markup-layer g.markup[data-type="revtag"]', g => ({ d: g.querySelector('path').getAttribute('d'), text: g.querySelector('tspan').textContent }));
+    check('revision: Cloud changes adds a cloud per changed area; the tag shows B; all in Rev B',
+        ml2.length === 3 && ml2.filter(t => /^Cloud Page 1 · Rev B/.test(t)).length === 2 && /^Revision tag: B Page 1 · Rev B/.test(ml2[2]) &&
+        tag.text === 'B' && /Z?$/.test(tag.d), [ml2, tag]);
+    await page.keyboard.press('Escape');
+    await page.click('button[aria-label="Revisions"]'); await sleep(200);
+    await page.click('.revision-table tbody tr:first-child input[type=radio]'); await sleep(100);
+    await page.click('[aria-labelledby="revisions-dialog-title"] .dialog-footer .tool-primary'); await sleep(100);
+    await page.click('#ribbon-tab-markup'); await click('Rectangle'); await drag(100, 560, 200, 580); await page.keyboard.press('Escape');
+    await page.click('#ribbon-tab-revision'); await sleep(100);
+    check('revision: markups made after switching to A belong to A', (await page.$$eval('.markup-meta', els => els.map(e => e.textContent)))[3].includes('Rev A'));
+    await page.click('button[aria-label="Markup report"]'); await sleep(200);
+    const report = () => page.evaluate(() => ({ total: document.querySelector('.report-total').textContent.replace(/\s+/g, ' ').trim(),
+        rows: [...document.querySelectorAll('.report-table tbody tr')].map(r => [...r.cells].map(c => c.textContent.trim())) }));
+    let rep = await report();
+    check('revision: the markup report lists every markup with page, type, content, colour and revision',
+        rep.rows.length === 4 && /^4 markups · 2 Cloud/.test(rep.total) && rep.rows[2].slice(1, 6).join('|') === '1|Revision tag|Revision B|#e01b24|B' &&
+        rep.rows[3][5] === 'A', rep);
+    await page.select('[aria-label="Report revision"]', 'B'); await sleep(150); rep = await report();
+    check('revision: the report can show one revision', rep.rows.length === 3 && rep.rows.every(r => r[5] === 'B'), rep.total);
+    await page.select('[aria-label="Report revision"]', ''); await sleep(100);
+    await page.click('.dialog-footer .tool-outline'); await sleep(300); s = await state();
+    check('revision: Save CSV downloads the report', s.status === 'Downloaded one-page-rev-b-markups.csv.', s.status);
+    await page.click('.dialog-footer .tool-outline:nth-child(2)'); await sleep(300); s = await state();
+    check('revision: Save printable report downloads an HTML page', s.status === 'Downloaded one-page-rev-b-markups.html.', s.status);
+    if (canCheckDownloads) {
+        const csv = await waitForDownload('one-page-rev-b-markups.csv');
+        const html = await waitForDownload('one-page-rev-b-markups.html');
+        const csvText = csv ? csv.toString('utf8') : '';
+        check('revision: the CSV has a header and one row per markup (UTF-8 with BOM for Excel)',
+            csvText.startsWith('\ufeffNo.,Page,Type,Content,Colour,Revision,Created\r\n') && csvText.trim().split('\r\n').length === 5 &&
+            /\r\n3,1,Revision tag,Revision B,#e01b24,B,\d{4}-/.test(csvText), csvText.slice(0, 200));
+        check('revision: the HTML report has the summary and table', !!html && /<h1>Markup report<\/h1>/.test(html.toString()) &&
+            (html.toString().match(/<tr>/g) || []).length >= 4 + 1);
+    }
+    await page.click('[aria-labelledby="report-dialog-title"] .dialog-footer .tool-primary'); await sleep(100);
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('revision: clouds and the revision tag save into the PDF copy', /with 4 markups/.test(s.status), s.status);
+    await open('one-page.pdf'); await page.click('#ribbon-tab-revision'); await sleep(100); rv = await revisionState();
+    check('revision: opening another PDF ends the comparison', !rv.image && rv.file === '' &&
+        (await page.$eval('button[aria-label="Revisions"]', b => b.textContent.trim())) === 'Revisions');
+    await open('one-page-rev-b.pdf'); await page.click('#ribbon-tab-revision'); await sleep(100);
+    check('revision: the revision list is remembered for the file', (await page.$eval('button[aria-label="Revisions"]', b => b.textContent.trim())) === 'Rev A');
     await click('Fit Page');
 
     // ===== Side panels =====
