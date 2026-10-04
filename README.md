@@ -72,7 +72,7 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
   - **File**: New, Open PDF, Save, Save as, Save copy, Close; Merge, Split, Compress, Convert
   - **Pages**: Blank page, From file; Move, Duplicate, Delete; Rotate left / right; Extract, Replace (see below)
   - **Zoom**: zoom out / level (click for a custom zoom) / zoom in; Fit page, Fit width, Actual size
-  - **Navigation**: first / previous / page / next / last; Find
+  - **Navigation**: first / previous / page / next / last; Single page, Continuous, Full screen, Pan; Find
   - **Markup**: Pan, Highlight; shapes (rectangle, ellipse, cloud, line, arrow, freehand); text note, callout;
     colour; Remove, Clear all, Save copy
   - **Colour**: four quick colours, or **More colours** for any colour (16.7 million): a saturation/brightness
@@ -146,6 +146,22 @@ On the **Revision** tab (web and desktop):
   counts by type and page; for all markups or one revision. **Save CSV** (opens in Excel) or **Save printable
   report** (an HTML page to print or save as PDF). Web: downloads; desktop: asks where to save.
 
+## Drawing navigation
+
+On the **Navigation** tab (web and desktop):
+
+- **Single page**: one page at a time (the default); Previous / Next, the arrow keys and thumbnails turn pages.
+- **Continuous**: the pages one below the other; scroll through the document. The page filling most of the view is
+  the current page (page box, thumbnails, status bar follow it): it is the full, editable page; the pages around it
+  show as images with their markups, and a click on one makes it current. Page buttons, typed page numbers and
+  thumbnails scroll to the page. Only the 200 or so pages around the current one are laid out, so very long
+  documents scroll as smoothly as short ones. The choice is remembered (in this browser / app).
+- **Full screen** (**Ctrl+L**): only the page, with a small bar for pages, zoom, fit and continuous scrolling.
+  **PageUp** / **PageDown** turn pages; **Esc**, Ctrl+L or the bar's button leave it. Web: the browser's full screen
+  (or the whole window if the browser refuses); desktop: the app window goes full screen.
+- **Pan**: drag the page to move around a zoomed-in drawing (also across pages in continuous view). Space or the
+  middle mouse button pans while another tool is active.
+
 ## Pages, New, Save and Save as
 
 On the **Pages** tab (web and desktop) each tool opens a small dialog. Pages are typed like `1-3, 5` or `all`;
@@ -211,7 +227,7 @@ Notes:
 - Zoom in / out (25%–300%), or set any percentage in that range with **Zoom > Custom zoom…** (a small dialog) or by
   typing it into the zoom box in the status bar (values outside are clamped)
 - Shortcuts (Cmd on macOS): **Ctrl+O** open, **Ctrl+S** save (page changes) or save a copy with markups,
-  **Ctrl+Shift+S** save as, **Ctrl+=** / **Ctrl+−**
+  **Ctrl+Shift+S** save as, **Ctrl+L** full screen, **Ctrl+=** / **Ctrl+−**
   zoom, **Ctrl+0** actual size. Close has no shortcut because browsers reserve Ctrl+W.
 - **Recent files** in the File menu and on the start screen:
   - Desktop: the last 10 file paths, reopened from disk, stored in `~/.config/PdfViewer/recent-files.json`
@@ -287,7 +303,7 @@ frontend/
   app/services/toolsService.js    tools: web downloads or desktop host messages
   app/services/pagesService.js    page edit layouts, New, Save / Save as (web and desktop)
   app/controllers/toolsController.js  tools dialog
-  app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
+  app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay; continuous view
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
   app/directives/menuBarDirective.js    File / Edit / Zoom menu bar (WAI-ARIA menubar keyboard handling)
@@ -342,7 +358,8 @@ highlight create / select / remove / clear and their positions after zoom, fit, 
 menu bar, shortcuts, custom zoom, pan (drag, Space, middle button), find (as you type, next / previous, match case, whole words, rotated pages,
 1,000-match limit; web and desktop), recent files (web and desktop, including moved files and Clear),
 page edits (insert blank / from a file, delete, extract, move, duplicate, rotate, replace; the saved PDF is checked
-page by page), New PDF, Save / Save as and the unsaved-changes prompt (web and desktop),
+page by page), New PDF, Save / Save as and the unsaved-changes prompt (web and desktop), continuous scrolling
+(current page follows the scroll, markups on the other pages, a 150-page document) and full screen,
 render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).

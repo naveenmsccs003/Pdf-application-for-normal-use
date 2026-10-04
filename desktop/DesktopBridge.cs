@@ -12,7 +12,7 @@ namespace PdfViewer.Desktop;
 ///               | { type: "pick-pdfs" } | { type: "run-tool", tool, inputs, options }
 ///               | { type: "open-compare" } | { type: "close-compare" }
 ///               | { type: "new-document", count, width, height } | { type: "edit-pages", layout, inputs }
-///               | { type: "save", saveAs }
+///               | { type: "save", saveAs } | { type: "full-screen", on }
 ///   host -> UI: { type: "opening", fileName } | { type: "opened", token, fileName, size, pageCount }
 ///             | { type: "open-error", message } | { type: "open-cancelled" }
 ///             | { type: "recent-files", files: [{ path, fileName, folder, exists }] }
@@ -28,6 +28,7 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
     private static readonly (string, string[])[] PdfFilter = [("PDF files", ["*.pdf"]), ("All files", ["*"])];
 
     private Action<string>? _send;
+    private PhotinoWindow? _window;
     private string? _startupFile;
 
     // Test mode: replies go to the collector of the request being handled. AsyncLocal keeps
@@ -37,6 +38,7 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
     public void Attach(PhotinoWindow window, string? startupFile)
     {
         _startupFile = startupFile;
+        _window = window;
         _send = message => window.SendWebMessage(message);
         var dialogs = new PhotinoFileDialogs(window);
         // Runs on the UI thread up to the first await, so dialogs open on the right thread.
@@ -118,6 +120,16 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
 
             case "run-tool":
                 Send(await tools.RunAsync(dialogs, root));
+                break;
+
+            case "full-screen":
+                // Full screen cannot be combined with a maximized window.
+                if (_window is not null)
+                {
+                    var on = root.TryGetProperty("on", out var f) && f.GetBoolean();
+                    if (on && _window.Maximized) _window.Maximized = false;
+                    _window.FullScreen = on;
+                }
                 break;
 
             case "new-document":

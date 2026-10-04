@@ -1,13 +1,31 @@
 (function () {
     'use strict';
 
+    // SVG of one markup (inside a <g ng-repeat="m in ..."> in PDF units); shared by the page and the continuous view.
+    var MARKUP_SHAPE =
+        '        <path ng-if="shape(m).area" class="markup-area" ng-attr-d="{{ shape(m).area }}" ng-attr-fill="{{ m.color }}" stroke="none"></path>' +
+        '        <path ng-attr-d="{{ shape(m).outline }}" ng-attr-fill="{{ shape(m).fill }}"></path>' +
+        '        <path ng-if="shape(m).iconLines" ng-attr-d="{{ shape(m).iconLines }}" stroke="#ffffff" fill="none"' +
+        '              ng-attr-stroke-width="{{ m.width / 12 }}"></path>' +
+        '        <path ng-if="shape(m).leader" ng-attr-d="{{ shape(m).leader }}" fill="none"></path>' +
+        '        <rect ng-if="shape(m).label" class="markup-label" ng-attr-x="{{ shape(m).label.x }}" ng-attr-y="{{ shape(m).label.y }}"' +
+        '              ng-attr-width="{{ shape(m).label.width }}" ng-attr-height="{{ shape(m).label.height }}" stroke="none"></rect>' +
+        '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none">' +
+        '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}">{{ l.text }}</tspan>' +
+        '        </text>';
+
     /**
-     * Displays one PDF page using stacked layers:
+     * Displays the current PDF page using stacked layers:
      *   1. canvas layer       - PDF rendering (pdfService), never modified
      *   2. search layer       - find matches (FindController), positioned from PDF-unit coordinates
      *   3. interaction layer  - mouse/touch input: pan (drag the page), draw and select markups
      *   4. highlight layer    - transparent highlight overlay, positioned from PDF-unit coordinates
      *   5. markup layer       - SVG shapes, lines, notes and measurements (markupGeometry), drawn in PDF units
+     *
+     * View modes: 'single' shows one page at a time. 'continuous' stacks the pages one below the other: the current
+     * page (the one filling most of the view) is the full page above; the others are images with their markups,
+     * rendered as they scroll into view, and a click makes one current. Only a window of pages around the current
+     * one is laid out, so huge documents stay within the browser's size limits.
      */
     angular.module('pdfViewerApp').directive('pdfViewer', ['pdfService', 'markupGeometry', 'scaleService', 'VIEWER_CONFIG',
         function (pdfService, markupGeometry, scaleService, VIEWER_CONFIG) {
@@ -23,11 +41,18 @@
             var TEXT_MARK_TOOLS = { strikeout: true, underline: true, replace: true };   // drawn over text like a highlight
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var RESIZE_DEBOUNCE_MS = 150;
+            var PAGE_GAP = 12;              // continuous view: px between pages
+            var WINDOW_PAGES = 100;         // continuous view: pages laid out before and after the current one
+            var OVERSCAN_PX = 800;          // continuous view: pages this far outside the view are drawn too
+            var MAX_SLOT_PIXELS = 8000000;  // continuous view: device pixels of one page image; larger ones are stretched
+            var KEEP_IMAGES = 24;           // continuous view: page images kept for scrolling back
 
             return {
                 restrict: 'E',
                 scope: {
                     docVersion: '<',
+                    pageCount: '<',
+                    viewMode: '<',          // 'single' | 'continuous'
                     page: '<',
                     scale: '<',
                     tool: '<',              // 'pan', or a markup type to draw
@@ -48,11 +73,24 @@
                     onRemoveHighlight: '&',
                     onResize: '&',
                     onRendered: '&',
+                    onPageChange: '&',      // continuous view: (page) now fills most of the view, or was clicked
                     onRenderError: '&'
                 },
                 template:
-                    '<div class="viewer-scroll" ng-class="{\'is-rendering\': rendering}">' +
-                    '  <div class="pdf-page" ng-show="rendered.page" ng-style="{width: rendered.width + \'px\', height: rendered.height + \'px\'}"' +
+                    '<div class="viewer-scroll" ng-class="{\'is-rendering\': rendering, \'is-continuous\': continuous}">' +
+                    ' <div class="page-stack">' +
+                    '  <div class="page-slot" ng-repeat="slot in slots track by slot.page" data-page="{{ slot.page }}"' +
+                    '       ng-style="{top: slot.top + \'px\', left: slot.left + \'px\', width: slot.width + \'px\', height: slot.height + \'px\'}">' +
+                    '    <div class="slot-canvas"></div>' +
+                    '    <div class="slot-highlight" ng-repeat="h in highlights | filter:{pageNumber: slot.page, type: \'highlight\'}:true track by h.id"' +
+                    '         ng-style="{left: h.x / slot.pw * 100 + \'%\', top: h.y / slot.ph * 100 + \'%\',' +
+                    '                    width: h.width / slot.pw * 100 + \'%\', height: h.height / slot.ph * 100 + \'%\'}"></div>' +
+                    '    <svg class="slot-markups" ng-attr-view_box="0 0 {{ slot.pw }} {{ slot.ph }}" preserveAspectRatio="none">' +
+                    '      <g class="markup" ng-repeat="m in highlights | filter:{pageNumber: slot.page}:true track by m.id" ng-if="m.type !== \'highlight\'"' +
+                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' + MARKUP_SHAPE + '</g>' +
+                    '    </svg>' +
+                    '  </div>' +
+                    '  <div class="pdf-page" ng-show="rendered.page && (!continuous || pagePlace())" ng-style="pageStyle()"' +
                     '       ng-class="{\'is-comparing\': revisionOn() && revision.mode === \'diff\'}">' +
                     '    <div class="canvas-layer"></div>' +
                     '    <img class="revision-image" ng-if="revisionOn()" ng-src="{{ revision.url }}" alt=""' +
@@ -82,17 +120,7 @@
                     '    <svg class="markup-layer" ng-attr-width="{{ rendered.width }}" ng-attr-height="{{ rendered.height }}"' +
                     '         ng-attr-view_box="0 0 {{ rendered.width / rendered.scale }} {{ rendered.height / rendered.scale }}">' +
                     '      <g class="markup" ng-repeat="m in highlights | filter:isShapeOnPage track by m.id" data-type="{{ m.type }}"' +
-                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' +
-                    '        <path ng-if="shape(m).area" class="markup-area" ng-attr-d="{{ shape(m).area }}" ng-attr-fill="{{ m.color }}" stroke="none"></path>' +
-                    '        <path ng-attr-d="{{ shape(m).outline }}" ng-attr-fill="{{ shape(m).fill }}"></path>' +
-                    '        <path ng-if="shape(m).iconLines" ng-attr-d="{{ shape(m).iconLines }}" stroke="#ffffff" fill="none"' +
-                    '              ng-attr-stroke-width="{{ m.width / 12 }}"></path>' +
-                    '        <path ng-if="shape(m).leader" ng-attr-d="{{ shape(m).leader }}" fill="none"></path>' +
-                    '        <rect ng-if="shape(m).label" class="markup-label" ng-attr-x="{{ shape(m).label.x }}" ng-attr-y="{{ shape(m).label.y }}"' +
-                    '              ng-attr-width="{{ shape(m).label.width }}" ng-attr-height="{{ shape(m).label.height }}" stroke="none"></rect>' +
-                    '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none">' +
-                    '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}">{{ l.text }}</tspan>' +
-                    '        </text>' +
+                    '         ng-attr-stroke="{{ m.color }}" ng-attr-stroke-width="{{ m.strokeWidth }}">' + MARKUP_SHAPE +
                     '      </g>' +
                     '      <path class="markup-draft" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>' +
                     '      <g class="markup-draft-label" display="none"><rect class="markup-label" stroke="none"></rect><text stroke="none"></text></g>' +
@@ -103,6 +131,7 @@
                     '              ng-click="onRemoveHighlight({id: selectedId})">&times;</button>' +
                     '    </div>' +
                     '  </div>' +
+                    ' </div>' +
                     '</div>' +
                     '<div class="render-indicator" ng-show="rendering"><span class="spinner"></span></div>',
                 link: function (scope, element) {
@@ -135,7 +164,7 @@
                             canvasLayer.innerHTML = '';
                             canvasLayer.appendChild(result.canvas);
                             scope.rendered = { page: page, scale: scale, width: result.width, height: result.height };
-                            if (pageChanged) {
+                            if (pageChanged && !scope.continuous) {
                                 scrollEl.scrollTop = 0;
                             }
                             scope.onRendered({ page: page });
@@ -156,6 +185,313 @@
                         }
                         render();
                     });
+
+                    // ----- Continuous view -----
+                    var stackEl = element[0].querySelector('.page-stack');
+                    var pad = VIEWER_CONFIG.pagePadding;
+                    var sizes = {};             // page -> { width, height } in PDF units, for the open document
+                    var knownSize = null;       // used for pages whose size is not known yet
+                    var images = {};            // page -> { scale, canvas }: pages drawn as images
+                    var imageSeq = 0;
+                    var drawing = {};           // page -> true while its image is being drawn
+                    var reported = 0;           // the page this view made current (scrolling or a click)
+                    var attachQueued = false;
+                    var layout = null;          // { first, last, scale, slots: [...], width, height }
+                    scope.continuous = false;
+                    scope.slots = [];           // the laid-out pages near the view (in the DOM)
+
+                    function slotOf(page) {
+                        return layout && page >= layout.first && page <= layout.last ? layout.slots[page - layout.first] : null;
+                    }
+
+                    /** Where the full current page sits: on its slot (continuous view), else nothing (normal flow). */
+                    scope.pagePlace = function () { return slotOf(scope.rendered.page); };
+
+                    scope.pageStyle = function () {
+                        var style = { width: scope.rendered.width + 'px', height: scope.rendered.height + 'px' };
+                        var slot = scope.continuous && slotOf(scope.rendered.page);
+                        if (slot) {
+                            style.position = 'absolute';
+                            style.top = slot.top + 'px';
+                            style.left = Math.round(slot.left + (slot.width - scope.rendered.width) / 2) + 'px';
+                        }
+                        return style;
+                    };
+
+                    function sizeOf(page) { return sizes[page] || knownSize || { width: 612, height: 792 }; }
+
+                    /** Lays out the pages around `center`. Keeps what is at the top of the view where it is. */
+                    function relayout(center) {
+                        var anchor = topAnchor();
+                        var count = scope.pageCount || 0;
+                        var scale = scope.scale || 1;
+                        var first = Math.max(1, center - WINDOW_PAGES), last = Math.min(count, center + WINDOW_PAGES);
+                        var slots = [], top = 0, widest = 0;
+                        for (var p = first; p <= last; p++) {
+                            var size = sizeOf(p);
+                            var slot = { page: p, top: top, width: Math.floor(size.width * scale), height: Math.floor(size.height * scale),
+                                         pw: size.width, ph: size.height };
+                            slots.push(slot);
+                            top += slot.height + PAGE_GAP;
+                            widest = Math.max(widest, slot.width);
+                        }
+                        var width = Math.max(widest, scrollEl.clientWidth - 2 * pad);
+                        slots.forEach(function (slot) { slot.left = Math.floor((width - slot.width) / 2); });
+                        var oldWidth = layout ? layout.width : width;
+                        layout = { first: first, last: last, scale: scale, slots: slots, width: width, height: Math.max(0, top - PAGE_GAP) };
+                        // The size is set now, not in the next digest, so the scroll position below is not cut short.
+                        stackEl.style.width = width + 'px';
+                        stackEl.style.height = layout.height + 'px';
+                        var centerX = scrollEl.scrollLeft + scrollEl.clientWidth / 2;
+                        scrollEl.scrollLeft = centerX * width / oldWidth - scrollEl.clientWidth / 2;
+                        var slotAt = anchor && slotOf(anchor.page);
+                        if (slotAt) {
+                            scrollEl.scrollTop = pad + slotAt.top + anchor.offset * scale;
+                        } else {
+                            scrollToPage(center);
+                        }
+                        showVisible();
+                    }
+
+                    /** The page at the top of the view and how far into it (PDF units), to keep it there. */
+                    function topAnchor() {
+                        if (!layout) { return null; }
+                        var y = scrollEl.scrollTop - pad;
+                        for (var i = 0; i < layout.slots.length; i++) {
+                            var slot = layout.slots[i];
+                            if (y < slot.top + slot.height + PAGE_GAP) {
+                                return { page: slot.page, offset: Math.max(-PAGE_GAP, y - slot.top) / layout.scale };
+                            }
+                        }
+                        return null;
+                    }
+
+                    function scrollToPage(page) {
+                        var slot = slotOf(page);
+                        if (slot) { scrollEl.scrollTop = pad + slot.top - Math.min(pad, PAGE_GAP); }
+                    }
+
+                    /** Puts the pages near the view in the DOM, makes the page filling most of it current, draws images. */
+                    function showVisible() {
+                        if (!layout) { return; }
+                        var top = scrollEl.scrollTop - pad, bottom = top + scrollEl.clientHeight;
+                        var near = [], best = null, bestSeen = -1;
+                        layout.slots.forEach(function (slot) {
+                            if (slot.top + slot.height < top - OVERSCAN_PX || slot.top > bottom + OVERSCAN_PX) { return; }
+                            near.push(slot);
+                            var seen = Math.min(bottom, slot.top + slot.height) - Math.max(top, slot.top);
+                            if (seen > bestSeen + 1) { best = slot; bestSeen = seen; }
+                        });
+                        if (near.length !== scope.slots.length || near[0] !== scope.slots[0]) { scope.slots = near; }
+                        loadSizes(near);
+                        if (best && best.page !== scope.page) {
+                            reported = best.page;
+                            scope.onPageChange({ page: best.page });
+                        }
+                        // Near the end of the laid-out window: lay out the pages further on.
+                        var current = best ? best.page : scope.page;
+                        if ((current - layout.first < WINDOW_PAGES / 4 && layout.first > 1) ||
+                            (layout.last - current < WINDOW_PAGES / 4 && layout.last < scope.pageCount)) {
+                            relayout(current);
+                            return;
+                        }
+                        if (!attachQueued) {
+                            attachQueued = true;
+                            scope.$$postDigest(function () { attachQueued = false; attachImages(); });
+                        }
+                        drawImages();
+                    }
+
+                    // Sizes of pages coming into view (until then a page is laid out with a guessed size).
+                    var loadingSizes = {};
+                    function loadSizes(slots) {
+                        var docAtStart = scope.docVersion;
+                        slots.forEach(function (slot) {
+                            if (sizes[slot.page] || loadingSizes[slot.page]) { return; }
+                            loadingSizes[slot.page] = true;
+                            pdfService.getPageSize(slot.page).then(function (size) {
+                                delete loadingSizes[slot.page];
+                                if (scope.docVersion !== docAtStart) { return; }
+                                sizes[slot.page] = size;
+                                knownSize = knownSize || size;
+                                // Lay out again (a different size than guessed) and draw the page, now that its size is known.
+                                if (scope.continuous) { scheduleRelayout(); }
+                            }, function () { delete loadingSizes[slot.page]; });
+                        });
+                    }
+
+                    var relayoutPending = false;
+                    function scheduleRelayout() {
+                        if (relayoutPending) { return; }
+                        relayoutPending = true;
+                        setTimeout(function () {
+                            relayoutPending = false;
+                            if (scope.continuous && layout) { scope.$apply(function () { relayout(scope.page); }); }
+                        }, 30);
+                    }
+
+                    /** Draws the nearby pages as images, nearest to the current page first, one at a time. */
+                    function drawImages() {
+                        var seq = ++imageSeq, docAtStart = scope.docVersion, scale = layout.scale;
+                        var todo = scope.slots.filter(function (slot) {
+                            var image = images[slot.page];
+                            return sizes[slot.page] && !drawing[slot.page] && !(image && image.scale === scale);
+                        }).sort(function (a, b) { return Math.abs(a.page - scope.page) - Math.abs(b.page - scope.page); });
+                        var dpr = window.devicePixelRatio || 1;
+                        (function next() {
+                            if (seq !== imageSeq || !todo.length) { return; }
+                            var slot = todo.shift();
+                            var pixels = slot.width * slot.height * dpr * dpr;
+                            var shrink = pixels > MAX_SLOT_PIXELS ? Math.sqrt(MAX_SLOT_PIXELS / pixels) : 1;
+                            drawing[slot.page] = true;
+                            pdfService.renderThumbnail(slot.page, slot.width * shrink, slot.height * shrink).then(function (canvas) {
+                                delete drawing[slot.page];
+                                if (!canvas || scope.docVersion !== docAtStart) { return; }
+                                images[slot.page] = { scale: scale, canvas: canvas };
+                                attachImages();
+                                next();
+                            }, function () {
+                                delete drawing[slot.page];
+                                next();
+                            });
+                        })();
+                    }
+
+                    /** Puts each drawn image into its page's slot; forgets images far from the view. */
+                    function attachImages() {
+                        var shown = {};
+                        Array.prototype.forEach.call(stackEl.querySelectorAll('.page-slot'), function (el) {
+                            var page = Number(el.getAttribute('data-page'));
+                            var image = images[page];
+                            shown[page] = true;
+                            var holder = el.firstElementChild;
+                            if (image && holder.firstChild !== image.canvas) {
+                                holder.innerHTML = '';
+                                holder.appendChild(image.canvas);
+                            }
+                        });
+                        var pages = Object.keys(images).map(Number);
+                        if (pages.length > KEEP_IMAGES) {
+                            pages.filter(function (p) { return !shown[p]; })
+                                .sort(function (a, b) { return Math.abs(b - scope.page) - Math.abs(a - scope.page); })
+                                .slice(0, pages.length - KEEP_IMAGES)
+                                .forEach(function (p) { delete images[p]; });
+                        }
+                    }
+
+                    var scrollFrame = 0;
+                    scrollEl.addEventListener('scroll', function () {
+                        if (!scope.continuous || scrollFrame) { return; }
+                        scrollFrame = requestAnimationFrame(function () {
+                            scrollFrame = 0;
+                            scope.$apply(showVisible);
+                        });
+                    });
+
+                    function enterContinuous() {
+                        var page = scope.page;
+                        // Keep the place on the page.
+                        var into = scope.rendered.page === page ? Math.max(0, scrollEl.scrollTop - pad) / (scope.rendered.scale || 1) : 0;
+                        scope.continuous = true;
+                        reported = page;
+                        pdfService.getPageSize(page).then(function (size) {
+                            if (!scope.continuous) { return; }
+                            sizes[page] = size;
+                            knownSize = knownSize || size;
+                            layout = null;
+                            relayout(page);
+                            var slot = slotOf(page);
+                            if (slot && into > 0) {
+                                scrollEl.scrollTop = pad + slot.top + into * layout.scale;
+                                showVisible();
+                            }
+                        });
+                    }
+
+                    function leaveContinuous() {
+                        var anchor = topAnchor();
+                        scope.continuous = false;
+                        layout = null;
+                        scope.slots = [];
+                        stackEl.style.width = stackEl.style.height = '';
+                        imageSeq++;
+                        // The same place on the page.
+                        setTimeout(function () {
+                            scrollEl.scrollTop = anchor && anchor.page === scope.rendered.page ? Math.max(0, anchor.offset * scope.rendered.scale) : 0;
+                        });
+                    }
+
+                    function resetContinuous() {
+                        sizes = {};
+                        knownSize = null;
+                        images = {};
+                        drawing = {};
+                        loadingSizes = {};
+                        imageSeq++;
+                        layout = null;
+                        scope.slots = [];
+                        reported = 0;
+                    }
+
+                    scope.$watch('viewMode', function (mode) {
+                        if (mode === 'continuous' && !scope.continuous && scope.docVersion && scope.page) {
+                            enterContinuous();
+                        } else if (mode !== 'continuous' && scope.continuous) {
+                            leaveContinuous();
+                        }
+                    });
+
+                    // New document: start over; page turned elsewhere (buttons, keys, thumbnails): scroll to it;
+                    // new zoom: keep the place in view.
+                    scope.$watchGroup(['docVersion', 'page', 'scale', 'pageCount'], function (now, before) {
+                        if (now[0] !== before[0]) {
+                            resetContinuous();
+                            if (scope.continuous) { scope.continuous = false; }
+                            if (scope.viewMode === 'continuous' && now[1]) { enterContinuous(); }
+                            return;
+                        }
+                        if (!scope.continuous || !layout) { return; }
+                        if (now[1] !== before[1] && now[1] !== reported) {
+                            // Turned to a page: show its top (a fit mode may have changed the zoom with it).
+                            reported = now[1];
+                            layout = null;
+                            relayout(now[1]);
+                        } else if (now[2] !== before[2] || now[3] !== before[3]) {
+                            relayout(scope.page);
+                        }
+                    });
+
+                    // A click on a page drawn as an image makes it the current page; a drag pans.
+                    var slotPan = null;
+                    stackEl.addEventListener('pointerdown', function (event) {
+                        var slotEl = event.target.closest && event.target.closest('.page-slot');
+                        if (!slotEl || !(event.button === 0 || event.button === 1) || event.pointerType === 'touch') { return; }
+                        slotPan = { page: Number(slotEl.getAttribute('data-page')), x: event.clientX, y: event.clientY,
+                                    left: scrollEl.scrollLeft, top: scrollEl.scrollTop, moved: false, el: slotEl };
+                        slotEl.setPointerCapture(event.pointerId);
+                        slotEl.classList.add('is-panning');
+                        event.preventDefault();
+                    });
+                    stackEl.addEventListener('pointermove', function (event) {
+                        if (!slotPan) { return; }
+                        var dx = event.clientX - slotPan.x, dy = event.clientY - slotPan.y;
+                        if (!slotPan.moved && Math.abs(dx) < MIN_PAN_PX && Math.abs(dy) < MIN_PAN_PX) { return; }
+                        slotPan.moved = true;
+                        scrollEl.scrollLeft = slotPan.left - dx;
+                        scrollEl.scrollTop = slotPan.top - dy;
+                    });
+                    function endSlotPan(event, cancelled) {
+                        if (!slotPan) { return; }
+                        var p = slotPan;
+                        slotPan = null;
+                        p.el.classList.remove('is-panning');
+                        if (!cancelled && !p.moved && p.page !== scope.page) {
+                            reported = p.page;
+                            scope.$apply(function () { scope.onPageChange({ page: p.page }); });
+                        }
+                    }
+                    stackEl.addEventListener('pointerup', function (event) { endSlotPan(event, false); });
+                    stackEl.addEventListener('pointercancel', function (event) { endSlotPan(event, true); });
 
                     // ----- Find matches -----
                     // The rectangles of the matches on the page on screen; the current match is scrolled into view.
@@ -239,7 +575,10 @@
                         lastSize = { width: scrollEl.clientWidth, height: scrollEl.clientHeight };
                         clearTimeout(resizeTimer);
                         resizeTimer = setTimeout(function () {
-                            scope.$apply(function () { scope.onResize(); });
+                            scope.$apply(function () {
+                                scope.onResize();
+                                if (scope.continuous && layout) { relayout(scope.page); }
+                            });
                         }, RESIZE_DEBOUNCE_MS);
                     });
                     resizeObserver.observe(scrollEl);
@@ -800,6 +1139,8 @@
                     scope.$on('$destroy', function () {
                         resizeObserver.disconnect();
                         clearTimeout(resizeTimer);
+                        cancelAnimationFrame(scrollFrame);
+                        imageSeq++;
                         document.removeEventListener('keydown', onSpace);
                         document.removeEventListener('keydown', onPolygonKey, true);
                         document.removeEventListener('keyup', onSpace);

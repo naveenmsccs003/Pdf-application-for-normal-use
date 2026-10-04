@@ -209,6 +209,7 @@
                 scaleService.clear();
                 closeRevisionWork();
                 revisionService.useDocument(null);
+                exitFullScreen();
                 vm.source = null;
                 vm.fileName = '';
                 vm.modified = false;
@@ -257,6 +258,61 @@
                     }
                 });
             }
+
+            // ----- View: single page or continuous scrolling; full screen -----
+            var VIEW_MODE_KEY = 'pdfViewer.viewMode';
+            vm.viewMode = (function () {
+                try { return $window.localStorage.getItem(VIEW_MODE_KEY) === 'continuous' ? 'continuous' : 'single'; } catch (e) { return 'single'; }
+            }());
+
+            vm.setViewMode = function (mode) {
+                vm.viewMode = mode === 'continuous' ? 'continuous' : 'single';
+                try { $window.localStorage.setItem(VIEW_MODE_KEY, vm.viewMode); } catch (e) { /* not remembered */ }
+            };
+
+            /** Continuous view: the page scrolled into view (or clicked) becomes the current page. */
+            vm.onPageScrolled = function (page) {
+                if (!vm.hasDocument() || page < 1 || page > vm.pageCount || page === vm.currentPage) { return; }
+                vm.selectedHighlightId = null;
+                setPage(page);
+            };
+
+            // Full screen: only the page and a small bar. The browser's full screen on the web, the window on desktop;
+            // Esc (or the bar's button, or Ctrl+L) leaves it; PageUp / PageDown turn pages.
+            vm.fullScreen = false;
+
+            vm.toggleFullScreen = function () {
+                if (vm.fullScreen) { exitFullScreen(); } else { enterFullScreen(); }
+            };
+
+            function enterFullScreen() {
+                if (!vm.hasDocument()) { return; }
+                vm.fullScreen = true;
+                if (vm.isDesktop) {
+                    desktopService.send('full-screen', { on: true });
+                } else if ($document[0].documentElement.requestFullscreen) {
+                    // Without it (or if refused) the app still fills the window.
+                    $q.when($document[0].documentElement.requestFullscreen()).catch(angular.noop);
+                }
+                vm.status = 'Full screen: Esc or ' + vm.modKey + 'L to leave.';
+            }
+
+            function exitFullScreen() {
+                if (!vm.fullScreen) { return; }
+                vm.fullScreen = false;
+                if (vm.isDesktop) {
+                    desktopService.send('full-screen', { on: false });
+                } else if ($document[0].fullscreenElement && $document[0].exitFullscreen) {
+                    $q.when($document[0].exitFullscreen()).catch(angular.noop);
+                }
+                vm.status = vm.hasDocument() ? pageStatus() : vm.status;
+            }
+
+            // The browser left full screen itself (its own Esc).
+            function onFullscreenChange() {
+                if (!$document[0].fullscreenElement && vm.fullScreen && !vm.isDesktop) { $scope.$apply(exitFullScreen); }
+            }
+            $document[0].addEventListener('fullscreenchange', onFullscreenChange);
 
             // ----- Page navigation -----
             vm.canGoPrevious = function () { return vm.hasDocument() && vm.currentPage > 1 && !vm.busy; };
@@ -1394,6 +1450,8 @@
                 var command = null;
                 if (key === 'o') {
                     command = vm.chooseFile;
+                } else if (key === 'l' && vm.hasDocument()) {
+                    command = vm.toggleFullScreen;
                 } else if (key === 's' && event.shiftKey) {
                     command = function () { vm.save(true); };
                 } else if (key === 's') {
@@ -1424,13 +1482,17 @@
                     if ((event.key === 'Delete' || event.key === 'Backspace') && vm.selectedHighlightId !== null) {
                         vm.removeSelectedHighlight();
                         event.preventDefault();
+                    } else if (event.key === 'Escape' && vm.fullScreen) {
+                        exitFullScreen();
                     } else if (event.key === 'Escape') {
                         vm.selectedHighlightId = null;
                         if (vm.tool !== 'pan') { vm.selectPanTool(); }
-                    } else if (event.key === 'ArrowRight') {
+                    } else if (event.key === 'ArrowRight' || (vm.fullScreen && event.key === 'PageDown')) {
                         vm.nextPage();
-                    } else if (event.key === 'ArrowLeft') {
+                        if (event.key !== 'ArrowRight') { event.preventDefault(); }
+                    } else if (event.key === 'ArrowLeft' || (vm.fullScreen && event.key === 'PageUp')) {
                         vm.previousPage();
+                        if (event.key !== 'ArrowLeft') { event.preventDefault(); }
                     }
                 });
             }
@@ -1439,6 +1501,7 @@
             $scope.$on('$destroy', function () {
                 $document.off('keydown', onKeyDown);
                 $document[0].removeEventListener('keydown', onCustomZoomKey, true);
+                $document[0].removeEventListener('fullscreenchange', onFullscreenChange);
                 narrowQuery.removeEventListener('change', onWidthChange);
                 pdfService.close();
             });

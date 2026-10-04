@@ -59,6 +59,10 @@
     <symbol id="i-page-replace" viewBox="0 0 24 24"><rect x="2" y="5" width="8" height="11" rx="1"/><rect x="14" y="8" width="8" height="11" rx="1"/><path d="M6 19c0 2 2 2 4 2h3M17 5c0-2-2-2-4-2h-2M11 1l2 2-2 2M13 19l-2 2 2 2"/></symbol>
     <symbol id="i-rotate-left" viewBox="0 0 24 24"><path d="M4 4v5h5"/><path d="M4.6 9A8 8 0 1 1 6 17.5"/></symbol>
     <symbol id="i-rotate-right" viewBox="0 0 24 24"><path d="M20 4v5h-5"/><path d="M19.4 9A8 8 0 1 0 18 17.5"/></symbol>
+    <symbol id="i-single-page" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="1"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol>
+    <symbol id="i-continuous" viewBox="0 0 24 24"><rect x="6" y="1" width="12" height="9" rx="1"/><rect x="6" y="14" width="12" height="9" rx="1"/><path d="M21 5v14M19 17l2 2 2-2"/></symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+    <symbol id="i-fullscreen-exit" viewBox="0 0 24 24"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -359,6 +363,30 @@
                 </button>
             </div>
             <span class="ribbon-caption">Pages</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Page view">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.setViewMode('single')"
+                        ng-class="{'is-active': vm.viewMode === 'single'}" aria-pressed="{{ vm.viewMode === 'single' }}"
+                        aria-label="Single page" title="One page at a time">
+                    <svg class="icon"><use href="#i-single-page"></use></svg><span>Single page</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.setViewMode('continuous')"
+                        ng-class="{'is-active': vm.viewMode === 'continuous'}" aria-pressed="{{ vm.viewMode === 'continuous' }}"
+                        aria-label="Continuous" title="Continuous scrolling: pages one below the other">
+                    <svg class="icon"><use href="#i-continuous"></use></svg><span>Continuous</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.toggleFullScreen()" ng-disabled="!vm.hasDocument()"
+                        aria-label="Full screen" title="Full screen ({{ vm.modKey }}L; Esc leaves)">
+                    <svg class="icon"><use href="#i-fullscreen"></use></svg><span>Full screen</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectPanTool()" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('pan')}" aria-pressed="{{ vm.isTool('pan') }}"
+                        aria-label="Pan tool" title="Pan: drag the page to move around (Space or the middle button pans in any tool)">
+                    <svg class="icon"><use href="#i-hand"></use></svg><span>Pan</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">View</span>
         </div>
         <div class="ribbon-group" role="group" aria-label="Find">
             <div class="ribbon-tools">
@@ -696,6 +724,9 @@
 
         <main class="viewer" ng-class="{'is-highlighting': vm.tool !== 'pan'}">
             <pdf-viewer doc-version="vm.docVersion"
+                        page-count="vm.pageCount"
+                        view-mode="vm.viewMode"
+                        on-page-change="vm.onPageScrolled(page)"
                         page="vm.currentPage"
                         scale="vm.scale"
                         tool="vm.tool"
@@ -717,6 +748,29 @@
                         on-resize="vm.onViewerResize()"
                         on-rendered="vm.onPageRendered()"
                         on-render-error="vm.onRenderError()"></pdf-viewer>
+
+            <!-- Full screen: page controls over the page -->
+            <div class="fullscreen-bar" role="toolbar" aria-label="Full screen controls" ng-if="vm.fullScreen">
+                <button type="button" class="tool" ng-click="vm.previousPage()" ng-disabled="!vm.canGoPrevious()" aria-label="Previous page" title="Previous page">
+                    <svg class="icon"><use href="#i-prev"></use></svg></button>
+                <span class="fullscreen-page">{{ vm.currentPage }} / {{ vm.pageCount }}</span>
+                <button type="button" class="tool" ng-click="vm.nextPage()" ng-disabled="!vm.canGoNext()" aria-label="Next page" title="Next page">
+                    <svg class="icon"><use href="#i-next"></use></svg></button>
+                <button type="button" class="tool" ng-click="vm.zoomOut()" ng-disabled="!vm.canZoomOut()" aria-label="Zoom out" title="Zoom out">
+                    <svg class="icon"><use href="#i-zoom-out"></use></svg></button>
+                <button type="button" class="tool" ng-click="vm.zoomIn()" ng-disabled="!vm.canZoomIn()" aria-label="Zoom in" title="Zoom in">
+                    <svg class="icon"><use href="#i-zoom-in"></use></svg></button>
+                <button type="button" class="tool" ng-click="vm.fitPage()" ng-class="{'is-active': vm.fitMode === 'page'}" aria-label="Fit Page" title="Fit page">
+                    <svg class="icon"><use href="#i-fit-page"></use></svg></button>
+                <button type="button" class="tool" ng-click="vm.fitWidth()" ng-class="{'is-active': vm.fitMode === 'width'}" aria-label="Fit Width" title="Fit width">
+                    <svg class="icon"><use href="#i-fit-width"></use></svg></button>
+                <button type="button" class="tool" ng-click="vm.setViewMode(vm.viewMode === 'continuous' ? 'single' : 'continuous')"
+                        ng-class="{'is-active': vm.viewMode === 'continuous'}" aria-pressed="{{ vm.viewMode === 'continuous' }}"
+                        aria-label="Continuous scrolling" title="Continuous scrolling">
+                    <svg class="icon"><use href="#i-continuous"></use></svg></button>
+                <button type="button" class="tool" ng-click="vm.toggleFullScreen()" aria-label="Exit full screen" title="Exit full screen (Esc)">
+                    <svg class="icon"><use href="#i-fullscreen-exit"></use></svg></button>
+            </div>
 
             <!-- Find bar (keyboard: findController.js) -->
             <div class="find-bar" role="search" aria-label="Find in document" ng-if="find.isOpen">

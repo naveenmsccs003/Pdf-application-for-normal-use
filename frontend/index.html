@@ -9,7 +9,7 @@
     <link rel="stylesheet" href="css/pdf-viewer.css">
 </head>
 <body>
-    <div class="app" ng-controller="PdfViewerController as vm">
+    <div class="app" ng-controller="PdfViewerController as vm" ng-class="{'is-fullscreen': vm.fullScreen}">
         <div class="app-body" ng-controller="ToolsController as tools">
             <div class="app-body" ng-controller="FindController as find" ng-include="'app/views/pdf-viewer.html'"></div>
         </div>

@@ -1484,6 +1484,76 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await shot('pages');
     await click('Close');
 
+    // ===== Drawing navigation: single page / continuous scrolling, full screen, pan =====
+    const view = () => page.evaluate(() => {
+        const scroll = document.querySelector('.viewer-scroll');
+        const slot = n => document.querySelector(`.page-slot[data-page="${n}"]`);
+        return {
+            continuous: scroll.classList.contains('is-continuous'),
+            single: document.querySelector('button[aria-label="Single page"]').getAttribute('aria-pressed') === 'true',
+            slots: [...document.querySelectorAll('.page-slot')].map(s => Number(s.dataset.page)),
+            drawn: [...document.querySelectorAll('.page-slot canvas')].length,
+            top: scroll.scrollTop,
+            page: Number(document.querySelector('.page-input').value),
+            slotTops: Object.fromEntries([...document.querySelectorAll('.page-slot')].map(s => [s.dataset.page, parseFloat(s.style.top)])),
+            activeTop: parseFloat(document.querySelector('.pdf-page').style.top || '0'),
+            page1Highlights: slot(1) ? slot(1).querySelectorAll('.slot-highlight').length : -1,
+            page1Shapes: slot(1) ? slot(1).querySelectorAll('.slot-markups g.markup').length : -1,
+            fullScreen: document.querySelector('.app').classList.contains('is-fullscreen'),
+            toolbarShown: !!document.querySelector('.toolbar').offsetParent,
+            bar: !!document.querySelector('.fullscreen-bar')
+        };
+    });
+    const scrollViewer = async y => { await page.evaluate(v => { document.querySelector('.viewer-scroll').scrollTop = v; }, y); await sleep(400); await settle(); };
+    await open('ten-pages.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-navigation'); await sleep(100);
+    let vw = await view();
+    check('view: single page by default', vw.single && !vw.continuous && vw.slots.length === 0, vw);
+    await click('Continuous'); await sleep(800); await settle(); vw = await view();
+    check('view: continuous scrolling stacks the pages; the next one is drawn below', vw.continuous && !vw.single &&
+        vw.slots[0] === 1 && vw.slots.includes(2) && vw.drawn >= 1 && vw.page === 1, vw);
+    await click('Highlight'); await drag(40, 100, 300, 130); await click('Highlight');
+    await click('Rectangle'); await drag(60, 300, 200, 380); await click('Rectangle');
+    const page2Top = vw.slotTops[2];
+    await scrollViewer(page2Top + 16); vw = await view();
+    check('view: scrolling makes the page filling the view current', vw.page === 2 && near(vw.activeTop, page2Top, 1), [vw.page, vw.activeTop, page2Top]);
+    check('view: page 1 above shows its highlight and rectangle on the image', vw.page1Highlights === 1 && vw.page1Shapes === 1, vw);
+    s = await state();
+    check('view: the thumbnail follows the scrolled page', s.thumbs.find(t => t.current).page === 2, s.thumbs.filter(t => t.current));
+    await click('Next page'); vw = await view();
+    check('view: Next page scrolls to the top of page 3', vw.page === 3 && Math.abs(vw.top - (vw.slotTops[3] + 16)) <= 16, [vw.page, vw.top, vw.slotTops[3]]);
+    await goTo(7); await sleep(300); vw = await view();
+    check('view: typing a page number scrolls to it', vw.page === 7 && vw.slots.includes(7), [vw.page, vw.slots]);
+    const before7 = vw.top;
+    const box7 = await (await page.$('.interaction-layer')).boundingBox();
+    await page.mouse.move(box7.x + 200, box7.y + 300); await page.mouse.down();
+    await page.mouse.move(box7.x + 200, box7.y + 100, { steps: 6 }); await page.mouse.up(); await sleep(400); vw = await view();
+    check('view: pan (drag the page) scrolls through the pages', vw.top - before7 > 150, [before7, vw.top]);
+    await click('Zoom out'); await click('Zoom out'); await click('Zoom out'); await sleep(500); await settle(); vw = await view();
+    const other = vw.slots.find(n => n !== vw.page);
+    await page.click(`.page-slot[data-page="${other}"]`); await sleep(300); await settle(); vw = await view();
+    check('view: zoomed out, several pages show; a click on one makes it current', vw.slots.length >= 4 && vw.page === other, [vw.slots, vw.page, other]);
+    await page.click('#ribbon-tab-zoom'); await click('Actual size'); await page.click('#ribbon-tab-navigation');
+
+    await click('Full screen'); await sleep(300); vw = await view();
+    check('full screen: only the page and the page controls', vw.fullScreen && !vw.toolbarShown && vw.bar, vw);
+    const fsPage = vw.page;
+    await page.keyboard.press('PageDown'); await sleep(300); await settle(); vw = await view();
+    check('full screen: PageDown turns the page', vw.page === fsPage + 1, [fsPage, vw.page]);
+    await page.keyboard.press('Escape'); await sleep(300); vw = await view();
+    check('full screen: Esc leaves it', !vw.fullScreen && vw.toolbarShown && !vw.bar, vw);
+    await shortcut('KeyL'); vw = await view();
+    check('full screen: Ctrl+L enters it', vw.fullScreen, vw);
+    await page.click('.fullscreen-bar button[aria-label="Exit full screen"]'); await sleep(300); vw = await view();
+    check('full screen: the bar button leaves it', !vw.fullScreen, vw);
+
+    await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.toolbar'); await sleep(300);
+    await open('ten-pages.pdf'); vw = await view();
+    check('view: continuous scrolling is remembered', vw.continuous && vw.slots.length > 0, vw);
+    await click('Single page'); await sleep(300); vw = await view();
+    check('view: back to single page', vw.single && !vw.continuous && vw.slots.length === 0 && vw.page >= 1, vw);
+    await shot('continuous');
+
     // ===== Light / dark theme =====
     const theme = () => page.evaluate(() => ({
         attr: document.documentElement.getAttribute('data-theme'),

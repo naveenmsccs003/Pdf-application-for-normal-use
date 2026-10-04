@@ -574,6 +574,29 @@ async function startHost() {
         check('desktop find: unknown token -> 404, bad input -> 400', searchProbe.unknown === 404 && searchProbe.empty === 400 &&
             searchProbe.tooLong === 400 && searchProbe.badPage === 400, searchProbe);
 
+        // ----- Continuous scrolling and full screen (pages drawn by the host) -----
+        const view = () => page.evaluate(() => ({
+            slots: [...document.querySelectorAll('.page-slot')].map(s => Number(s.dataset.page)),
+            drawn: document.querySelectorAll('.page-slot canvas').length,
+            page: Number(document.querySelector('.page-input').value),
+            fullScreen: document.querySelector('.app').classList.contains('is-fullscreen'),
+            stackHeight: parseFloat(document.querySelector('.page-stack').style.height || '0')
+        }));
+        await open('large-150.pdf'); await click('Actual size');
+        await page.click('#ribbon-tab-navigation'); await click('Continuous'); await sleep(1500); let vw = await view();
+        check('desktop view: continuous scrolling draws the next pages (PDFium)', vw.slots[0] === 1 && vw.drawn >= 2 && vw.page === 1, vw);
+        await click('Last page'); await sleep(1500); vw = await view();
+        check('desktop view: Last page jumps to page 150; only pages near it are laid out', vw.page === 150 && vw.slots.includes(150) &&
+            vw.drawn >= 1 && vw.stackHeight < 101 * 900, vw);
+        await page.evaluate(() => { document.querySelector('.viewer-scroll').scrollTop -= 3000; }); await sleep(1500); vw = await view();
+        check('desktop view: scrolling up makes an earlier page current', vw.page < 150 && vw.page > 140, vw);
+        await click('Full screen'); await sleep(200); vw = await view();
+        check('desktop full screen: the window is asked to go full screen', vw.fullScreen && (await state()).sent.includes('full-screen'), vw);
+        await page.keyboard.press('Escape'); await sleep(200);
+        check('desktop full screen: Esc leaves it', !(await view()).fullScreen);
+        await click('Single page'); await sleep(300);
+        check('desktop view: back to single page', (await view()).slots.length === 0);
+
         // ----- Security: API only serves the opened file -----
         const probe = await page.evaluate(async () => {
             const bad = await fetch('/api/local/00000000-0000-0000-0000-000000000000/pages/1').then(r => r.status);
