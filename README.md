@@ -151,6 +151,9 @@ On the **Revision** tab (web and desktop):
     **↑ / ↓** go to the previous / next changed area shown, on later or earlier pages too.
   - **Cloud changes** (revision highlighting): a revision cloud round every changed area shown on the page and, when
     there is a current revision, its tag (a triangle with the label) at each cloud's corner.
+  - **Side by side**: the compared revision's page on the left, this one on the right, at the same zoom; they scroll
+    and pan together (drag either page), and the changed areas are boxed on both. Fit Page / Fit Width fit the pair.
+    Pages show one pair at a time, also with continuous scrolling on.
   - **Overlay**: both revisions drawn together: this one in blue, the other in red, unchanged content in grey.
   - **Off** shows the plain page; **×** stops comparing. Pages are compared at about 1800 px (a moment per page).
 - **Revisions**: the document's revision list (label, date, description, by) and the current revision. New markups belong

@@ -23,6 +23,7 @@
     <symbol id="i-replace" viewBox="0 0 24 24"><path d="M3 15h9"/><path d="M4 11l3.5-8L11 11M5 8.5h5"/><path d="M14 20l3-8 3 8M15 17.5h4"/><path d="M9 20l3-3"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></symbol>
     <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="16" rx="1"/><rect x="13" y="4" width="8" height="16" rx="1"/><path d="M6 9h2M6 13h2M16 9h2M16 13h2M16 16h2"/></symbol>
+    <symbol id="i-side-by-side" viewBox="0 0 24 24"><rect x="2.5" y="4" width="8.5" height="16" rx="1"/><rect x="13" y="4" width="8.5" height="16" rx="1"/><path d="M5 8h4M5 11h3M15.5 8h4M15.5 11h3"/></symbol>
     <symbol id="i-overlay" viewBox="0 0 24 24"><rect x="3" y="3" width="12" height="14" rx="1"/><rect x="9" y="7" width="12" height="14" rx="1" stroke-dasharray="2.5 2"/></symbol>
     <symbol id="i-revtag" viewBox="0 0 24 24"><path d="M12 3l9.5 17h-19z"/><path d="M10 16.5v-6h2.2a1.6 1.6 0 0 1 0 3.2H10M12.2 13.7l1.8 2.8"/></symbol>
     <symbol id="i-revisions" viewBox="0 0 24 24"><path d="M12 3l3 5.5H9z"/><path d="M5 12h14M5 16h14M5 20h9"/></symbol>
@@ -810,6 +811,11 @@
                         aria-label="Differences" title="Differences: added in green, removed in red; each changed area boxed and labelled added, removed or changed">
                     <svg class="icon"><use href="#i-compare"></use></svg><span>Differences</span>
                 </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.setCompareMode('side')" ng-disabled="!vm.isComparing()"
+                        ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'side'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'side' }}"
+                        aria-label="Side by side" title="Side by side: the compared revision on the left, this one on the right, zoomed and scrolled together; changed areas boxed on both">
+                    <svg class="icon"><use href="#i-side-by-side"></use></svg><span>Side by side</span>
+                </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.setCompareMode('overlay')" ng-disabled="!vm.isComparing()"
                         ng-class="{'is-active': vm.isComparing() && vm.compare.mode === 'overlay'}" aria-pressed="{{ vm.isComparing() && vm.compare.mode === 'overlay' }}"
                         aria-label="Overlay" title="Overlay: this revision in blue, the other in red, unchanged in grey">
@@ -909,7 +915,7 @@
         <main class="viewer" ng-class="{'is-highlighting': vm.tool !== 'pan'}">
             <pdf-viewer doc-version="vm.docVersion"
                         page-count="vm.pageCount"
-                        view-mode="vm.viewMode"
+                        view-mode="vm.isSideBySide() ? 'single' : vm.viewMode"
                         on-page-change="vm.onPageScrolled(page)"
                         page="vm.currentPage"
                         scale="vm.scale"

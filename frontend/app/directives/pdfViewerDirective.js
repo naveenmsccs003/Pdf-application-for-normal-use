@@ -17,6 +17,15 @@
         '                 ng-attr-font-size="{{ l.size || undefined }}" ng-attr-font-weight="{{ l.bold ? \'bold\' : undefined }}">{{ l.text }}</tspan>' +
         '        </text>';
 
+    // Changed areas of a comparison, boxed and labelled with their kind (on the page, and on the other one side by side).
+    var REVISION_REGIONS =
+        '<div class="revision-region" ng-repeat="r in revision.regions track by $index" data-kind="{{ r.kind }}"' +
+        '     ng-class="{\'is-active\': $index === revision.active}"' +
+        '     ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
+        '                width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}">' +
+        '  <span class="revision-kind">{{ r.kind === \'added\' ? \'Added\' : r.kind === \'removed\' ? \'Removed\' : \'Changed\' }}</span>' +
+        '</div>';
+
     /**
      * Displays the current PDF page using stacked layers:
      *   1. canvas layer       - PDF rendering (pdfService), never modified
@@ -46,6 +55,7 @@
             var TEXT_MARK_TOOLS = { strikeout: true, underline: true, replace: true };   // drawn over text like a highlight
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var MIN_RESIZE_PX = 6;          // a markup is not resized smaller than this on screen
+            var SIDE_GAP = 24;              // side by side: px between the two revisions' pages
             var RESIZE_DEBOUNCE_MS = 150;
             var PAGE_GAP = 12;              // continuous view: px between pages
             var WINDOW_PAGES = 100;         // continuous view: pages laid out before and after the current one
@@ -75,7 +85,7 @@
                     onMoveMarkup: '&',      // the selected markup was dragged or resized: (id, markup) is the changed copy
                     onEditMarkup: '&',      // a markup was double-clicked
                     onPlaceTag: '&',        // revision tag, stamp, custom markup: (pageNumber, at) where the page was clicked
-                    revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay', url, regions (with kind), active }
+                    revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay' | 'side', url, otherUrl, otherName, regions (with kind), active }
                     onSelectHighlight: '&',  // (id, additive): additive (Ctrl / Shift click) adds or takes it from the selection
                     onRemoveHighlight: '&',
                     onRemoveSelected: '&',
@@ -101,16 +111,16 @@
                     '  <div class="pdf-page" ng-show="rendered.page && (!continuous || pagePlace())" ng-style="pageStyle()"' +
                     '       ng-class="{\'is-comparing\': revisionOn() && revision.mode === \'diff\'}">' +
                     '    <div class="canvas-layer"></div>' +
-                    '    <img class="revision-image" ng-if="revisionOn()" ng-src="{{ revision.url }}" alt=""' +
-                    '         ng-class="{\'is-overlay\': revision.mode === \'overlay\'}">' +
-                    '    <div class="revision-regions" ng-if="revisionOn() && revision.mode === \'diff\'">' +
-                    '      <div class="revision-region" ng-repeat="r in revision.regions track by $index" data-kind="{{ r.kind }}"' +
-                    '           ng-class="{\'is-active\': $index === revision.active}"' +
-                    '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
-                    '                      width: r.width * rendered.scale + \'px\', height: r.height * rendered.scale + \'px\'}">' +
-                    '        <span class="revision-kind">{{ r.kind === \'added\' ? \'Added\' : r.kind === \'removed\' ? \'Removed\' : \'Changed\' }}</span>' +
-                    '      </div>' +
+                    '    <div class="side-page" ng-if="sideOn()" ng-style="{right: \'calc(100% + \' + SIDE_GAP + \'px)\'}">' +
+                    '      <img class="side-image" ng-if="revision.otherUrl" ng-src="{{ revision.otherUrl }}" alt="Page {{ rendered.page }} of {{ revision.otherName }}">' +
+                    '      <div class="side-missing" ng-if="!revision.otherUrl">Page {{ rendered.page }} is not in {{ revision.otherName }}</div>' +
+                    '      <div class="revision-regions">' + REVISION_REGIONS + '</div>' +
+                    '      <span class="side-caption" title="{{ revision.otherName }}">{{ revision.otherName }}</span>' +
                     '    </div>' +
+                    '    <span class="side-caption is-this" ng-if="sideOn()">This revision</span>' +
+                    '    <img class="revision-image" ng-if="revisionOn() && revision.url" ng-src="{{ revision.url }}" alt=""' +
+                    '         ng-class="{\'is-overlay\': revision.mode === \'overlay\'}">' +
+                    '    <div class="revision-regions" ng-if="revisionOn() && revision.mode !== \'overlay\'">' + REVISION_REGIONS + '</div>' +
                     '    <div class="search-layer">' +
                     '      <div class="search-hit" ng-repeat="r in pageHits track by $index" ng-class="{\'is-current\': r.current}"' +
                     '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +
@@ -224,6 +234,13 @@
 
                     scope.pageStyle = function () {
                         var style = { width: scope.rendered.width + 'px', height: scope.rendered.height + 'px' };
+                        if (scope.sideOn() && !scope.continuous) {
+                            // Side by side: the other revision's page sits in the left margin; both are centred together.
+                            var w = scope.rendered.width, space = scrollEl.clientWidth - 2 * VIEWER_CONFIG.pagePadding;
+                            style.marginLeft = Math.max(w + SIDE_GAP, Math.floor((space - 2 * w - SIDE_GAP) / 2) + w + SIDE_GAP) + 'px';
+                            style.marginRight = '0';
+                            return style;
+                        }
                         var slot = scope.continuous && slotOf(scope.rendered.page);
                         if (slot) {
                             style.position = 'absolute';
@@ -556,8 +573,11 @@
 
                     // Revision compare: scroll to the change picked with Previous / Next change.
                     scope.revisionOn = function () {
-                        return !!(scope.revision && scope.revision.url && scope.revision.page === scope.rendered.page);
+                        var r = scope.revision;
+                        return !!(r && (r.url || r.mode === 'side') && r.page === scope.rendered.page);
                     };
+                    scope.sideOn = function () { return scope.revisionOn() && scope.revision.mode === 'side'; };
+                    scope.SIDE_GAP = SIDE_GAP;
                     scope.$watchGroup(['revision.active', 'revision.page', 'rendered.page'], function () {
                         var r = scope.revision;
                         if (scope.revisionOn() && r.active >= 0 && r.regions[r.active]) { scrollIntoView([r.regions[r.active]]); }
@@ -573,8 +593,11 @@
                     scope.api = {
                         getAvailableSize: function () {
                             var padding = VIEWER_CONFIG.pagePadding * 2;
+                            var width = scrollEl.clientWidth - padding;
+                            // Side by side: each page gets half the width.
+                            if (scope.revision && scope.revision.mode === 'side') { width = (width - SIDE_GAP) / 2; }
                             return {
-                                width: Math.max(scrollEl.clientWidth - padding, 50),
+                                width: Math.max(width, 50),
                                 height: Math.max(scrollEl.clientHeight - padding, 50)
                             };
                         }
@@ -857,6 +880,23 @@
                     }
                     pageEl.addEventListener('pointerup', endResize);
                     pageEl.addEventListener('pointercancel', endResize);
+
+                    // ----- Side by side: dragging the other revision's page pans the view too -----
+                    var sidePan = null;
+                    element[0].addEventListener('pointerdown', function (event) {
+                        if (!event.target.closest || !event.target.closest('.side-page') || event.button > 1 || event.pointerType === 'touch') { return; }
+                        sidePan = { x: event.clientX, y: event.clientY, left: scrollEl.scrollLeft, top: scrollEl.scrollTop, target: event.target };
+                        event.target.setPointerCapture(event.pointerId);
+                        event.preventDefault();
+                    });
+                    element[0].addEventListener('pointermove', function (event) {
+                        if (!sidePan) { return; }
+                        scrollEl.scrollLeft = sidePan.left - (event.clientX - sidePan.x);
+                        scrollEl.scrollTop = sidePan.top - (event.clientY - sidePan.y);
+                    });
+                    ['pointerup', 'pointercancel'].forEach(function (type) {
+                        element[0].addEventListener(type, function () { sidePan = null; });
+                    });
 
                     // ----- Pan: drag the page with the mouse to move around a zoomed-in drawing -----
                     // Pan is the default tool. With a markup tool, hold Space or use the middle button.

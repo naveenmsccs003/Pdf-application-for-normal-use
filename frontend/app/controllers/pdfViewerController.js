@@ -1451,18 +1451,30 @@
             };
 
             vm.closeCompare = function () {
+                var wasSide = vm.isSideBySide();
                 closeRevisionWork();
+                if (wasSide && vm.fitMode) { applyFit(vm.fitMode); }
                 vm.status = pageStatus();
             };
 
             vm.setCompareMode = function (mode) {
                 if (!compareService.isOpen()) { return; }
+                var sideChanged = (mode === 'side') !== (vm.compare.mode === 'side');
                 vm.compare.mode = mode;
-                refreshCompare();
+                $q.when(refreshCompare()).then(function () {
+                    // Side by side halves the width each page gets: fit again.
+                    if (sideChanged && vm.fitMode) { applyFit(vm.fitMode); }
+                });
             };
 
+            /** Side by side shows the pages one at a time, also when the view scrolls continuously. */
+            vm.isSideBySide = function () { return compareService.isOpen() && vm.compare.mode === 'side'; };
+
             function viewFor(result, active) {
-                return { page: result.pageNumber, mode: vm.compare.mode, url: vm.compare.mode === 'overlay' ? compareService.overlayUrl(result) : result.diffUrl,
+                var mode = vm.compare.mode;
+                return { page: result.pageNumber, mode: mode,
+                         url: mode === 'overlay' ? compareService.overlayUrl(result) : mode === 'diff' ? result.diffUrl : null,
+                         otherUrl: mode === 'side' ? compareService.otherUrl(result) : null, otherName: vm.compare.fileName,
                          regions: visibleRegions(result), active: active };
             }
 
@@ -1500,7 +1512,9 @@
                 var shown = visibleRegions(r).length;
                 return 'Page ' + r.pageNumber + ': ' + r.regions.length + ' changed area' + (r.regions.length === 1 ? '' : 's') + ': ' + kinds +
                        (shown < r.regions.length ? ' (' + shown + ' shown)' : '') +
-                       (vm.compare.mode === 'diff' ? '. Green: added, red: removed in this revision.' : '. Blue: this revision, red: ' + name + '.');
+                       (vm.compare.mode === 'diff' ? '. Green: added, red: removed in this revision.'
+                        : vm.compare.mode === 'side' ? '. ' + name + ' on the left, this revision on the right.'
+                        : '. Blue: this revision, red: ' + name + '.');
             }
 
             $scope.$watch(function () { return vm.currentPage; }, function (page, old) {

@@ -7,6 +7,7 @@
      * one-pixel tolerance so anti-aliasing does not count as a change:
      *   - differences: what only the other revision has (removed, red) and what only this one has (added, green)
      *   - overlay:     this revision in blue, the other in red, what both have in dark grey
+     *   - other page:  the other revision's page as drawn, for side by side (otherUrl)
      *   - regions:     boxes around groups of changes, in PDF units (for clouds and "next change"), each with its
      *                  kind: 'added' (only new ink), 'removed' (only ink the other revision had) or 'changed' (both:
      *                  an element moved, resized or rewritten)
@@ -277,6 +278,7 @@
                             pageNumber: pageNumber,
                             diffUrl: toUrl(result.diff),
                             overlay: result.overlay,    // encoded on first use (overlayUrl)
+                            other: missing ? null : otherCanvas,    // encoded on first use (otherUrl)
                             regions: regions,
                             added: result.added,
                             removed: result.removed,
@@ -299,9 +301,19 @@
                 return result.overlayUrl;
             }
 
+            /** The other revision's page image of a comparison result (null if it has no such page). */
+            function otherUrl(result) {
+                if (result.otherUrl === undefined) {
+                    result.otherUrl = result.other ? result.other.toDataURL('image/png') : null;
+                    result.other = null;
+                }
+                return result.otherUrl;
+            }
+
             return {
                 isOpen: function () { return !!other; },
                 overlayUrl: overlayUrl,
+                otherUrl: otherUrl,
                 info: function () { return other; },
                 openFile: openFile,
                 openDesktop: openDesktop,

@@ -1987,6 +1987,37 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('revision C: added, removed and changed elements are each identified',
         rv.regions.map(r => r.kind).join('|') === 'removed|changed|added' && rv.kinds.join('|') === 'Added1|Removed1|Changed1' &&
         /3 changed areas: 1 added, 1 removed, 1 changed/.test(rv.status) && near(rv.regions[1].x, 526, 6) && near(rv.regions[1].w, 49, 8), rv);   // the moved right side of the rectangle
+    // Side by side: the compared page on the left of this one, with the changed areas boxed on both.
+    const sideState = () => page.evaluate(() => {
+        const side = document.querySelector('.side-page'), pdf = document.querySelector('.pdf-page'), scroll = document.querySelector('.viewer-scroll');
+        const b = e => e.getBoundingClientRect();
+        return side ? { image: !!side.querySelector('.side-image'), sideRegions: side.querySelectorAll('.revision-region').length,
+            pageRegions: pdf.querySelectorAll(':scope > .revision-regions .revision-region').length,
+            captions: [...document.querySelectorAll('.side-caption')].map(e => e.textContent.trim()),
+            sideLeft: b(side).left, sideRight: b(side).right, pageLeft: b(pdf).left, pageRight: b(pdf).right, sameSize: b(side).width === b(pdf).width,
+            viewLeft: b(scroll).left, viewRight: b(scroll).left + scroll.clientWidth, faded: pdf.classList.contains('is-comparing'),
+            status: document.querySelector('.status-text').textContent.trim() } : null;
+    });
+    await page.click('button[aria-label="Side by side"]'); await sleep(500); let side = await sideState();
+    check('side by side: the compared revision on the left, this one on the right, the same size',
+        side && side.image && side.sameSize && side.sideRight < side.pageLeft && side.captions.join('|') === 'one-page-rev-b.pdf|This revision' &&
+        !side.faded && /one-page-rev-b\.pdf on the left, this revision on the right/.test(side.status), side);
+    check('side by side: the changed areas are boxed on both pages', side && side.sideRegions === 3 && side.pageRegions === 3, side);
+    await click('Fit Page'); side = await sideState();
+    check('side by side: Fit Page fits both pages in the view', side && side.sideLeft >= side.viewLeft && side.pageRight <= side.viewRight + 1, side);
+    let sl = await page.$eval('.viewer-scroll', e => e.scrollTop);
+    await click('Actual size'); await page.$eval('.viewer-scroll', e => { e.scrollTop = 200; }); side = await sideState();
+    const sideBox = await (await page.$('.side-page')).boundingBox();
+    await page.mouse.move(sideBox.x + 100, sideBox.y + 300); await page.mouse.down();
+    await page.mouse.move(sideBox.x + 100, sideBox.y + 200, { steps: 4 }); await page.mouse.up(); await sleep(100);
+    sl = await page.$eval('.viewer-scroll', e => e.scrollTop);
+    check('side by side: dragging the compared page pans both together', near(sl, 300, 3), sl);
+    await click('Continuous'); await sleep(300);
+    check('side by side: with continuous scrolling on, pages still show one pair at a time',
+        !!(await sideState()) && !(await page.$('.viewer-scroll.is-continuous')));
+    await page.click('button[aria-label="Differences"]'); await sleep(300);
+    check('side by side: Differences goes back to one page (continuous again)', !(await sideState()) && !!(await page.$('.viewer-scroll.is-continuous')));
+    await click('Single page');
     await page.click('button[aria-label="Show added"]'); await page.click('button[aria-label="Show removed"]'); await sleep(200);
     await page.click('button[aria-label="Next change"]'); await sleep(200); rv = await revisionState();
     check('revision C: with only Changed shown, Next change goes to the changed rectangle',
