@@ -5,10 +5,10 @@
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
         'recentFilesService', 'markupGeometry', 'scaleService', 'compareService', 'revisionService', 'reportService',
-        'toolsService', 'pagesService', 'customMarkupService', 'printService', 'securityService', 'VIEWER_CONFIG', '$q',
+        'toolsService', 'pagesService', 'customMarkupService', 'printService', 'securityService', 'tourService', 'VIEWER_CONFIG', '$q',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
                   recentFilesService, markupGeometry, scaleService, compareService, revisionService, reportService,
-                  toolsService, pagesService, customMarkupService, printService, securityService, VIEWER_CONFIG, $q) {
+                  toolsService, pagesService, customMarkupService, printService, securityService, tourService, VIEWER_CONFIG, $q) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -2236,6 +2236,14 @@
             // ----- Theme -----
             vm.isDarkTheme = themeService.isDark;
             vm.toggleTheme = themeService.toggle;
+
+            // ----- Guided tour (Help > Take the tour); the desktop app shows it once on first run -----
+            vm.startTour = tourService.start;
+            if (vm.isDesktop && !tourService.hasSeen()) {
+                $timeout(function () {
+                    if (!tourService.state.active) { tourService.start(); }
+                }, 600);
+            }
 
             // ----- Keyboard shortcuts -----
             // Ctrl/Cmd shortcuts (shown in the menus) work everywhere, also while typing in a box.

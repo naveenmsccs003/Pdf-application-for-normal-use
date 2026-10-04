@@ -90,7 +90,70 @@ async function startHost() {
         await page.goto(APP_URL, { waitUntil: 'load' });
         await page.waitForSelector('.toolbar');
 
-        const state = () => page.evaluate(() => {
+        // ----- Guided tour: shown once on first run, again from Help > Take the tour -----
+        {
+            await page.waitForSelector('.tour-card', { timeout: 5000 }).catch(() => null);
+            const tour = () => page.evaluate(() => {
+                const card = document.querySelector('.tour-card');
+                const spot = document.querySelector('.tour-spotlight');
+                if (!card) return null;
+                const r = card.getBoundingClientRect();
+                return {
+                    title: card.querySelector('h2').textContent.trim(),
+                    progress: card.querySelector('.tour-progress').textContent.trim(),
+                    focused: document.activeElement && document.activeElement.classList.contains('tour-next'),
+                    spotlit: !spot.classList.contains('is-hidden'),
+                    inWindow: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+                    ribbon: document.querySelector('.ribbon-tab.is-active').textContent.trim()
+                };
+            });
+            await sleep(300);
+            let t = await tour();
+            check('tour: starts by itself on first run', t && /Welcome/.test(t.title), t);
+            check('tour: Next has focus', t && t.focused, t);
+            const titles = [t && t.title];
+            let allPlaced = true, sawMarkupTab = false;
+            for (let i = 1; t && i < 13; i++) {
+                await page.keyboard.press('ArrowRight');
+                await sleep(250);
+                t = await tour();
+                if (!t) break;
+                titles.push(t.title);
+                if (!t.spotlit || !t.inWindow || !t.focused) allPlaced = false;
+                if (t.title === 'Markup' && t.ribbon === 'Markup') sawMarkupTab = true;
+            }
+            check('tour: steps through with the arrow keys', titles.length === 13 && t && /13 of 13/.test(t.progress), titles);
+            check('tour: each step spotlights its element, inside the window, with Next focused', allPlaced);
+            check('tour: shows the ribbon tab it talks about', sawMarkupTab);
+            await page.keyboard.press('ArrowLeft');
+            await sleep(250);
+            check('tour: ArrowLeft goes back', /12 of 13/.test((await tour() || {}).progress));
+            await page.keyboard.press('Escape');
+            await sleep(250);
+            const after = await page.evaluate(() => ({
+                open: !!document.querySelector('.tour-card'),
+                seen: localStorage.getItem('pdfViewer.tourSeen'),
+                ribbon: document.querySelector('.ribbon-tab.is-active').textContent.trim()
+            }));
+            check('tour: Escape ends it and it is remembered', !after.open && after.seen === '1', after);
+            check('tour: the ribbon tab is put back', after.ribbon === 'File', after);
+
+            await page.reload({ waitUntil: 'load' });
+            await page.waitForSelector('.toolbar');
+            await sleep(1000);
+            check('tour: not shown again on the next start', !(await tour()));
+
+            await page.click('#menu-help-button');
+            await page.evaluate(() => [...document.querySelectorAll('#menu-help .menu-item')].find(b => /Take the tour/.test(b.textContent)).click());
+            await sleep(300);
+            t = await tour();
+            check('tour: Help > Take the tour starts it again', t && /1 of 13/.test(t.progress), t);
+            await page.evaluate(() => document.querySelector('.tour-skip').click());
+            await sleep(200);
+            check('tour: Skip tour closes it', !(await tour()));
+        }
+
+        const state =() => page.evaluate(() => {
             const q = s => document.querySelector(s);
             const canvas = q('.canvas-layer canvas');
             const scroll = q('.viewer-scroll');

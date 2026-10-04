@@ -1517,3 +1517,35 @@ pdf-viewer { display: block; position: relative; height: 100%; }
     .print-sheet { display: block; width: 100%; height: auto; break-after: page; page-break-after: always; }
     .print-sheet:last-child { break-after: auto; page-break-after: auto; }
 }
+
+/* Guided tour (tourDirective.js): the spotlight's shadow dims everything else */
+.tour-blocker { position: fixed; inset: 0; z-index: 200; }
+.tour-spotlight {
+    position: fixed;
+    z-index: 201;
+    border-radius: var(--radius);
+    box-shadow: 0 0 0 2px var(--primary), 0 0 0 9999px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+    transition: left 0.2s ease, top 0.2s ease, width 0.2s ease, height 0.2s ease;
+}
+.tour-spotlight.is-hidden { inset: 50% auto auto 50%; width: 0; height: 0; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); }
+.tour-card {
+    position: fixed;
+    z-index: 202;
+    box-sizing: border-box;
+    width: 340px;
+    max-width: calc(100vw - 24px);
+    padding: 14px 16px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.tour-card.is-centered { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.tour-card h2 { margin: 0 0 6px; font-size: 15px; }
+.tour-card p { margin: 0; line-height: 1.5; }
+.tour-progress { color: var(--muted); font-size: 12px; margin-bottom: 4px !important; }
+.tour-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.tour-skip { margin-right: auto; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .tour-spotlight { transition: none; } }

@@ -189,6 +189,15 @@
                     <svg class="icon icon-sm"><use href="#i-zoom-in"></use></svg><span>Custom zoom&hellip;</span></button>
             </div>
         </div>
+
+        <div class="menu-root">
+            <button type="button" class="menu-button" role="menuitem" data-menu-button aria-haspopup="menu"
+                    aria-expanded="false" aria-controls="menu-help" id="menu-help-button">Help</button>
+            <div class="menu" role="menu" id="menu-help" aria-labelledby="menu-help-button" hidden>
+                <button type="button" class="menu-item" role="menuitem" ng-click="vm.startTour()">
+                    <svg class="icon icon-sm"><use href="#i-info"></use></svg><span>Take the tour</span></button>
+            </div>
+        </div>
     </nav>
 
     <span class="titlebar-file" ng-if="vm.fileName">&mdash; {{ vm.fileName }}</span>
@@ -1247,6 +1256,9 @@
         </button>
     </div>
 </footer>
+
+<!-- Guided tour (Help > Take the tour; first run of the desktop app) -->
+<div guided-tour current-tab="vm.ribbonTab" on-tab="vm.setRibbonTab(tab)"></div>
 
 <!-- Text dialog (Text note, Callout, Comment, Replace text tools) -->
 <div class="dialog-backdrop" ng-if="vm.noteDialog" ng-click="vm.closeNoteDialog()">

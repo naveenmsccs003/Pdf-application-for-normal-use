@@ -2,7 +2,7 @@
     'use strict';
 
     /**
-     * Desktop-style menu bar (File, Zoom) following the WAI-ARIA menubar pattern:
+     * Desktop-style menu bar (File, Edit, Zoom, Help) following the WAI-ARIA menubar pattern:
      *   - click a menu button, or press Enter / Space / ArrowDown on it, to open its menu;
      *   - ArrowUp / ArrowDown move through the enabled items, Home / End jump to the ends;
      *   - ArrowLeft / ArrowRight switch to the neighbouring menu;

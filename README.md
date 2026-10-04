@@ -82,7 +82,8 @@ A desktop-style PDF workspace with a ribbon of tool tabs:
 
 - **Title bar** with the open file name and the light/dark switch
 - **Menu bar**: **File** (New PDF, Open, Close PDF, Save, Save as, Save copy with markups, Recent files, Clear recent files),
-  **Edit** (Find, Find next, Find previous) and **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
+  **Edit** (Find, Find next, Find previous), **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom)
+  and **Help** (Take the tour). Keyboard: arrow keys move
   through and between menus, Esc closes them
 - **Tool bar** (ribbon): category tabs, each showing its tools as icons in captioned groups; panel switches on the
   right. Hovering over an icon (or reaching it with Tab) shows its name and shortcut key. Arrow keys, Home and End
@@ -406,6 +407,9 @@ Notes:
     Web: downloads `<name>-highlighted.pdf`. Desktop: asks where to save; it refuses to overwrite the open file.
     Reopening a saved copy shows the highlights as part of the page (they are not loaded back into the
     Markups list for editing).
+- Guided tour: a short walk through the menus, ribbon tabs, panels and status bar, with a spotlight on each part.
+  The desktop app shows it once on first run; Help > Take the tour shows it again (web and desktop). Arrow keys
+  move through it, Esc ends it.
 - Light and dark mode: follows the system setting; the sun/moon button in the header switches it and the
   choice is remembered in the browser. The PDF page itself always stays white.
 
@@ -482,6 +486,7 @@ frontend/
   app/services/securityService.js the password prompt for opening protected PDFs
   app/controllers/securityController.js  Security tab: Protect, Remove password, Sign, Signatures dialog and badge
   app/services/themeService.js    light / dark theme
+  app/services/tourService.js     guided tour steps and whether it has been seen
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
   app/services/recentFilesService.js  web Recent Files (copies kept in IndexedDB)
   app/services/toolsService.js    tools: web downloads or desktop host messages
@@ -490,8 +495,9 @@ frontend/
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay; continuous view
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
   app/directives/fileInputDirective.js  file input change binding
-  app/directives/menuBarDirective.js    File / Edit / Zoom menu bar (WAI-ARIA menubar keyboard handling)
+  app/directives/menuBarDirective.js    File / Edit / Zoom / Help menu bar (WAI-ARIA menubar keyboard handling)
   app/directives/toolTipsDirective.js   name and shortcut shown on hover over the icon buttons
+  app/directives/tourDirective.js       guided tour overlay: spotlight, step card, keys
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   privacy.html                    privacy policy (web)
   css/pdf-viewer.css
@@ -557,7 +563,7 @@ page by page), New PDF, Save / Save as and the unsaved-changes prompt (web and d
 render failure recovery, OCR of a scanned drawing (recognise, search, dimensions including vertical text, drawing
 numbers, annotations, extract and save text and the detected list; web and desktop), security (open with a password,
 wrong password, Protect, Remove password, Sign, and the signature check of a signed, a tampered and an extended copy;
-web and desktop), light / dark theme, tablet viewport with touch highlighting, and no console errors.
+web and desktop), the guided tour (desktop), light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` and `scanned-drawing.pdf` (OCR) need Ghostscript, `signer.pfx` (a self-signed test certificate, password
 `certpass`) needs OpenSSL and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).
