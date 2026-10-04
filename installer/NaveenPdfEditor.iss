@@ -9,7 +9,7 @@
 ; The version comes from desktop/PdfViewer.Desktop.csproj when built by the GitHub workflow (/DAppVersion=...).
 
 #ifndef AppVersion
-  #define AppVersion "1.0.0"
+  #define AppVersion "1.1.0"
 #endif
 #define AppName "Naveen PDF Editor"
 #define AppPublisher "Naveen"

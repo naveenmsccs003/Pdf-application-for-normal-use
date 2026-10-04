@@ -14,7 +14,7 @@
     <Authors>Naveen</Authors>
     <Copyright>Copyright © 2026 Naveen</Copyright>
     <Description>Naveen PDF Editor</Description>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <AssemblyTitle>Naveen PDF Editor</AssemblyTitle>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
