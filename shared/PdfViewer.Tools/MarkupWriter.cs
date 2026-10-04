@@ -5,7 +5,8 @@ using PDFiumCore;
 namespace PdfViewer.Tools;
 
 /// <summary>One line of a note: its text and baseline start, as laid out by the viewer.</summary>
-public sealed record MarkupLine(string Text, double X, double Y);
+/// <summary>A line of a note's text at its baseline; <c>Size</c> 0 means the markup's font size.</summary>
+public sealed record MarkupLine(string Text, double X, double Y, double Size = 0, bool Bold = false);
 
 /// <summary>
 /// A markup as the viewer sends it: page-relative, in points at scale 1, origin top-left, in the page's
@@ -24,7 +25,8 @@ public sealed record Markup(int PageNumber, string? Type, double X, double Y, do
 /// text note / callout → Stamp whose appearance holds the box, text and leader line, measurements → Stamp
 /// with the dimension lines (and area fill) and the value label (so they look the same in every viewer),
 /// strikeout → StrikeOut, underline → Underline, comment → Text (sticky note), replace text → Stamp with the
-/// strike line and the correction, revision tag → Stamp with the triangle and label. Caller holds <see cref="Pdfium.Lock"/>.
+/// strike line and the correction, revision tag → Stamp with the triangle and label, polyline → Ink,
+/// stamp → Stamp with its frames and words. Caller holds <see cref="Pdfium.Lock"/>.
 /// </summary>
 internal static partial class MarkupWriter
 {
@@ -38,7 +40,7 @@ internal static partial class MarkupWriter
 
     private const uint AreaFillAlpha = 31;          // 12 %, as on screen
 
-    private static readonly HashSet<string> InkTypes = ["line", "arrow", "pen", "cloud"];
+    private static readonly HashSet<string> InkTypes = ["line", "arrow", "pen", "cloud", "polyline"];
     private static readonly HashSet<string> MeasureTypes = ["distance", "hdistance", "vdistance", "area", "perimeter", "count", "perpendicular"];
 
     // PDFiumCore passes a single point here; the native call takes an array.
@@ -66,6 +68,7 @@ internal static partial class MarkupWriter
                 case "comment": notes.Add((AddComment(page, map, markup), markup.Text!)); break;
                 case "replace": notes.Add((AddNote(document, page, map, markup), $"Replace with: {markup.Text}")); break;
                 case "revtag": notes.Add((AddNote(document, page, map, markup), $"Revision {markup.Text}")); break;
+                case "stamp": notes.Add((AddNote(document, page, map, markup), $"Stamp: {markup.Text}")); break;
                 case "rect": AddShape(page, map, markup, AnnotSquare); break;
                 case "ellipse": AddShape(page, map, markup, AnnotCircle); break;
                 case "text":
@@ -244,7 +247,8 @@ internal static partial class MarkupWriter
             throw new ToolException("A note has an invalid text size.");
         var lines = m.Lines ?? [];
         if (lines.Length == 0 || lines.Length > MaxLines ||
-            lines.Any(l => l.Text is null || !double.IsFinite(l.X) || !double.IsFinite(l.Y)))
+            lines.Any(l => l.Text is null || !double.IsFinite(l.X) || !double.IsFinite(l.Y) ||
+                           !double.IsFinite(l.Size) || l.Size < 0 || l.Size > 300))
             throw new ToolException("A note has invalid text lines.");
         var strokes = CheckStrokes(m.Strokes, required: false);
         var (r, g, b) = ParseColor(m.Color);
@@ -279,8 +283,8 @@ internal static partial class MarkupWriter
                 Append(annot, path);
             }
 
-            // A revision tag is just its triangle and label: no box.
-            if (m.Type != "revtag")
+            // A revision tag and a stamp are just their lines and words: no box.
+            if (m.Type is not ("revtag" or "stamp"))
             {
                 var frame = NewPath(box);
                 fpdf_edit.FPDFPathClose(frame);
@@ -294,7 +298,8 @@ internal static partial class MarkupWriter
 
             foreach (var line in lines.Where(l => l.Text.Length > 0))
             {
-                var text = fpdf_edit.FPDFPageObjNewTextObj(document, "Helvetica", (float)m.FontSize)
+                var text = fpdf_edit.FPDFPageObjNewTextObj(document, line.Bold ? "Helvetica-Bold" : "Helvetica",
+                               (float)(line.Size > 0 ? line.Size : m.FontSize))
                            ?? throw new ToolException("Could not add a note to the PDF.");
                 var utf16 = line.Text.Select(c => (ushort)c).Append((ushort)0).ToArray();
                 fpdf_edit.FPDFTextSetText(text, ref utf16[0]);

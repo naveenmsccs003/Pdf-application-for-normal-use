@@ -74,8 +74,9 @@ A desktop-style PDF workspace (layout inspired by professional PDF markup tools 
   - **Pages**: Blank page, From file; Move, Duplicate, Delete; Rotate left / right; Extract, Replace (see below)
   - **Zoom**: zoom out / level (click for a custom zoom) / zoom in; Fit page, Fit width, Actual size
   - **Navigation**: first / previous / page / next / last; Single page, Continuous, Full screen, Pan; Find
-  - **Markup**: Pan, Highlight; shapes (rectangle, ellipse, cloud, line, arrow, freehand); text note, callout;
-    colour; Remove, Clear all, Save copy
+  - **Markup**: Pan, Highlight; shapes (rectangle, ellipse, cloud, line, arrow, freehand, polyline); text note,
+    callout, sticky note, strikethrough; Stamp, My markups, Add to My markups; colour; Remove, Clear all, Save copy
+    (see Stamps and My markups below)
   - **Colour**: four quick colours, or **More colours** for any colour (16.7 million): a saturation/brightness
     square, hue slider and hex code box (`#f80` or `#ff8800`), 72 presets, and the last 10 custom colours
     (remembered in this browser / app). Saved copies keep the exact colour.
@@ -156,6 +157,22 @@ On the **Revision** tab (web and desktop):
   counts by type and page; for all markups or one revision. **Save CSV** (opens in Excel) or **Save printable
   report** (an HTML page to print or save as PDF). Web: downloads; desktop: asks where to save.
 
+## Stamps and My markups
+
+On the **Markup** tab (web and desktop):
+
+- **Polyline**: click each point; double-click or **Enter** finishes, **Backspace** removes the last point, **Shift**
+  keeps 45° steps. Saved as an Ink annotation.
+- **Sticky note** (the Review tab's Comment) and **Strikethrough** (Strikeout) are on this tab too.
+- **Stamp**: pick one of 16 standard stamps (Approved, Approved as noted, Reviewed, Revise and resubmit, Rejected,
+  For / Not for construction, Preliminary, Draft, For information, As built, Final, Confidential, Void, Received,
+  Completed) in its own colour, or type your own (in the Markup colour). Optionally a second line with your name and
+  today's date. Then click the page to place it, as often as needed; double-click a stamp to change its text. Saved as
+  a Stamp annotation that looks the same in other viewers.
+- **My markups** (custom markups): select any markup you made (a shape in your style, a standard note, a stamp, a
+  count) and click **Add to My markups** to save it under a name. Pick it from **My markups** and click the page to
+  place copies, on any page or document. Up to 50, kept in this browser / app; delete them in the same list.
+
 ## Keyboard shortcuts
 
 One key picks a tool (when not typing in a box); pressing it again goes back to Pan. Esc also goes back to Pan.
@@ -169,7 +186,8 @@ One key picks a tool (when not typing in a box); pressing it again goes back to 
 | Y | Vertical distance | N | Perpendicular distance | G | Area |
 | O | Perimeter | K | Count | B | Calibrate |
 | M | Comment | S | Strikeout | U | Underline |
-| Shift+T | Replace text | Shift+R | Revision tag | | |
+| Shift+T | Replace text | Shift+R | Revision tag | P | Polyline |
+| Shift+S | Stamp | Shift+C | My markups | | |
 
 Also (Cmd on macOS): ← / → previous / next page, **Home** / **End** first / last page, **Ctrl+O** open,
 **Ctrl+S** save, **Ctrl+Shift+S** save as, **Ctrl+F** find (**F3** next), **Ctrl+L** full screen,
@@ -324,6 +342,7 @@ frontend/
   app/controllers/pdfViewerController.js   toolbar/status state and commands
   app/services/pdfService.js      validate, upload, load and render pages (pdf.js)
   app/services/highlightService.js  in-memory highlight store
+  app/services/customMarkupService.js  My markups (markups saved for reuse, in local storage)
   app/services/searchService.js   text search (pdf.js on the web, PDFium host on desktop)
   app/controllers/findController.js  find bar and its keyboard shortcuts
   app/services/themeService.js    light / dark theme

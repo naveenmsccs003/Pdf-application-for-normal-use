@@ -65,6 +65,10 @@
     <symbol id="i-fullscreen-exit" viewBox="0 0 24 24"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></symbol>
     <symbol id="i-count" viewBox="0 0 24 24"><circle cx="6" cy="7" r="3"/><circle cx="18" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M15 17h6M18 14v6"/></symbol>
     <symbol id="i-perpendicular" viewBox="0 0 24 24"><path d="M3 20h18M12 20V5M12 15h4v5"/><circle cx="12" cy="5" r="1.5"/></symbol>
+    <symbol id="i-polyline" viewBox="0 0 24 24"><path d="M3 18l5-9 5 6 4-10 4 4"/><circle cx="3" cy="18" r="1.3"/><circle cx="8" cy="9" r="1.3"/><circle cx="13" cy="15" r="1.3"/><circle cx="17" cy="5" r="1.3"/></symbol>
+    <symbol id="i-stamp" viewBox="0 0 24 24"><path d="M9 3h6l-1 7h3a2 2 0 0 1 2 2v3H5v-3a2 2 0 0 1 2-2h3z"/><path d="M5 18h14M7 21h10"/></symbol>
+    <symbol id="i-custom" viewBox="0 0 24 24"><path d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z"/></symbol>
+    <symbol id="i-custom-add" viewBox="0 0 24 24"><path d="M10 3l2.2 4.5 5 .7-3.6 3.5.9 5L10 14.3 5.5 16.7l.9-5L2.8 8.2l5-.7z"/><path d="M19 15v6M16 18h6"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -452,6 +456,11 @@
                         aria-label="Freehand" title="Freehand: draw on the drawing">
                     <svg class="icon"><use href="#i-pen"></use></svg>
                 </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('polyline')" data-shortcut="{{ vm.toolKey('polyline') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('polyline')}" aria-pressed="{{ vm.isTool('polyline') }}"
+                        aria-label="Polyline" title="Polyline: click each point, double-click or Enter to finish (Shift: 45° steps)">
+                    <svg class="icon"><use href="#i-polyline"></use></svg><span>Polyline</span>
+                </button>
             </div>
             <span class="ribbon-caption">Shapes</span>
         </div>
@@ -467,8 +476,37 @@
                         aria-label="Callout" title="Callout: drag from the point to where the note goes">
                     <svg class="icon"><use href="#i-callout"></use></svg><span>Callout</span>
                 </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('comment')" data-shortcut="{{ vm.toolKey('comment') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('comment')}" aria-pressed="{{ vm.isTool('comment') }}"
+                        aria-label="Sticky note" title="Sticky note: click where it goes, type the note; select it to read">
+                    <svg class="icon"><use href="#i-comment"></use></svg><span>Sticky note</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('strikeout')" data-shortcut="{{ vm.toolKey('strikeout') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('strikeout')}" aria-pressed="{{ vm.isTool('strikeout') }}"
+                        aria-label="Strikethrough" title="Strikethrough: drag over the text to strike out">
+                    <svg class="icon"><use href="#i-strikeout"></use></svg><span>Strikethrough</span>
+                </button>
             </div>
             <span class="ribbon-caption">Notes</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Stamps and custom markups">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('stamp')" data-shortcut="{{ vm.toolKey('stamp') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('stamp')}" aria-pressed="{{ vm.isTool('stamp') }}"
+                        aria-label="Stamp" title="Stamp: Approved, Rejected, Draft … or your own text">
+                    <svg class="icon"><use href="#i-stamp"></use></svg><span>Stamp</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.selectTool('custom')" data-shortcut="{{ vm.toolKey('custom') }}" ng-disabled="!vm.hasDocument()"
+                        ng-class="{'is-active': vm.isTool('custom')}" aria-pressed="{{ vm.isTool('custom') }}"
+                        aria-label="My markups" title="My markups: place a markup you saved for reuse">
+                    <svg class="icon"><use href="#i-custom"></use></svg><span>My markups</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openCustomSaveDialog()" ng-disabled="!vm.canEditSelected()"
+                        aria-label="Add to My markups" title="Save the selected markup (its look and text) for reuse">
+                    <svg class="icon"><use href="#i-custom-add"></use></svg><span>Add to My markups</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Stamps &amp; custom</span>
         </div>
         <div class="ribbon-group" role="group" aria-label="Colour">
             <div class="ribbon-tools">
@@ -1337,6 +1375,97 @@
         <div class="dialog-footer">
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.unitsDialog = null">Cancel</button>
             <button type="submit" form="units-form" class="tool tool-labelled tool-primary">Apply</button>
+        </div>
+    </div>
+</div>
+
+<!-- Stamp dialog (Markup > Stamp) -->
+<div class="dialog-backdrop" ng-if="vm.stampDialog" ng-click="vm.stampDialog = null">
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="stamp-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="stamp-dialog-title">Stamp</h2>
+            <button type="button" class="panel-close" ng-click="vm.stampDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applyStampDialog()" id="stamp-form">
+            <div class="stamp-grid" role="radiogroup" aria-label="Stamps">
+                <label class="stamp-option" ng-repeat="st in vm.STAMPS track by $index" ng-class="{'is-selected': vm.stampDialog.selected === $index}">
+                    <input type="radio" name="stamp" class="visually-hidden" ng-value="$index" ng-model="vm.stampDialog.selected">
+                    <span class="stamp-preview" ng-style="{color: st.color, 'border-color': st.color}">{{ st.text }}</span>
+                </label>
+                <label class="stamp-option stamp-option-custom" ng-class="{'is-selected': vm.stampDialog.selected === 'custom'}">
+                    <input type="radio" name="stamp" class="visually-hidden" value="custom" ng-model="vm.stampDialog.selected">
+                    <input type="text" id="stamp-custom-input" class="inline-text" maxlength="40" autocomplete="off" placeholder="Your own text"
+                           ng-model="vm.stampDialog.custom" ng-focus="vm.stampDialog.selected = 'custom'" ng-change="vm.stampDialog.error = ''"
+                           aria-label="Your own stamp text">
+                </label>
+            </div>
+            <label class="choice"><input type="checkbox" ng-model="vm.stampDialog.withName"> Add a line with
+                <input type="text" class="inline-text" maxlength="60" autocomplete="off" ng-model="vm.stampDialog.name" placeholder="your name"
+                       aria-label="Name on the stamp"> and today's date</label>
+            <p class="dialog-note">Your own stamps use the colour picked on the Markup tab. After picking, click the page to place
+                the stamp (as often as you like); double-click a stamp to change its text.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.stampDialog.error">{{ vm.stampDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.stampDialog = null">Cancel</button>
+            <button type="submit" form="stamp-form" class="tool tool-labelled tool-primary">Use this stamp</button>
+        </div>
+    </div>
+</div>
+
+<!-- My markups dialog (Markup > My markups) -->
+<div class="dialog-backdrop" ng-if="vm.customDialog" ng-click="vm.customDialog = null">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="custom-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="custom-dialog-title">My markups</h2>
+            <button type="button" class="panel-close" ng-click="vm.customDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body">
+            <p class="dialog-intro" ng-if="!vm.customMarkups().length">No markups saved yet. Select a markup you have drawn
+                (a shape in your style, a standard note, a stamp) and click <strong>Add to My markups</strong>.</p>
+            <ul class="custom-list" ng-if="vm.customMarkups().length">
+                <li ng-repeat="item in vm.customMarkups() track by item.id">
+                    <button type="button" class="custom-pick" ng-click="vm.pickCustom(item)" aria-label="Use {{ item.name }}">
+                        <span class="color-dot" ng-style="{background: item.markup.color || '#ffdd00'}"></span>
+                        <span class="custom-name">{{ item.name }}</span>
+                        <span class="custom-type">{{ vm.customLabel(item) }}</span>
+                    </button>
+                    <button type="button" class="tool tool-sm" ng-click="vm.removeCustom(item)" aria-label="Delete {{ item.name }}" title="Delete">
+                        <svg class="icon icon-sm"><use href="#i-trash"></use></svg>
+                    </button>
+                </li>
+            </ul>
+            <p class="dialog-note">Pick one, then click the page to place copies of it. Kept in this browser / app.</p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.customDialog = null">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add to My markups: name the selected markup -->
+<div class="dialog-backdrop" ng-if="vm.customSaveDialog" ng-click="vm.customSaveDialog = null">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="custom-save-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="custom-save-title">Add to My markups</h2>
+            <button type="button" class="panel-close" ng-click="vm.customSaveDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applyCustomSaveDialog()" id="custom-save-form">
+            <label for="custom-name-input">Name</label>
+            <input type="text" id="custom-name-input" class="inline-text save-as-name" maxlength="60" autocomplete="off"
+                   ng-model="vm.customSaveDialog.name" ng-change="vm.customSaveDialog.error = ''">
+            <p class="dialog-note">Saves its look, size and text, to place again on any page or document.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.customSaveDialog.error">{{ vm.customSaveDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.customSaveDialog = null">Cancel</button>
+            <button type="submit" form="custom-save-form" class="tool tool-labelled tool-primary">Add</button>
         </div>
     </div>
 </div>

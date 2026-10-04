@@ -901,6 +901,108 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('More colours: custom colours save into the PDF copy', /with 2 markups/.test(s.status), s.status);
     await click('Clear Markups'); await page.keyboard.press('Escape'); await sleep(100); await click('Fit Page');
 
+    // ===== Annotations: polyline, sticky note, strikethrough, stamps, My markups =====
+    const annLabels = () => page.$$eval('.markup-row .markup-title', els => els.map(e => e.textContent.trim()));
+    // The box of a markup's outline (its first drawn path) and its text lines.
+    const shapeOf = type => page.$$eval(`.markup-layer g.markup[data-type="${type}"]`, gs => gs.map(g => {
+        const b = [...g.querySelectorAll('path')].find(p => p.getAttribute('d')).getBBox();
+        return { x: b.x, y: b.y, w: b.width, h: b.height, text: [...g.querySelectorAll('tspan')].map(t => t.textContent.trim()).join(' ') };
+    }));
+    await open('one-page.pdf'); await click('Actual size');
+    await page.click('#ribbon-tab-markup'); await sleep(100);
+    await page.click('button[aria-label="Polyline"]');
+    await clickAt(80, 120); await clickAt(200, 160);
+    await page.keyboard.down('Shift'); await clickAt(300, 170); await page.keyboard.up('Shift');
+    await clickAt(380, 100); await page.keyboard.press('Backspace'); await page.keyboard.press('Enter'); await sleep(150);
+    let poly = await page.$$eval('.markup-layer g.markup[data-type="polyline"] path', ps => ps.map(p => p.getAttribute('d')).filter(Boolean));
+    check('polyline: click the points, Enter finishes; Backspace took the last point back', (await annLabels()).join('|') === 'Polyline' &&
+        poly.length === 1 && (poly[0].match(/[ML]/g) || []).length === 3, [await annLabels(), poly]);
+    check('polyline: Shift keeps the segment level (45° steps)', / 160$/.test(poly[0].trim()), poly);
+    await page.click('button[aria-label="Polyline"]');
+    await clickAt(80, 300); await page.keyboard.press('Enter'); await sleep(100);
+    check('polyline: one point is not a polyline', (await annLabels()).length === 1);
+    await page.keyboard.press('Escape');
+
+    await page.click('button[aria-label="Sticky note"]'); await clickAt(500, 80); await sleep(200);
+    const noteTitle = await page.evaluate(() => (document.querySelector('#note-dialog-title') || {}).textContent);
+    await page.keyboard.type('Check this'); await page.click('#note-form ~ .dialog-footer .tool-primary').catch(() => page.click('.dialog-footer .tool-primary'));
+    await sleep(200);
+    check('sticky note: on the Markup tab, a comment with a note icon', noteTitle === 'Comment' && (await annLabels()).includes('Comment: Check this') &&
+        (await shapeOf('comment')).length === 1, [noteTitle, await annLabels()]);
+    await page.click('#ribbon-tab-markup'); await page.click('button[aria-label="Strikethrough"]'); await drag(40, 200, 300, 214);
+    check('strikethrough: on the Markup tab too', (await annLabels()).includes('Strikeout'), await annLabels());
+    await page.keyboard.press('Escape');
+
+    await page.click('button[aria-label="Stamp"]'); await sleep(200);
+    const stampCount = await page.$$eval('.stamp-preview', s => s.map(x => x.textContent.trim()));
+    check('stamp: picking shows the standard stamps', stampCount.length === 16 && stampCount[0] === 'APPROVED' && stampCount.includes('REJECTED'), stampCount);
+    await page.$eval('[aria-label="Name on the stamp"]', e => { e.value = ''; }); await page.type('[aria-label="Name on the stamp"]', 'N. Kumar');
+    await page.click('[aria-labelledby="stamp-dialog-title"] .tool-primary'); await sleep(100);
+    await clickAt(300, 300); await sleep(200);
+    let stamps = await shapeOf('stamp'); const today = new Date();
+    const todayText = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    check('stamp: APPROVED, centred where clicked, with the name and date', (await annLabels()).includes('Stamp: APPROVED') && stamps.length === 1 &&
+        stamps[0].text === 'APPROVED N. Kumar · ' + todayText && near(stamps[0].x + stamps[0].w / 2, 300, 4) && near(stamps[0].y + stamps[0].h / 2, 300, 4),
+        [stamps, await annLabels()]);
+    const stampColor = await page.$eval('.markup-layer g.markup[data-type="stamp"]', g => g.getAttribute('stroke'));
+    check('stamp: the standard stamp has its own colour (green)', stampColor === '#26a269', stampColor);
+    await clickAt(300, 420); await sleep(200);
+    check('stamp: each click places another', (await shapeOf('stamp')).length === 2);
+    await page.keyboard.press('v'); await sleep(50);
+    await page.click('button[aria-label="Stamp"]'); await sleep(200);
+    await page.click('#stamp-custom-input'); await page.keyboard.type('checked on site');
+    await page.click('input[type=checkbox][ng-model="vm.stampDialog.withName"]');
+    await page.click('[aria-labelledby="stamp-dialog-title"] .tool-primary'); await sleep(100); await clickAt(300, 520); await sleep(200);
+    stamps = await shapeOf('stamp');
+    check('stamp: your own text (in capitals), without the name line, in the Markup colour', (await annLabels()).includes('Stamp: CHECKED ON SITE') &&
+        stamps[2].text === 'CHECKED ON SITE' && await page.$$eval('.markup-layer g.markup[data-type="stamp"]', gs => gs[2].getAttribute('stroke')) === '#e01b24', stamps);
+    await page.keyboard.press('v'); await sleep(50);
+    const lbs = await layerBox();
+    await page.mouse.click(lbs.x + 300, lbs.y + 520, { clickCount: 2 }); await sleep(200);
+    await page.$eval('#edit-text-input', e => { e.value = ''; }); await page.type('#edit-text-input', 'CHECKED');
+    await page.click('[aria-labelledby="edit-dialog-title"] .tool-primary'); await sleep(200);
+    stamps = await shapeOf('stamp');
+    check('stamp: double-click changes its text; the box fits it', stamps[2].text === 'CHECKED' && (await annLabels()).includes('Stamp: CHECKED'), stamps);
+
+    await clickAt(300, 300); await sleep(100);
+    await click('Add to My markups'); await sleep(200);
+    await page.$eval('#custom-name-input', e => { e.value = ''; }); await page.type('#custom-name-input', 'Approved (NK)');
+    await page.click('[aria-labelledby="custom-save-title"] .tool-primary'); await sleep(150);
+    s = await state();
+    check('My markups: the selected stamp is added under a name', /"Approved \(NK\)" added to My markups/.test(s.status), s.status);
+    await click('Clear Markups');
+    await page.click('button[aria-label="My markups"]'); await sleep(200);
+    const customItems = await page.$$eval('.custom-name', e => e.map(x => x.textContent.trim()));
+    check('My markups: lists the saved markups', customItems.join('|') === 'Approved (NK)', customItems);
+    await page.click('.custom-pick'); await sleep(100); await clickAt(200, 200); await clickAt(400, 450); await sleep(200);
+    stamps = await shapeOf('stamp');
+    check('My markups: each click places a copy, centred there', stamps.length === 2 && stamps[0].text.startsWith('APPROVED N. Kumar') &&
+        near(stamps[0].x + stamps[0].w / 2, 200, 4) && near(stamps[1].y + stamps[1].h / 2, 450, 4), stamps);
+    await page.keyboard.press('v');
+    await page.click('#ribbon-tab-markup'); await page.click('button[aria-label="Polyline"]');
+    await clickAt(100, 560); await clickAt(250, 540); await page.keyboard.press('Enter'); await sleep(100);
+    await page.keyboard.press('v'); await sleep(50);
+    await click('Save with markups');
+    await page.waitForFunction(() => /markup|Unable/.test(document.querySelector('.status-text').textContent) &&
+        !/Saving/.test(document.querySelector('.status-text').textContent), { timeout: 60000 });
+    s = await state();
+    check('annotations: stamps and polyline save into the PDF copy', /with 3 markups/.test(s.status), s.status);
+    if (canCheckDownloads) {
+        await sleep(500);
+        const saved = fs.readdirSync(DOWNLOADS).filter(f => /^one-page-highlighted.*\.pdf$/.test(f))
+            .map(f => path.join(DOWNLOADS, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+        const raw = saved ? fs.readFileSync(saved).toString('latin1') : '';
+        check('annotations: saved as Stamp (bold text) and Ink', (raw.match(/\/Contents\(Stamp: APPROVED\)/g) || []).length === 2 &&
+            raw.includes('Helvetica-Bold') && /\/Subtype\s*\/Ink/.test(raw), saved);
+    }
+    await page.reload({ waitUntil: 'load' }); await page.waitForSelector('.toolbar'); await sleep(300);
+    await open('one-page.pdf'); await page.click('#ribbon-tab-markup');
+    await page.click('button[aria-label="My markups"]'); await sleep(200);
+    check('My markups: kept after reloading', (await page.$$eval('.custom-name', e => e.length)) === 1);
+    await page.click('button[aria-label="Delete Approved (NK)"]'); await sleep(100);
+    check('My markups: delete one', (await page.$$eval('.custom-name', e => e.length)) === 0);
+    await page.keyboard.press('Escape'); await sleep(100);
+
     // ===== Measure: distances, areas, perimeter, scale =====
     const measureLabels = () => page.$$eval('.markup-row .markup-title', els => els.map(e => e.textContent.trim()));
     const scaleButton = () => page.$eval('.ribbon-scale', b => ({ text: b.textContent.trim(), unset: b.classList.contains('is-unset') }));

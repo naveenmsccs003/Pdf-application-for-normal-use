@@ -11,7 +11,8 @@
         '        <rect ng-if="shape(m).label" class="markup-label" ng-attr-x="{{ shape(m).label.x }}" ng-attr-y="{{ shape(m).label.y }}"' +
         '              ng-attr-width="{{ shape(m).label.width }}" ng-attr-height="{{ shape(m).label.height }}" stroke="none"></rect>' +
         '        <text ng-if="shape(m).lines" ng-attr-font-size="{{ m.fontSize }}" ng-attr-fill="{{ m.color }}" stroke="none">' +
-        '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}">{{ l.text }}</tspan>' +
+        '          <tspan ng-repeat="l in shape(m).lines track by $index" ng-attr-x="{{ l.x }}" ng-attr-y="{{ l.y }}"' +
+        '                 ng-attr-font-size="{{ l.size || undefined }}" ng-attr-font-weight="{{ l.bold ? \'bold\' : undefined }}">{{ l.text }}</tspan>' +
         '        </text>';
 
     /**
@@ -38,7 +39,8 @@
             var MAX_CORNERS = 500;
             var LINE_TOOLS = { line: true, arrow: true, distance: true, hdistance: true, vdistance: true, calibrate: true, perpendicular: true };
             var MAX_COUNT = 200;            // items in one count
-            var POLYGON_TOOLS = { area: true, perimeter: true };
+            var POLYGON_TOOLS = { area: true, perimeter: true, polyline: true };   // click the corners
+            var PLACE_TOOLS = { revtag: true, stamp: true, custom: true };         // a click places a ready-made markup
             var TEXT_MARK_TOOLS = { strikeout: true, underline: true, replace: true };   // drawn over text like a highlight
             var MIN_PAN_PX = 3;             // smaller mouse movements while panning count as a click
             var RESIZE_DEBOUNCE_MS = 150;
@@ -68,7 +70,7 @@
                     onCalibrate: '&',       // scale calibration: a line of known length was drawn
                     onMoveMarkup: '&',      // the selected markup was dragged: (id, markup) is the moved copy
                     onEditMarkup: '&',      // a markup was double-clicked
-                    onPlaceTag: '&',        // revision tag tool: (pageNumber, at) where the page was clicked
+                    onPlaceTag: '&',        // revision tag, stamp, custom markup: (pageNumber, at) where the page was clicked
                     revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay', url, regions, active }
                     onSelectHighlight: '&',
                     onRemoveHighlight: '&',
@@ -614,6 +616,12 @@
                             shapes[m.id] = cached;
                             return cached;
                         }
+                        if (m.type === 'stamp') {
+                            cached = { markup: m, scaleVersion: scaleService.version, outline: markupGeometry.path(m), fill: 'none',
+                                       lines: markupGeometry.stampLines(m) };
+                            shapes[m.id] = cached;
+                            return cached;
+                        }
                         if (m.type === 'revtag') {
                             cached = { markup: m, scaleVersion: scaleService.version, outline: markupGeometry.path(m), fill: '#ffffff',
                                        lines: markupGeometry.revtagLines(m) };
@@ -959,25 +967,37 @@
                                  fontSize: measureFontSize(sizes), points: points };
                     }
 
-                    function addCorner(point) {
+                    /** Shift: the point snapped to 45° steps from the last corner. */
+                    function snapCorner(x, y, event) {
+                        if (!polygon || !event || !event.shiftKey) { return { x: x, y: y }; }
+                        var p = polygon.points, lx = p[p.length - 2], ly = p[p.length - 1];
+                        var angle = Math.round(Math.atan2(y - ly, x - lx) / (Math.PI / 4)) * (Math.PI / 4);
+                        var length = Math.hypot(x - lx, y - ly);
+                        return { x: round2(lx + length * Math.cos(angle)), y: round2(ly + length * Math.sin(angle)) };
+                    }
+
+                    function addCorner(point, event) {
                         var s = scope.rendered.scale;
-                        var x = round2(point.x / s), y = round2(point.y / s);
+                        var snapped = snapCorner(round2(point.x / s), round2(point.y / s), event);
+                        var x = snapped.x, y = snapped.y;
                         if (!polygon) {
                             polygon = { page: scope.rendered.page, points: [x, y] };
                         } else {
                             var p = polygon.points, n = p.length;
-                            if (n >= 6 && Math.hypot(x - p[0], y - p[1]) * s <= CLOSE_POLYGON_PX) { finishPolygon(); return; }
+                            // A click on the first corner closes an area / perimeter (a polyline stays open).
+                            if (n >= 6 && scope.tool !== 'polyline' && Math.hypot(x - p[0], y - p[1]) * s <= CLOSE_POLYGON_PX) { finishPolygon(); return; }
                             if (Math.hypot(x - p[n - 2], y - p[n - 1]) * s < MIN_CORNER_STEP_PX) { return; }
                             if (n / 2 < MAX_CORNERS) { p.push(x, y); }
                         }
                         showDraft(polygonDraft(null));
                     }
 
-                    /** Adds the area / perimeter if it has at least three corners. */
+                    /** Adds the area / perimeter if it has at least three corners (a polyline: two points). */
                     function finishPolygon() {
                         if (!polygon) { return; }
                         var page = polygon.page;
-                        var markup = polygon.points.length >= 6 ? polygonDraft(null) : null;
+                        var markup = polygon.points.length >= (scope.tool === 'polyline' ? 4 : 6) ? polygonDraft(null) : null;
+                        if (markup && scope.tool === 'polyline') { delete markup.fontSize; }
                         cancelPolygon();
                         if (!markup) { return; }
                         delete markup.pageNumber;
@@ -1122,7 +1142,7 @@
                     interactionLayer.addEventListener('pointermove', function (event) {
                         if (polygon && !start && POLYGON_TOOLS[scope.tool]) {
                             var hover = pointFromEvent(event), hs = scope.rendered.scale;
-                            showDraft(polygonDraft({ x: round2(hover.x / hs), y: round2(hover.y / hs) }));
+                            showDraft(polygonDraft(snapCorner(round2(hover.x / hs), round2(hover.y / hs), event)));
                             return;
                         }
                         if (perpendicular && scope.tool === 'perpendicular' && !scope.spacePan) {
@@ -1156,7 +1176,7 @@
                         var end = pointFromEvent(event);
                         start = null;
                         if (POLYGON_TOOLS[scope.tool] && !scope.spacePan) {
-                            addCorner(end);
+                            addCorner(end, event);
                             return;
                         }
                         if (scope.tool === 'count' && !scope.spacePan) {
@@ -1187,7 +1207,8 @@
 
                         scope.$apply(function () {
                             var tool = scope.drawing() ? scope.tool : null;
-                            if (tool === 'revtag') {
+                            if (PLACE_TOOLS[tool]) {
+                                // Revision tag, stamp or custom markup: the host makes it, centred where the page was clicked.
                                 scope.onPlaceTag({ pageNumber: page, at: { x: end.x / s, y: end.y / s } });
                                 return;
                             }

@@ -9,7 +9,9 @@
      * Markup fields by type (besides id, type, pageNumber, color, strokeWidth, createdAt):
      *   highlight, rect, ellipse, cloud   x, y, width, height
      *   line, arrow                       x1, y1, x2, y2
-     *   pen                               points [x0, y0, x1, y1, ...]
+     *   pen, polyline                     points [x0, y0, x1, y1, ...]
+     *   stamp                             x, y, width, height, text (the stamp, e.g. APPROVED), sub (optional
+     *                                     second line: name and date), fontSize
      *   text                              x, y, width, height, text, fontSize
      *   callout                           as text, plus tipX, tipY (the point the leader arrow points at)
      *   distance, hdistance, vdistance    points [x0, y0, x1, y1], fontSize (value label)
@@ -26,13 +28,13 @@
     angular.module('pdfViewerApp').factory('markupGeometry', ['scaleService', function (scaleService) {
         var LABELS = {
             highlight: 'Highlight', rect: 'Rectangle', ellipse: 'Ellipse', cloud: 'Cloud', line: 'Line',
-            arrow: 'Arrow', pen: 'Freehand', text: 'Text note', callout: 'Callout',
+            arrow: 'Arrow', pen: 'Freehand', polyline: 'Polyline', text: 'Text note', callout: 'Callout', stamp: 'Stamp',
             distance: 'Distance', hdistance: 'Horizontal distance', vdistance: 'Vertical distance',
             area: 'Area', perimeter: 'Perimeter', count: 'Count', perpendicular: 'Perpendicular distance',
             comment: 'Comment', strikeout: 'Strikeout', underline: 'Underline', replace: 'Replace text',
             revtag: 'Revision tag'
         };
-        var TEXT_TYPES = { text: true, callout: true, comment: true, replace: true };   // markups with typed text
+        var TEXT_TYPES = { text: true, callout: true, comment: true, replace: true, stamp: true };   // markups with typed text
         var MEASURES = { distance: true, hdistance: true, vdistance: true, area: true, perimeter: true, count: true, perpendicular: true };
         var LINE_HEIGHT = 1.25;     // times the font size
         var PADDING = 0.4;          // text box padding, times the font size
@@ -288,7 +290,9 @@
                     return [[m.x + m.width / 2, m.y, m.x + m.width, m.y + m.height, m.x, m.y + m.height, m.x + m.width / 2, m.y]];
                 case 'line': return [[m.x1, m.y1, m.x2, m.y2]];
                 case 'arrow': return [[m.x1, m.y1, m.x2, m.y2], arrowHead(m.x1, m.y1, m.x2, m.y2, m.strokeWidth)];
-                case 'pen': return [m.points];
+                case 'pen':
+                case 'polyline': return [m.points];
+                case 'stamp': return stampFrames(m);
                 case 'cloud': return [cloudPolyline(m)];
                 case 'callout':
                     if (!calloutHasLeader(m)) { return []; }
@@ -424,6 +428,40 @@
             return [{ text: m.text, x: m.x + m.width / 2 - textWidth(m.text, m.fontSize) / 2, y: m.y + m.height * 0.82 }];
         }
 
+        // ----- Stamp: a framed, bold word with an optional smaller line (name and date) -----
+        var STAMP_SUB = 0.45;       // second line, times the font size
+
+        function boldWidth(text, fontSize) {
+            if (!measureContext) { measureContext = document.createElement('canvas').getContext('2d'); }
+            measureContext.font = 'bold ' + fontSize + 'px ' + FONT;
+            return measureContext.measureText(text).width;
+        }
+
+        /** Size of a stamp's box for its text and second line. */
+        function stampSize(text, sub, fontSize) {
+            var pad = fontSize * 0.45, side = fontSize * 0.75;
+            var width = Math.max(boldWidth(text, fontSize), sub ? textWidth(sub, fontSize * STAMP_SUB) : 0);
+            return { width: Math.ceil(width + 2 * side), height: Math.ceil(fontSize * (sub ? 1.05 + STAMP_SUB * 1.25 : 1.05) + 2 * pad) };
+        }
+
+        /** The stamp's two frames (outer and a thin inner one), as closed polylines. */
+        function stampFrames(m) {
+            var g = m.strokeWidth * 1.6;
+            var frame = function (x, y, w, h) { return [x, y, x + w, y, x + w, y + h, x, y + h, x, y]; };
+            return [frame(m.x, m.y, m.width, m.height), frame(m.x + g, m.y + g, m.width - 2 * g, m.height - 2 * g)];
+        }
+
+        /** Its text lines, centred: the word in bold, the second line smaller (size set). */
+        function stampLines(m) {
+            var pad = m.fontSize * 0.45, cx = m.x + m.width / 2;
+            var lines = [{ text: m.text, bold: true, x: cx - boldWidth(m.text, m.fontSize) / 2, y: m.y + pad + m.fontSize * 0.82 }];
+            if (m.sub) {
+                var size = Math.round(m.fontSize * STAMP_SUB * 10) / 10;
+                lines.push({ text: m.sub, size: size, x: cx - textWidth(m.sub, size) / 2, y: m.y + pad + m.fontSize * 1.05 + size * 0.95 });
+            }
+            return lines;
+        }
+
         /** A copy of the markup moved by (dx, dy) PDF units. */
         function translate(m, dx, dy) {
             var moved = angular.extend({}, m);
@@ -434,7 +472,7 @@
         }
 
         // Boxes that hold upright text or an icon keep their size when the page turns; only their place moves.
-        var UPRIGHT_BOXES = { text: true, callout: true, comment: true, revtag: true };
+        var UPRIGHT_BOXES = { text: true, callout: true, comment: true, revtag: true, stamp: true };
 
         /**
          * The markup's fields after its page (width x height at scale 1) is turned clockwise by `turns` quarter
@@ -543,6 +581,19 @@
                 saved.lines = revtagLines(m).map(function (line) { return { text: line.text, x: round(line.x), y: round(line.y) }; });
                 return saved;
             }
+            if (m.type === 'stamp') {
+                // Saved like a note without a box: the frames are the strokes.
+                saved.x = round(m.x); saved.y = round(m.y); saved.width = round(m.width); saved.height = round(m.height);
+                saved.color = m.color;
+                saved.strokeWidth = m.strokeWidth;
+                saved.strokes = strokes(m).map(function (p) { return p.map(round); });
+                saved.text = m.text;
+                saved.fontSize = m.fontSize;
+                saved.lines = stampLines(m).map(function (line) {
+                    return { text: line.text, x: round(line.x), y: round(line.y), size: line.size || 0, bold: !!line.bold };
+                });
+                return saved;
+            }
             if (m.type === 'replace') {
                 // Saved like a note: the correction is the box and text, the strike line is the stroke.
                 var rl = replaceLabel(m);
@@ -593,6 +644,8 @@
             replaceLabel: replaceLabel,
             revtagLines: revtagLines,
             translate: translate,
+            stampSize: stampSize,
+            stampLines: stampLines,
             rotate: rotate,
             measureText: measureText,
             measureLabel: measureLabel

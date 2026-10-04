@@ -5,10 +5,10 @@
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
         'recentFilesService', 'markupGeometry', 'scaleService', 'compareService', 'revisionService', 'reportService',
-        'toolsService', 'pagesService', 'VIEWER_CONFIG', '$q',
+        'toolsService', 'pagesService', 'customMarkupService', 'VIEWER_CONFIG', '$q',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
                   recentFilesService, markupGeometry, scaleService, compareService, revisionService, reportService,
-                  toolsService, pagesService, VIEWER_CONFIG, $q) {
+                  toolsService, pagesService, customMarkupService, VIEWER_CONFIG, $q) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -462,7 +462,8 @@
             // viewer's and find shortcuts must not act on the page behind it. Capture phase, so this runs first.
             function onCustomZoomKey(event) {
                 if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog &&
-                    !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog && !vm.unitsDialog) { return; }
+                    !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog && !vm.unitsDialog &&
+                    !vm.stampDialog && !vm.customDialog && !vm.customSaveDialog) { return; }
                 // The colour pop-up (Edit markup dialog) handles its own keys, Esc included.
                 var popover = $document[0].querySelector('.color-popover');
                 if (popover && popover.contains(event.target)) { return; }
@@ -473,6 +474,7 @@
                         vm.revisionsDialog = null; vm.reportDialog = null;
                         if (!vm.pagesDialog || !vm.pagesDialog.busy) { vm.pagesDialog = null; }
                         vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null; vm.unitsDialog = null;
+                        vm.stampDialog = null; vm.customDialog = null; vm.customSaveDialog = null;
                     });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
@@ -860,6 +862,9 @@
                 line: 'Line: drag from start to end. Shift snaps to 45\u00b0.',
                 arrow: 'Arrow: drag from the tail to the point. Shift snaps to 45\u00b0.',
                 pen: 'Freehand: draw on the page.',
+                polyline: 'Polyline: click each point; double-click or Enter finishes. Shift keeps 45\u00b0 steps; Backspace removes the last point.',
+                stamp: 'Stamp: click where the stamp goes.',
+                custom: 'My markup: click where it goes.',
                 text: 'Text note: click where the note goes.',
                 callout: 'Callout: drag from the point to where the note goes.',
                 distance: 'Distance: drag from one point to the other. Shift snaps to 45\u00b0.',
@@ -882,7 +887,7 @@
                 pan: 'V', highlight: 'H', rect: 'R', ellipse: 'E', cloud: 'C', line: 'L', arrow: 'A', pen: 'F',
                 text: 'T', callout: 'Q', distance: 'D', hdistance: 'X', vdistance: 'Y', perpendicular: 'N',
                 area: 'G', perimeter: 'O', count: 'K', calibrate: 'B', comment: 'M', strikeout: 'S', underline: 'U',
-                replace: 'Shift+T', revtag: 'Shift+R'
+                replace: 'Shift+T', revtag: 'Shift+R', polyline: 'P', stamp: 'Shift+S', custom: 'Shift+C'
             };
             var TOOL_BY_KEY = {};
             Object.keys(TOOL_KEYS).forEach(function (tool) { TOOL_BY_KEY[TOOL_KEYS[tool]] = tool; });
@@ -902,6 +907,9 @@
                     vm.openRevisionsDialog('Add a revision first: the tag shows its label.');
                     return;
                 }
+                // Stamp and My markups: pick which one first.
+                if (tool === 'stamp' && vm.tool !== 'stamp') { vm.openStampDialog(); return; }
+                if (tool === 'custom' && vm.tool !== 'custom') { vm.openCustomDialog(); return; }
                 vm.tool = vm.tool === tool ? 'pan' : tool;
                 vm.status = TOOL_HINTS[vm.tool] || pageStatus();
             };
@@ -1066,6 +1074,14 @@
                         var box = markupGeometry.textBox(text, m.fontSize);
                         changes.width = box.width;
                         changes.height = box.height;
+                    }
+                    if (m.type === 'stamp') {
+                        // One line; the box fits it, around the same centre.
+                        changes.text = text.replace(/\s*\n\s*/g, ' ');
+                        var stampBox = markupGeometry.stampSize(changes.text, m.sub, m.fontSize);
+                        changes.x = m.x + (m.width - stampBox.width) / 2;
+                        changes.width = stampBox.width;
+                        changes.height = stampBox.height;
                     }
                 }
                 if (d.hasColor) { changes.color = d.color; }
@@ -1276,8 +1292,137 @@
                 return vm.highlights.filter(function (m) { return m.revision === label; }).length;
             };
 
-            /** Revision tag tool: a triangle with the current revision's label where the page was clicked. */
+            // ----- Stamps -----
+            vm.STAMPS = [
+                { text: 'APPROVED', color: '#26a269' }, { text: 'APPROVED AS NOTED', color: '#26a269' },
+                { text: 'REVIEWED', color: '#1c71d8' }, { text: 'REVISE AND RESUBMIT', color: '#c64600' },
+                { text: 'REJECTED', color: '#e01b24' }, { text: 'FOR CONSTRUCTION', color: '#26a269' },
+                { text: 'NOT FOR CONSTRUCTION', color: '#e01b24' }, { text: 'PRELIMINARY', color: '#1c71d8' },
+                { text: 'DRAFT', color: '#1c71d8' }, { text: 'FOR INFORMATION', color: '#1c71d8' },
+                { text: 'AS BUILT', color: '#813d9c' }, { text: 'FINAL', color: '#26a269' },
+                { text: 'CONFIDENTIAL', color: '#e01b24' }, { text: 'VOID', color: '#e01b24' },
+                { text: 'RECEIVED', color: '#1c71d8' }, { text: 'COMPLETED', color: '#26a269' }
+            ];
+            vm.stampChoice = null;      // { text, color, withName, name } once picked
+            vm.stampDialog = null;      // { selected (index or 'custom'), custom, withName, name, error } while open
+            var MAX_STAMP_LENGTH = 40;
+
+            vm.openStampDialog = function () {
+                if (!vm.hasDocument()) { return; }
+                var last = vm.stampChoice;
+                var index = last ? vm.STAMPS.findIndex(function (st) { return st.text === last.text && st.color === last.color; }) : 0;
+                vm.stampDialog = { selected: index >= 0 ? index : 'custom', custom: last && index < 0 ? last.text : '',
+                                   withName: last ? last.withName : true, name: last ? last.name : rememberedAuthor(), error: '' };
+            };
+
+            vm.applyStampDialog = function () {
+                var d = vm.stampDialog;
+                if (!d) { return; }
+                var choice;
+                if (d.selected === 'custom') {
+                    var text = String(d.custom || '').replace(/\s+/g, ' ').trim().toUpperCase();
+                    if (!text) { d.error = 'Type the stamp text.'; return; }
+                    if (text.length > MAX_STAMP_LENGTH) { d.error = 'Keep the stamp under ' + MAX_STAMP_LENGTH + ' characters.'; return; }
+                    choice = { text: text, color: null };
+                } else {
+                    choice = angular.copy(vm.STAMPS[Number(d.selected)]);
+                }
+                var name = String(d.name || '').trim();
+                if (d.withName && name.length > 60) { d.error = 'Keep the name under 60 characters.'; return; }
+                if (d.withName && name) {
+                    try { $window.localStorage.setItem(AUTHOR_KEY, name); } catch (e) { /* not remembered */ }
+                }
+                choice.withName = !!d.withName;
+                choice.name = name;
+                vm.stampChoice = choice;
+                vm.stampDialog = null;
+                vm.tool = 'stamp';
+                vm.status = 'Stamp ' + choice.text + ': click where it goes.';
+            };
+
+            function placeStamp(pageNumber, at) {
+                var choice = vm.stampChoice;
+                if (!choice) { vm.openStampDialog(); return; }
+                pdfService.getPageSize(pageNumber).then(function (size) {
+                    var sizes = markupGeometry.sizesFor(size.width, size.height);
+                    var fontSize = Math.round(sizes.fontSize * 1.5);
+                    var sub = choice.withName ? [choice.name, revisionService.today()].filter(Boolean).join(' \u00b7 ') : '';
+                    var box = markupGeometry.stampSize(choice.text, sub, fontSize);
+                    var markup = { type: 'stamp', color: choice.color || vm.markupColor, strokeWidth: Math.round(sizes.strokeWidth * 1.2 * 10) / 10,
+                                   text: choice.text, fontSize: fontSize, width: box.width, height: box.height,
+                                   x: Math.min(Math.max(at.x - box.width / 2, 0), Math.max(0, size.width - box.width)),
+                                   y: Math.min(Math.max(at.y - box.height / 2, 0), Math.max(0, size.height - box.height)) };
+                    if (sub) { markup.sub = sub; }
+                    vm.addMarkup(pageNumber, markup);
+                });
+            }
+
+            // ----- My markups: markups saved for reuse -----
+            vm.customMarkups = customMarkupService.list;
+            vm.customChoice = null;     // the item clicks place
+            vm.customDialog = null;     // { message } while picking
+            vm.customSaveDialog = null; // { id, name, error } while naming the selected markup
+
+            vm.openCustomDialog = function (message) {
+                if (!vm.hasDocument()) { return; }
+                vm.customDialog = { message: message || '' };
+            };
+
+            vm.pickCustom = function (item) {
+                vm.customChoice = item;
+                vm.customDialog = null;
+                vm.tool = 'custom';
+                vm.status = 'My markup "' + item.name + '": click where it goes.';
+            };
+
+            vm.removeCustom = function (item) {
+                customMarkupService.remove(item.id);
+                if (vm.customChoice && vm.customChoice.id === item.id) {
+                    vm.customChoice = null;
+                    if (vm.tool === 'custom') { vm.tool = 'pan'; }
+                }
+            };
+
+            vm.customLabel = function (item) { return markupGeometry.label(item.markup); };
+
+            /** Adds the selected markup to My markups (asks for a name). */
+            vm.openCustomSaveDialog = function () {
+                var m = highlightService.find(vm.selectedHighlightId);
+                if (!m) { return; }
+                vm.customSaveDialog = { id: m.id, name: vm.markupLabel(m).slice(0, 60), error: '' };
+                $timeout(function () {
+                    var input = $document[0].getElementById('custom-name-input');
+                    if (input) { input.focus(); input.select(); }
+                });
+            };
+
+            vm.applyCustomSaveDialog = function () {
+                var d = vm.customSaveDialog;
+                var m = d && highlightService.find(d.id);
+                if (!m) { vm.customSaveDialog = null; return; }
+                var added = customMarkupService.add(d.name, m);
+                if (typeof added === 'string') { d.error = added; return; }
+                vm.customSaveDialog = null;
+                vm.status = '"' + added.name + '" added to My markups: pick it with My markups (Shift+C) and click to place copies.';
+            };
+
+            function placeCustom(pageNumber, at) {
+                var item = vm.customChoice && customMarkupService.find(vm.customChoice.id);
+                if (!item) { vm.openCustomDialog(); return; }
+                pdfService.getPageSize(pageNumber).then(function (size) {
+                    var copy = angular.copy(item.markup);
+                    var b = markupGeometry.bounds(copy);
+                    // Centred on the click, kept on the page.
+                    var dx = Math.min(Math.max(at.x - b.width / 2, 0), Math.max(0, size.width - b.width)) - b.x;
+                    var dy = Math.min(Math.max(at.y - b.height / 2, 0), Math.max(0, size.height - b.height)) - b.y;
+                    vm.addMarkup(pageNumber, markupGeometry.translate(copy, dx, dy));
+                });
+            }
+
+            /** Revision tag, stamp or My markup: placed where the page was clicked (the active tool says which). */
             vm.placeTag = function (pageNumber, at) {
+                if (vm.tool === 'stamp') { placeStamp(pageNumber, at); return; }
+                if (vm.tool === 'custom') { placeCustom(pageNumber, at); return; }
                 var revision = revisionService.current();
                 if (!revision) { vm.openRevisionsDialog('Add a revision first: the tag shows its label.'); return; }
                 pdfService.getPageSize(pageNumber).then(function (size) {
