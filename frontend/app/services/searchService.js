@@ -13,8 +13,13 @@
      *
      * Besides plain text, drawing numbers, beam marks and column marks are found by pattern (patternFor): all of
      * them, or one number however it is written (B12, B-12, FB12 for "12"). Each match has the `text` found.
+     * Dimensions (6000, 1,250, 3.5 m, 12'-6", R250, Ø20) and annotations (notes, references such as SEE DWG S-201,
+     * TYP., U.N.O.) are found the same way.
+     *
+     * Scanned pages recognised with OCR (ocrService) are searched in their recognised words, on the web and on
+     * desktop alike (the host's PDFium has no text for them).
      */
-    angular.module('pdfViewerApp').factory('searchService', ['$q', 'pdfService', function ($q, pdfService) {
+    angular.module('pdfViewerApp').factory('searchService', ['$q', 'pdfService', 'ocrService', function ($q, pdfService, ocrService) {
         var MAX_MATCHES = 1000;
         var WEB_BATCH_MS = 60;          // web: report found matches at least this often
         var MAX_QUERY_LENGTH = 200;     // keep in sync with LocalSearchController.MaxQueryLength
@@ -34,11 +39,31 @@
         // Marks are capitals on drawings, so these searches match case (what is typed is made capitals).
         //   beam     B1, B12, B-12, FB3, GB12A, RB4 (up to two letters before the B)
         //   column   C1, C12, C-3, SC3, RC12
+        //   dimension  12'-6 1/2", 12', 6", R250, Ø20, 1,250, 3.5 m, 2400mm, and plain numbers of 2-5 digits (6000) that
+        //            are not part of a mark (B12), a drawing number (S-101), a scale (1:100) or a date
+        //   note     NOTE(S) with up to 8 words after it, SEE / REFER TO ... (a drawing, detail, section), DETAIL 3, SECTION A-A, TYP., U.N.O., N.T.S.,
+        //            TBC, TBD, HOLD, VERIFY / CONFIRM ON SITE
         var KINDS = {
             drawing: { label: 'Drawing no.', all: '\\b[A-Z]{1,5}(?:[-_/][A-Z0-9]{1,5}){0,3}[-_/]\\d{3,5}(?:\\.\\d{1,3})?[A-Z]?\\b',
                        number: '[A-Z]{1,5}(?:[-_/][A-Z0-9]{1,5}){0,3}[-_/ ]?' },
             beam: { label: 'Beam', all: '\\b[A-Z]{0,2}B[- ]?\\d{1,4}[A-Z]?\\b', number: '[A-Z]{0,2}B[- ]?' },
-            column: { label: 'Column', all: '\\b[A-Z]{0,2}C[- ]?\\d{1,4}[A-Z]?\\b', number: '[A-Z]{0,2}C[- ]?' }
+            column: { label: 'Column', all: '\\b[A-Z]{0,2}C[- ]?\\d{1,4}[A-Z]?\\b', number: '[A-Z]{0,2}C[- ]?' },
+            dimension: { label: 'Dimension', all: '(?<![\\w.,/:-])(?:' + [
+                '\\d{1,4}[\'\u2032\u2019]\\s?-?\\s?\\d{1,2}(?:\\s\\d{1,2}/\\d{1,2})?["\u2033\u201d]',   // 12'-6 1/2"
+                '\\d{1,4}[\'\u2032\u2019](?!\\w)',                                       // 12'
+                '\\d{1,2}(?:\\s\\d{1,2}/\\d{1,2})?["\u2033\u201d]',                       // 6", 6 1/2"
+                '[R\u00d8\u2300]\\s?\\d{1,5}(?:\\.\\d{1,2})?(?![\\w.])',               // R250, Ø20
+                '\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?(?:\\s?(?:mm|cm|m)\\b)?',             // 1,250
+                '\\d{1,6}(?:\\.\\d{1,3})?\\s?(?:mm|cm|m)\\b',                          // 3.5 m, 2400mm
+                '\\d{2,5}(?:\\.\\d{1,2})?(?![\\w.,/:\'"%\u2032\u2033\u2019\u201d-])'                 // 6000
+            ].join('|') + ')' },
+            note: { label: 'Annotation', all: '\\b(?:' + [
+                'NOTES?\\b:?(?:\\s*\\d{1,2}[.)])?(?:[^\\S\\r\\n]+[A-Z0-9(][^\\s]*){0,8}',   // the note's words (capitals) on its line
+                '(?:SEE|REFER\\s+TO)\\s+(?:(?:DWG|DRG|DRAWING|SHEET|DETAIL|SECTION|NOTE|SPEC|SCHEDULE)S?\\.?\\s*)?[A-Z0-9]+(?:[-/.][A-Z0-9]+)*',
+                '(?:DETAIL|SECTION|ELEVATION)\\s+[A-Z0-9]{1,4}(?:\\s?[-/]\\s?[A-Z0-9]{1,6}){0,2}',
+                'TYP(?:ICAL)?\\b\\.?', 'U\\.?N\\.?O\\b\\.?', 'N\\.T\\.S\\b\\.?', 'NTS\\b', 'TB[CD]\\b', 'HOLD\\b',
+                '(?:VERIFY|CONFIRM)\\s+ON\\s+SITE'
+            ].join('|') + ')' }
         };
 
         function escapeRegex(text) { return text.replace(/[.*+?^${}()|[\]\\\/-]/g, '\\$&'); }
@@ -52,7 +77,13 @@
             var k = KINDS[kind];
             var text = normalizeQuery(input).toUpperCase();
             if (!k) { return null; }
-            if (!text) { return k.all; }
+            if (!text || kind === 'note') { return k.all; }   // annotations: what is typed narrows the list (contains)
+            if (kind === 'dimension') {
+                // A value however it is grouped: 6000 also finds 6,000.
+                var digits = /^\d+$/.test(text.replace(/,/g, '')) ? text.replace(/,/g, '') : null;
+                var value = digits ? digits.replace(/\B(?=(\d{3})+$)/g, ',?') : escapeRegex(text);
+                return '(?<![\\w.,/:-])' + value + '(?![\\d.,]?\\d)';
+            }
             var number = /^0*(\d{1,5})([A-Za-z]?)$/.exec(text);
             if (number) {
                 return '\\b' + k.number + '0*' + number[1] + (number[2] ? escapeRegex(number[2]) : '') + '\\b';
@@ -69,6 +100,8 @@
         // ----- Web: page text index -----
         // The page's text runs joined into one string, with whitespace collapsed; map[i] says which
         // run and character each position came from (null for a line break added between runs).
+        // Line ends are kept as '\n' (so a pattern can stop at the end of a line); plain text search
+        // treats them as spaces.
         function indexPage(text) {
             var chars = [];
             var map = [];
@@ -84,18 +117,20 @@
                     map.push([i, k]);
                     lastSpace = false;
                 }
-                if (item.hasEOL && !lastSpace) { chars.push(' '); map.push(null); lastSpace = true; }
+                if (item.hasEOL && !lastSpace) { chars.push('\n'); map.push(null); lastSpace = true; }
             });
             return {
                 text: chars.join(''),
                 lower: chars.map(lower).join(''),
                 map: map,
-                items: text.items,
-                toView: text.toView
+                rect: function (item, start, end) { return runRect(text.items[item], start, end, text.toView); }
             };
         }
 
+        /** Web: the page's text, or its recognised words when it was read with OCR. */
         function pageIndex(pageNumber) {
+            var recognized = ocrService.indexFor(pageNumber);
+            if (recognized) { return $q.when(recognized); }
             var doc = pdfService.currentDocument();
             if (cache.doc !== doc) {
                 cache = { doc: doc, pages: {} };
@@ -154,7 +189,7 @@
             var run = null;
             function flush() {
                 if (run) {
-                    var r = runRect(index.items[run.item], run.start, run.end, index.toView);
+                    var r = index.rect(run.item, run.start, run.end);
                     if (r) { rects.push(r); }
                 }
                 run = null;
@@ -174,7 +209,7 @@
         }
 
         function findInPage(index, query, options, pageNumber, limit) {
-            var hay = options.matchCase ? index.text : index.lower;
+            var hay = (options.matchCase ? index.text : index.lower).replace(/\n/g, ' ');
             var needle = options.matchCase ? query : query.split('').map(lower).join('');
             var checkStart = options.wholeWord && isWordChar(needle[0]);
             var checkEnd = options.wholeWord && isWordChar(needle[needle.length - 1]);
@@ -212,6 +247,8 @@
          * like a browser's find. onUpdate({ matches, wrapped, done, capped, failed }) is called with each
          * batch of new matches, in page order within its part; `wrapped` matches lie before startPage.
          * Returns { cancel }; a cancelled search, or one whose document was closed meanwhile, reports nothing more.
+         * Options besides matchCase, wholeWord and pattern: `pages` { from, to } searches only those pages (no wrapping);
+         * `contains` keeps only matches whose text contains it (any case).
          */
         function start(query, options, pageCount, startPage, onUpdate) {
             var text = normalizeQuery(query);
@@ -225,16 +262,22 @@
             if (regex) { options = angular.extend({}, options, { matchCase: true }); }   // the host matches case too
             var cancelled = false;
             var total = 0;
+            options = options || {};
             var parts = [{ from: startPage, to: pageCount, wrapped: false }];
-            if (startPage > 1) {
+            if (options.pages) {
+                parts = [{ from: options.pages.from, to: options.pages.to, wrapped: false }];
+            } else if (startPage > 1) {
                 parts.push({ from: 1, to: startPage - 1, wrapped: true });
             }
-            options = options || {};
+            var contains = options.contains ? normalizeQuery(options.contains).toLowerCase() : '';
 
             function current() { return !cancelled && pdfService.currentDocument() === doc; }
 
             // Stops at MAX_MATCHES ("1000+ matches"). Returns true when the whole search is over.
             function report(part, matches, partDone) {
+                if (contains) {
+                    matches = matches.filter(function (m) { return normalizeQuery(m.text).toLowerCase().indexOf(contains) >= 0; });
+                }
                 var reachedEnd = partDone && part === parts[parts.length - 1];
                 var room = MAX_MATCHES - total;
                 var capped = matches.length > room || (matches.length === room && !reachedEnd);
@@ -250,12 +293,26 @@
                 if (current()) { onUpdate({ matches: [], wrapped: false, done: true, failed: true }); }
             }
 
-            // Desktop: the host searches a batch of pages per request and says where to continue.
+            function findIn(index, pageNumber, limit) {
+                return regex ? findPatternInPage(index, regex, pageNumber, limit) : findInPage(index, text, options, pageNumber, limit);
+            }
+
+            // Desktop: the host searches a batch of pages per request and says where to continue. Pages read with
+            // OCR are searched here instead, in their recognised words.
             function searchLocalPart(part, from) {
                 pdfService.searchLocal(text, options, from, part.to).then(function (result) {
                     if (!current()) { return; }
-                    var matches = (result.matches || []).map(function (m) { return { pageNumber: m.page, rects: m.rects, text: m.text }; });
                     var partDone = result.next === null || result.next === undefined || result.next > part.to;
+                    var last = partDone ? part.to : result.next - 1;
+                    var matches = [];
+                    (result.matches || []).forEach(function (m) {
+                        if (!ocrService.isRecognized(m.page)) { matches.push({ pageNumber: m.page, rects: m.rects, text: m.text }); }
+                    });
+                    ocrService.recognizedPages().forEach(function (pageNumber) {
+                        var index = pageNumber >= from && pageNumber <= last && ocrService.indexFor(pageNumber);
+                        if (index) { matches = matches.concat(findIn(index, pageNumber, MAX_MATCHES + 1)); }
+                    });
+                    matches.sort(function (a, b) { return a.pageNumber - b.pageNumber; });   // stable: page order, then as found
                     if (!report(part, matches, partDone)) {
                         searchLocalPart(part, result.next);
                     }
@@ -276,8 +333,7 @@
                     }
                     pageIndex(pageNumber).then(function (index) {
                         var limit = MAX_MATCHES - total - batch.length + 1;   // one extra tells "1000+" from exactly 1000
-                        batch = batch.concat(regex ? findPatternInPage(index, regex, pageNumber, limit)
-                                                   : findInPage(index, text, options, pageNumber, limit));
+                        batch = batch.concat(findIn(index, pageNumber, limit));
                     }, angular.noop /* a damaged page is skipped, like a page without text */).then(function () {
                         next(pageNumber + 1);
                     });

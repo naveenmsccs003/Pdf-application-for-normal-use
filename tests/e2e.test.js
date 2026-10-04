@@ -794,7 +794,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }));
     await open('ten-pages.pdf'); await click('Actual size');
     await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
-    check('ribbon: File, Pages, Output, Zoom, Navigation, Markup, Measure, Review, Revision tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Output|Zoom|Navigation|Markup|Measure|Review|Revision' &&
+    check('ribbon: File, Pages, Output, Zoom, Navigation, Markup, Measure, Review, Revision, OCR tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Output|Zoom|Navigation|Markup|Measure|Review|Revision|OCR' &&
         rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
     await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
     check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
@@ -807,7 +807,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     await page.keyboard.press('ArrowRight'); await settle(); rb = await ribbon(); s = await state();
     check('ribbon: arrow keys on the tabs move to the next tab, not the next page',
         rb.selected === 'Markup' && rb.focused === 'ribbon-tab-markup' && rb.visible.join() === 'ribbon-markup' && rb.page === 'Page 2 of 10', rb);
-    for (let i = 0; i < 4; i++) { await page.keyboard.press('ArrowRight'); await sleep(100); }
+    for (let i = 0; i < 5; i++) { await page.keyboard.press('ArrowRight'); await sleep(100); }
     rb = await ribbon();
     check('ribbon: arrow keys wrap around', rb.selected === 'File' && rb.focused === 'ribbon-tab-file', rb);
     await page.click('#ribbon-tab-markup'); await sleep(100);
@@ -2093,6 +2093,89 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('properties: every page size of a mixed set (Letter, A4, A3, custom)', mixed.join('|') ===
         'Letter portrait|A4 landscape|A3 portrait|Custom landscape|Custom landscape', mixed);
     await page.keyboard.press('Escape'); await sleep(100);
+
+    // ===== OCR: text recognition of a scanned drawing; detect dimensions, drawing number, annotations; extract =====
+    if (!hasFixture('scanned-drawing.pdf')) {
+        skip('OCR', 'scanned-drawing.pdf missing (needs Ghostscript)');
+    } else {
+        const ocrDone = () => page.waitForFunction(() => !document.querySelector('.ocr-progress'), { timeout: 180000 }).then(() => sleep(300));
+        const statusText = () => page.$eval('.status-text', e => e.textContent.trim());
+        await open('scanned-drawing.pdf');
+        await page.click('#ribbon-tab-ocr'); await sleep(100);
+        await page.click('button[aria-label="Search text"]'); await page.type('#find-input', 'floor plan'); await searchDone();
+        check('OCR: a scanned page has no text to find before it is read', (await results()).count === 'No matches');
+        await page.click('button[aria-label="Recognize page"]'); await sleep(300);
+        const progress = await page.$eval('.ocr-progress', e => e.textContent.trim()).catch(() => '');
+        check('OCR: progress is shown while the page is read', /^Page 1 · \d+%$/.test(progress), progress);
+        await ocrDone(); await searchDone();
+        let st = await statusText();
+        check('OCR: Recognize page reads the scanned page', /^Read 1 page: \d+ words recognised\./.test(st), st);
+        sr = await results();
+        const hit = await page.$$eval('.search-hit', e => e.length);
+        check('OCR: the open search runs again and finds the recognised text', sr.count === '1 of 1' && hit === 2, [sr.count, hit]);   // FLOOR, PLAN
+        const boxes = await page.$$eval('.ocr-word', e => e.length);
+        check('OCR: Show words boxes the recognised words on the page', boxes >= 15, boxes);
+        await page.click('button[aria-label="Detect dimensions"]'); await searchDone(); sr = await results();
+        check('OCR: dimensions detected, the vertical one too', sr.groups.join('|') === 'Page 1 6000 4500 3600 R250' && sr.summary === '4 dimensions on 1 page', sr);
+        await page.click('.find-results .find-hit:nth-of-type(3)'); await sleep(200);
+        const vertical = await page.$eval('.search-hit.is-current', e => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height }; });
+        check('OCR: the vertical dimension is marked upright on the page', vertical.h > vertical.w * 2, vertical);
+        await page.type('#find-input', '6000'); await searchDone(); sr = await results();
+        check('OCR: one dimension value (6000)', sr.groups.join('|') === 'Page 1 6000' && sr.count === '1 of 1', sr);
+        await page.click('button[aria-label="Detect drawing number"]'); await searchDone(); sr = await results();
+        check('OCR: drawing number from the title block first, then the reference', sr.groups.join('|') === 'Page 1 S-101 S-201', sr);
+        await page.click('button[aria-label="Detect annotations"]'); await searchDone(); sr = await results();
+        check('OCR: annotations: the note with its words', sr.groups.join('|') === 'Page 1 NOTE: SEE DWG S-201 FOR DETAILS', sr);
+        await page.type('#find-input', 'details'); await searchDone(); sr = await results();
+        const kept = sr.groups.length;
+        await page.click('#find-input', { clickCount: 3 }); await page.type('#find-input', 'typ'); await searchDone(); sr = await results();
+        check('OCR: typed words narrow the annotations', kept === 1 && sr.count === 'No matches', [kept, sr]);
+        await page.keyboard.press('Escape'); await sleep(100);
+
+        await page.click('button[aria-label="Extract text"]');
+        await page.waitForFunction(() => { const t = document.querySelector('.ocr-text'); return t && t.value && !document.querySelector('.dialog .spinner'); }, { timeout: 20000 });
+        const extracted = await page.$eval('.ocr-text', e => e.value);
+        check('OCR: Extract text shows the recognised text of the page', /^--- Page 1 \(OCR\) ---\n/.test(extracted) &&
+            /GROUND FLOOR PLAN/.test(extracted) && /NOTE: SEE DWG S-201 FOR DETAILS/.test(extracted) && /S-101/.test(extracted), extracted);
+        await page.click('.dialog-footer button:nth-child(2)');   // Save text…
+        if (canCheckDownloads) {
+            const txt = await waitForDownload('scanned-drawing-text.txt');
+            check('OCR: Save text downloads a text file', txt && /GROUND FLOOR PLAN\r\n/.test(txt.toString('utf8')), txt && txt.toString('utf8').slice(0, 80));
+        }
+        await page.click('.segmented .tool:nth-child(2)'); await sleep(200);
+        const detected = await page.$$eval('.ocr-table tbody tr', rows => rows.map(r => [...r.cells].slice(0, 3).map(c => c.textContent.trim()).join(' ')));
+        check('OCR: Detected list: drawing number, reference, dimensions, annotation', detected.join('|') ===
+            '1 Drawing no. S-101|1 Drawing reference S-201|1 Dimension 6000|1 Dimension 4500|1 Dimension 3600|1 Dimension R250|1 Annotation NOTE: SEE DWG S-201 FOR DETAILS', detected);
+        await page.click('.dialog-footer .tool-outline');   // Save CSV…
+        if (canCheckDownloads) {
+            const csv = await waitForDownload('scanned-drawing-detected.csv');
+            check('OCR: the detected list saves as CSV', csv && /Page,Found,Text,Count,From\r\n1,Drawing no\.,S-101,1,OCR\r\n/.test(csv.toString('utf8')), csv && csv.toString('utf8').slice(0, 120));
+        }
+        await page.select('.dialog select[aria-label="Pages to extract"]', 'all'); await sleep(300);
+        await page.waitForFunction(() => !document.querySelector('.dialog .spinner'), { timeout: 20000 });
+        const allPages = await page.$eval('.report-total', e => e.textContent.trim());
+        check('OCR: Detected list of all pages (page 2 not read yet)', /^2 pages, 7 items detected\.$/.test(allPages), allPages);
+        await page.keyboard.press('Escape'); await sleep(100);
+        check('OCR: Esc closes the dialog', !(await page.$('.ocr-text, .ocr-table')));
+
+        await page.click('button[aria-label="Recognize all pages"]'); await ocrDone();
+        st = await statusText();
+        check('OCR: All pages reads the other page (the first stays read)', /^Read 2 pages: \d+ words recognised\./.test(st), st);
+        await page.click('button[aria-label="Detect drawing number"]'); await searchDone(); sr = await results();
+        check('OCR: every sheet\'s drawing number', sr.groups.join('|') === 'Page 1 S-101 S-201|Page 2 S-102', sr);
+        await page.select('.find-kind', 'string:beam'); await searchDone(); sr = await results();
+        check('OCR: beam marks found in the recognised text', sr.groups.join('|') === 'Page 1 B12|Page 2 B12', sr);
+        await page.keyboard.press('Escape'); await sleep(100);
+        await page.click('button[aria-label="Show recognized words"]'); await sleep(100);
+        check('OCR: Show words can be switched off', (await page.$$('.ocr-word')).length === 0);
+
+        await open('drawing-set.pdf'); await page.click('#ribbon-tab-ocr');
+        await page.click('button[aria-label="Recognize page"]'); await ocrDone(); st = await statusText();
+        check('OCR: a page with its own text is not read again', st === 'Page 1 already has text: it can be searched without OCR.', st);
+        await page.click('button[aria-label="Detect dimensions"]'); await searchDone(); sr = await results();
+        check('OCR: dimensions are also found in a PDF\'s own text', /^Page 3 6000 12['\u2019]-6"$/.test(sr.groups.join('|')), sr);
+        await page.keyboard.press('Escape'); await sleep(100);
+    }
 
     // ===== Drawing navigation: single page / continuous scrolling, full screen, pan =====
     const view = () => page.evaluate(() => {

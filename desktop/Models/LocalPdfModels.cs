@@ -5,6 +5,9 @@ public record LocalPdfInfo(Guid Token, string FileName, long Size, int PageCount
 
 public record PageSize(double Width, double Height);
 
+/// <summary>A page's own text, for OCR (skip pages that have text) and Extract text.</summary>
+public record PageText(string Text);
+
 /// <summary>An error whose message is safe to show to the user.</summary>
 public class LocalPdfException(string message) : Exception(message);
 

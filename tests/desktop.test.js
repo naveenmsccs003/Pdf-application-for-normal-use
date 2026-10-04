@@ -636,6 +636,42 @@ async function startHost() {
         await page.keyboard.press('Escape'); await sleep(100);
         check('desktop page size: shown in the status bar', (await page.$eval('.page-size', e => e.textContent.trim())) === 'A3 · 420 × 297 mm');
 
+        // ----- OCR: a scanned drawing rendered by PDFium, read in the page; recognised words merged into host searches -----
+        if (!fs.existsSync(fixture('scanned-drawing.pdf'))) {
+            skip('desktop OCR', 'scanned-drawing.pdf missing (needs Ghostscript)');
+        } else {
+            const ocrDone = () => page.waitForFunction(() => !document.querySelector('.ocr-progress'), { timeout: 180000 }).then(() => sleep(300));
+            const statusText = () => page.$eval('.status-text', e => e.textContent.trim());
+            const pageText = n => page.evaluate(async p => {
+                const token = angular.element(document.body).injector().get('pdfService').localToken();
+                return (await (await fetch(`/api/local/${token}/pages/${p}/text`)).json()).text;
+            }, n);
+            check('desktop OCR: the host gives a page\'s own text (drawing set)', /S-101/.test(await pageText(1)));
+            await open('scanned-drawing.pdf');
+            check('desktop OCR: a scanned page has no text of its own', (await pageText(1)) === '');
+            await page.click('#ribbon-tab-ocr'); await page.click('button[aria-label="Detect drawing number"]'); await searchDone();
+            check('desktop OCR: nothing found before the pages are read', (await results()).count === 'No matches');
+            await page.click('button[aria-label="Recognize all pages"]'); await ocrDone(); await searchDone();
+            const st = await statusText();
+            check('desktop OCR: All pages reads both scanned sheets', /^Read 2 pages: \d+ words recognised\./.test(st), st);
+            sr = await results();
+            check('desktop OCR: the open search runs again: drawing numbers of both sheets',
+                sr.groups.join('|') === 'Page 1 S-101 S-201|Page 2 S-102', sr);
+            await page.click('button[aria-label="Detect dimensions"]'); await searchDone(); sr = await results();
+            check('desktop OCR: dimensions, the vertical one too', sr.groups.join('|') === 'Page 1 6000 4500 3600 R250|Page 2 7200', sr);
+            await page.select('.find-kind', 'string:text'); await page.type('#find-input', 'floor plan'); await searchDone(); sr = await results();
+            check('desktop OCR: text search finds the recognised text on both pages', sr.count.endsWith('of 2'), sr);
+            await page.keyboard.press('Escape'); await sleep(100);
+            await page.click('button[aria-label="Extract text"]');
+            await page.waitForFunction(() => { const t = document.querySelector('.ocr-text'); return t && t.value && !document.querySelector('.dialog .spinner'); }, { timeout: 20000 });
+            check('desktop OCR: Extract text shows the recognised text', /^--- Page 1 \(OCR\) ---\n[\s\S]*S-101/.test(await page.$eval('.ocr-text', e => e.value)));
+            await page.keyboard.press('Escape'); await sleep(100);
+            await open('drawing-set.pdf'); await page.click('#ribbon-tab-ocr');
+            await page.click('button[aria-label="Detect dimensions"]'); await searchDone(); sr = await results();
+            check('desktop OCR: dimensions in a PDF\'s own text (pattern on the host)', /^Page 3 6000 12['’]-6"$/.test(sr.groups.join('|')), sr);
+            await page.keyboard.press('Escape'); await sleep(100);
+        }
+
         // ----- Security: API only serves the opened file -----
         const probe = await page.evaluate(async () => {
             const bad = await fetch('/api/local/00000000-0000-0000-0000-000000000000/pages/1').then(r => r.status);

@@ -3,7 +3,7 @@
 A simple, lightweight web PDF viewer: **Open → View → Zoom → Fit → Highlight.**
 
 - Backend: ASP.NET Core (.NET 10) — PDF upload, validation and file access
-- Frontend: AngularJS 1.8 + pdf.js 3.11 (bundled in `frontend/lib`, no internet or npm needed)
+- Frontend: AngularJS 1.8 + pdf.js 3.11 + tesseract.js 7 for OCR (bundled in `frontend/lib`, no internet or npm needed)
 - No database, no login
 
 Two ways to use it:
@@ -221,6 +221,41 @@ Also (Cmd on macOS): ← / → previous / next page, **Home** / **End** first / 
   security (and what is not allowed), tagged, bookmarks; title, author, subject, keywords; created / modified dates,
   application and PDF producer; and every page size with how many pages and which.
 
+## OCR (scanned drawings)
+
+On the **OCR** tab (web and desktop). Scanned PDFs are page images with no text, so Find finds nothing in them until
+their text is recognised. Recognition runs with [Tesseract](https://github.com/tesseract-ocr/tesseract) (tesseract.js,
+bundled in `frontend/lib/tesseract`, English) inside the browser / app window: nothing is uploaded or sent anywhere.
+
+- **Recognize page** / **All pages**: reads the text of the current page or of every page. Each page is drawn at up to
+  300 dpi (at most 16.7 million pixels, so an A1 sheet gets about 150 dpi) and read with automatic page layout, which
+  also reads vertical text such as dimensions along a wall. Pages that already have their own text are skipped (they
+  are searchable as they are), and pages read before are not read again. Progress shows in the tab, with **Stop**
+  (pages already read stay searchable). About 5–15 s per A3 page, depending on the computer.
+- **Show words**: boxes the recognised words on the page (orange: less certain). Words Tesseract is unsure of (below
+  50%, mostly linework read as dashes) are dropped.
+- **Search**: the find bar. Once a page is read, Find and every kind of mark (drawing, beam, column, dimension,
+  annotation) search its recognised words, on the web and on desktop alike. A search that is open runs again when
+  recognition finishes.
+- **Drawing no.**: each page's own drawing number (nearest the title block, bottom right) first, then references to
+  other drawings (see Search above).
+- **Dimensions**: values written on the drawing: `6000`, `1,250`, `3.5 m`, `2400mm`, `12'-6 1/2"`, `12'`, `6"`,
+  `R250`, `Ø20`. Plain numbers of 2–5 digits count; numbers that belong to a mark (`B12`), a drawing number (`S-101`),
+  a scale (`1:100`) or a date do not. Type a value (`6000`) to find it, also when written `6,000`.
+- **Annotations**: notes and references: `NOTE:` / `NOTES` with the note's words on the same line, `SEE` / `REFER TO`
+  a drawing, detail or section (`SEE DWG S-201`), `DETAIL 3/S-501`, `SECTION A-A`, `TYP.`, `U.N.O.`, `N.T.S.`, `TBC`,
+  `TBD`, `HOLD`, `VERIFY ON SITE`. Typed words narrow the list (`see`).
+- **Extract text**: the text of this page, all pages (the first 500) or chosen pages: recognised text for scanned
+  pages, the page's own text otherwise. **Copy text**, or **Save text** as a `.txt` file.
+- **Detected list**: a table of the drawing numbers, dimensions and annotations of those pages (page, kind, text,
+  count, from OCR or the page's text); click a page number to go there. **Save CSV** (opens in Excel).
+
+Dimension, drawing number and annotation detection also works on PDFs that have their own text (CAD exports).
+Recognised text is kept while the document is open; page edits (Pages tab) open a new document, so read the pages
+again afterwards. OCR is never perfect: check important values on the drawing. Text crossed by lines, handwriting and
+very small text on large sheets are often missed. Tesseract and tesseract.js are Apache 2.0 licensed (fine to
+distribute with the app).
+
 ## Drawing navigation
 
 On the **Navigation** tab (web and desktop):
@@ -317,7 +352,7 @@ Notes:
   and follow zoom and rotation; spaces and line breaks count as one space, so a phrase is found across lines.
   The search starts at the current page and stops at 1,000 matches. Web: pdf.js text in the browser.
   Desktop: PDFium searches on the host in short steps, so very large files stay responsive.
-  Scanned pages contain no text and find nothing.
+  Scanned pages contain no text and find nothing until they are read with OCR (see OCR above).
 - Fit Page and Fit Width (kept when changing pages or resizing the window)
 - Highlight mode: drag over the page to add transparent highlights
   - Click a highlight to select it, then press **Remove**, the **×** button or **Delete**
@@ -372,7 +407,9 @@ frontend/
   app/services/pdfService.js      validate, upload, load and render pages (pdf.js)
   app/services/highlightService.js  in-memory highlight store
   app/services/customMarkupService.js  My markups (markups saved for reuse, in local storage)
-  app/services/searchService.js   text search (pdf.js on the web, PDFium host on desktop)
+  app/services/searchService.js   text search (pdf.js on the web, PDFium host on desktop; recognised words of OCR pages)
+  app/services/ocrService.js      OCR: draws pages, reads them with Tesseract, keeps the words per page
+  app/controllers/ocrController.js  OCR tab, word boxes, Extract text / Detected list dialog
   app/controllers/findController.js  find bar and its keyboard shortcuts
   app/services/themeService.js    light / dark theme
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
@@ -388,6 +425,7 @@ frontend/
   app/views/pdf-viewer.html       layout: title bar, toolbar, panels, document tab, status bar, icons
   css/pdf-viewer.css
   lib/                            angular, pdf.js, pdf.js worker
+  lib/tesseract/                  tesseract.js, its worker, the WebAssembly engine (3 builds) and English data (Apache 2.0)
 shared/PdfViewer.Tools/          PDF tools used by both apps
   PdfTools.cs                     merge, split, PNG export, text extraction (PDFium)
   OfficeExport.cs                 text-only Word and Excel files (Open XML SDK)
@@ -440,6 +478,7 @@ menu bar, shortcuts, custom zoom, pan (drag, Space, middle button), find (as you
 page edits (insert blank / from a file, delete, extract, move, duplicate, rotate, replace; the saved PDF is checked
 page by page), New PDF, Save / Save as and the unsaved-changes prompt (web and desktop), continuous scrolling
 (current page follows the scroll, markups on the other pages, a 150-page document) and full screen,
-render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
-`password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
+render failure recovery, OCR of a scanned drawing (recognise, search, dimensions including vertical text, drawing
+numbers, annotations, extract and save text and the detected list; web and desktop), light / dark theme, tablet viewport with touch highlighting, and no console errors.
+`password.pdf` and `scanned-drawing.pdf` (OCR) need Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).

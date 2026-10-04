@@ -393,6 +393,31 @@ public sealed class PdfiumService : IDisposable
         }
     }
 
+    /// <summary>
+    /// The page's own text (PDFium's text layer, lines ending in CR LF): empty for a scanned page, null if there is no
+    /// such page. The viewer uses it to skip pages that need no OCR, and for Extract text.
+    /// </summary>
+    public string? GetPageText(Guid token, int pageNumber)
+    {
+        lock (_gate)
+        {
+            var page = LoadPage(token, pageNumber);
+            if (page == null) return null;
+            var textPage = fpdf_text.FPDFTextLoadPage(page);
+            try
+            {
+                if (textPage == null) return string.Empty;
+                var chars = fpdf_text.FPDFTextCountChars(textPage);
+                return chars <= 0 ? string.Empty : PageText(textPage, 0, chars);
+            }
+            finally
+            {
+                if (textPage != null) fpdf_text.FPDFTextClosePage(textPage);
+                fpdfview.FPDF_ClosePage(page);
+            }
+        }
+    }
+
     /// <summary>Characters [start, start + count) of a text page, one per character index.</summary>
     private static string PageText(FpdfTextpageT textPage, int start, int count)
     {

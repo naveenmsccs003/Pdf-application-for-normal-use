@@ -117,14 +117,14 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                         });
                         return Done($"Saved {Path.GetFileName(target)}.");
                     }
-                    var format = requested == "html" ? "html" : "csv";
+                    var format = requested is "html" or "txt" ? requested : "csv";
                     var content = options.GetProperty("content").GetString() ?? "";
                     if (content.Length > MaxReportLength)
                         throw new ToolException("The report is too large.");
                     var suggested = options.TryGetProperty("name", out var nm) ? nm.GetString() : null;
                     var output = AskSaveFile(dialogs, "Save report", path, "." + format, inputs, suggested ?? $"{BaseName(name)}-markups");
                     if (output is null) return Cancelled;
-                    // CSV with a byte order mark, so Excel reads the text as UTF-8.
+                    // CSV with a byte order mark, so Excel reads the text as UTF-8. Text (txt): recognised text (OCR).
                     await WriteFileAsync(output, stream =>
                     {
                         using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(format == "csv"));
@@ -389,6 +389,7 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
             ".xlsx" => ("Excel workbooks", new[] { "*.xlsx" }),
             ".csv" => ("CSV files", new[] { "*.csv" }),
             ".html" => ("Web pages", new[] { "*.html" }),
+            ".txt" => ("Text files", new[] { "*.txt" }),
             _ => PdfFilter[0]
         };
         var chosen = dialogs.SaveFile(suggestedName is null ? title : $"{title} (e.g. {suggestedName}{extension})",

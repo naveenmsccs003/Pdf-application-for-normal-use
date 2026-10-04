@@ -5,7 +5,7 @@ using PdfViewer.Desktop.Services;
 namespace PdfViewer.Desktop.Controllers;
 
 /// <summary>
-/// Page sizes and rendered pages for the PDF opened from disk.
+/// Page sizes, text and rendered pages for the PDF opened from disk.
 /// The token is a random id issued when the user opens a file, so only that file is reachable.
 /// </summary>
 [ApiController]
@@ -20,6 +20,14 @@ public class LocalPdfController(PdfiumService pdfium) : ControllerBase
     {
         var size = pdfium.GetPageSize(token, page);
         return size is null ? NotFound() : size;
+    }
+
+    /// <summary>The page's own text (empty for a scanned page).</summary>
+    [HttpGet("text")]
+    public ActionResult<PageText> Text(Guid token, int page)
+    {
+        var text = pdfium.GetPageText(token, page);
+        return text is null ? NotFound() : new PageText(text);
     }
 
     [HttpGet]

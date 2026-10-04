@@ -139,7 +139,7 @@ const sheet = (n, marks, extra = '') => ({
 write('drawing-set.pdf', buildPdf([
     sheet(1, [['SEE S-201', 60, 740], ['B1', 200, 500], ['B12', 400, 500], ['FB3', 600, 500], ['C1', 200, 300], ['C-2', 400, 300]]),
     sheet(2, [['B12', 200, 500], ['B12', 400, 450], ['GB-4', 600, 500], ['C1', 200, 300]]),
-    sheet(3, [['SC3', 300, 300], ['Notes: all beams in M25 concrete', 60, 160]])
+    sheet(3, [['SC3', 300, 300], ['Notes: all beams in M25 concrete', 60, 160], ['6000', 500, 600], ['12\'-6"', 700, 600]])
 ], { info: { Title: 'Structural drawings', Author: 'Test Engineer', Subject: 'Ground floor', Keywords: 'beams, columns',
              Creator: 'CAD Export', Producer: 'Fixture writer', CreationDate: "D:20240115093000+05'30'" } }));
 write('form.pdf', buildPdf([textPage(1, 595, 842, { lines: 5, textField: true })]));
@@ -209,6 +209,38 @@ try {
     console.log('  password.pdf           (Ghostscript)');
 } catch {
     console.log('  password.pdf           skipped (Ghostscript not installed)');
+}
+
+// Optional: a scanned drawing (Ghostscript turns a drawing into page images, so it has no text) for OCR.
+// Page 1: dimensions (one written vertically), a note, beam and column marks, the drawing number in the title block.
+const scannedSheet = (title, number, marks) => ({
+    width: 1191, height: 842,
+    drawing: `BT /F2 22 Tf 60 780 Td (${title}) Tj ET\n` +
+        marks.map(([text, x, y, size, vertical]) => vertical
+            ? `BT /F1 ${size || 16} Tf 0 1 -1 0 ${x} ${y} Tm (${text}) Tj ET`
+            : `BT /F1 ${size || 16} Tf ${x} ${y} Td (${text}) Tj ET`).join('\n') +
+        `\n1 w 940 40 230 60 re S\nBT /F1 12 Tf 955 64 Td (DRG NO) Tj ET\nBT /F2 22 Tf 1040 60 Td (${number}) Tj ET` +
+        // Linework: a sheet border, walls, grid lines and dimension lines with ticks, like a real plan.
+        '\n2 w 20 20 1151 802 re S\n3 w 200 250 700 330 re S 550 250 m 550 580 l S' +
+        '\n0.5 w [8 4] 0 d 200 230 m 200 720 l S 550 230 m 550 720 l S 900 230 m 900 720 l S [] 0 d' +
+        '\n0.6 w 200 630 m 900 630 l S 160 250 m 160 580 l S' +
+        '\n195 625 m 205 635 l S 545 625 m 555 635 l S 895 625 m 905 635 l S 155 245 m 165 255 l S 155 575 m 165 585 l S'
+});
+try {
+    const source = path.join(OUT, 'scanned-drawing-source.tmp.pdf');
+    fs.writeFileSync(source, buildPdf([
+        scannedSheet('GROUND FLOOR PLAN', 'S-101', [
+            ['6000', 355, 638], ['4500', 705, 638], ['3600', 152, 390, 16, true],
+            ['B12', 420, 480], ['C3', 640, 320], ['R250', 820, 400],
+            ['NOTE: SEE DWG S-201 FOR DETAILS', 60, 170]]),
+        scannedSheet('FIRST FLOOR PLAN', 'S-102', [['7200', 705, 638], ['B12', 420, 480]])
+    ]));
+    execFileSync('gs', ['-q', '-dNOPAUSE', '-dBATCH', '-sDEVICE=pdfimage24', '-r200',
+        '-o', path.join(OUT, 'scanned-drawing.pdf'), source], { stdio: 'ignore' });
+    fs.rmSync(source);
+    console.log('  scanned-drawing.pdf    (Ghostscript)');
+} catch {
+    console.log('  scanned-drawing.pdf    skipped (Ghostscript not installed)');
 }
 
 // Optional: real-world PDF from the pdf.js test corpus

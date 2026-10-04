@@ -85,6 +85,7 @@
                     onMoveMarkup: '&',      // the selected markup was dragged or resized: (id, markup) is the changed copy
                     onEditMarkup: '&',      // a markup was double-clicked
                     onPlaceTag: '&',        // revision tag, stamp, custom markup: (pageNumber, at) where the page was clicked
+                    ocrWords: '<',          // recognised words to box on the page: { pageNumber: [{ x, y, width, height, confidence }] }, or null
                     revision: '<',          // revision compare: { page, mode: 'diff' | 'overlay' | 'side', url, otherUrl, otherName, regions (with kind), active }
                     onSelectHighlight: '&',  // (id, additive): additive (Ctrl / Shift click) adds or takes it from the selection
                     onRemoveHighlight: '&',
@@ -121,6 +122,11 @@
                     '    <img class="revision-image" ng-if="revisionOn() && revision.url" ng-src="{{ revision.url }}" alt=""' +
                     '         ng-class="{\'is-overlay\': revision.mode === \'overlay\'}">' +
                     '    <div class="revision-regions" ng-if="revisionOn() && revision.mode !== \'overlay\'">' + REVISION_REGIONS + '</div>' +
+                    '    <div class="ocr-layer" ng-if="ocrWords[rendered.page]">' +
+                    '      <div class="ocr-word" ng-repeat="w in ocrWords[rendered.page] track by $index" ng-class="{\'is-unsure\': w.confidence < 75}"' +
+                    '           ng-style="{left: w.x * rendered.scale + \'px\', top: w.y * rendered.scale + \'px\',' +
+                    '                      width: w.width * rendered.scale + \'px\', height: w.height * rendered.scale + \'px\'}"></div>' +
+                    '    </div>' +
                     '    <div class="search-layer">' +
                     '      <div class="search-hit" ng-repeat="r in pageHits track by $index" ng-class="{\'is-current\': r.current}"' +
                     '           ng-style="{left: r.x * rendered.scale + \'px\', top: r.y * rendered.scale + \'px\',' +

@@ -6,8 +6,9 @@
      * Shift+Enter (also F3 / Shift+F3, Ctrl+G / Ctrl+Shift+G) and marks them on the page. Lives inside the
      * viewer's scope, so it can read the open document from `vm`; the search itself is searchService.
      *
-     * Find can also look for drawing numbers, beam marks or column marks (`kind`): a typed number or mark, or with
-     * nothing typed all of them. The results list groups what was found by page (for drawing numbers: a sheet
+     * Find can also look for drawing numbers, beam marks, column marks, dimensions or annotations (`kind`): a typed
+     * number, mark or value (for annotations: words they contain), or with nothing typed all of them. Pages read with
+     * OCR (OCR tab) are searched too. The results list groups what was found by page (for drawing numbers: a sheet
      * index, the one nearest the title block corner first).
      */
     angular.module('pdfViewerApp').controller('FindController', ['$scope', '$document', '$timeout', 'searchService',
@@ -26,8 +27,8 @@
             find.capped = false;        // stopped at searchService.MAX_MATCHES
             find.failed = false;
             find.searched = '';         // the query the matches are for
-            find.kind = 'text';         // 'text' | 'drawing' | 'beam' | 'column'
-            find.kinds = [{ value: 'text', label: 'Text' }].concat(['drawing', 'beam', 'column'].map(function (k) {
+            find.kind = 'text';         // 'text' | 'drawing' | 'beam' | 'column' | 'dimension' | 'note'
+            find.kinds = [{ value: 'text', label: 'Text' }].concat(['drawing', 'beam', 'column', 'dimension', 'note'].map(function (k) {
                 return { value: k, label: searchService.KINDS[k].label };
             }));
             find.showList = false;      // the results list under the bar
@@ -36,7 +37,9 @@
                 text: 'Find in document',
                 drawing: 'S-101, or empty for all',
                 beam: 'B12 or 12, or empty for all',
-                column: 'C3 or 3, or empty for all'
+                column: 'C3 or 3, or empty for all',
+                dimension: '6000, or empty for all',
+                note: 'SEE, TYP, or empty for all'
             };
             find.placeholder = function () { return PLACEHOLDERS[find.kind]; };
 
@@ -119,7 +122,7 @@
                 var text = searchService.normalizeQuery(find.query);
                 if ((!text && find.kind === 'text') || !vm().hasDocument()) { return; }
                 var options = find.kind === 'text' ? { matchCase: find.matchCase, wholeWord: find.wholeWord }
-                    : { pattern: searchService.patternFor(find.kind, text) };
+                    : { pattern: searchService.patternFor(find.kind, text), contains: find.kind === 'note' ? text : '' };
                 find.searching = true;
                 find.searched = searchKey();
                 job = searchService.start(text, options, vm().pageCount, vm().currentPage, onUpdate);
@@ -169,11 +172,17 @@
                 var texts = {};
                 find.groups.forEach(function (g) { g.items.forEach(function (i) { texts[i.text] = true; }); });
                 var n = Object.keys(texts).length, pages = find.groups.length;
-                var noun = { text: 'different match', drawing: 'drawing number', beam: 'beam mark', column: 'column mark' }[find.kind];
+                var noun = { text: 'different match', drawing: 'drawing number', beam: 'beam mark', column: 'column mark',
+                             dimension: 'dimension', note: 'annotation' }[find.kind];
                 return n + ' ' + noun + (n === 1 ? '' : 's') + ' on ' + pages + ' page' + (pages === 1 ? '' : 's');
             };
 
             find.goTo = function (match) { select(match); };
+
+            /** Searches again (pages were read with OCR meanwhile), if the bar is open with something to find. */
+            find.refresh = function () {
+                if (find.isOpen && (searchService.normalizeQuery(find.query) || find.kind !== 'text')) { run(); }
+            };
 
             find.toggleList = function () { find.showList = !find.showList; };
 

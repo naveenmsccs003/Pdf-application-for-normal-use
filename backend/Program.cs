@@ -56,7 +56,7 @@ app.Use(async (context, next) =>
     headers.XFrameOptions = "DENY";
     headers["Referrer-Policy"] = "no-referrer";
     headers.ContentSecurityPolicy =
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: blob:; font-src 'self' data: blob:; worker-src 'self' blob:; " +
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
     await next();

@@ -11,12 +11,15 @@
 <body>
     <div class="app" ng-controller="PdfViewerController as vm" tool-tips ng-class="{'is-fullscreen': vm.fullScreen}">
         <div class="app-body" ng-controller="ToolsController as tools">
-            <div class="app-body" ng-controller="FindController as find" ng-include="'app/views/pdf-viewer.html'"></div>
+            <div class="app-body" ng-controller="FindController as find">
+                <div class="app-body" ng-controller="OcrController as ocr" ng-include="'app/views/pdf-viewer.html'"></div>
+            </div>
         </div>
     </div>
 
     <script src="lib/angular.min.js"></script>
     <script src="lib/pdf.min.js"></script>
+    <script src="lib/tesseract/tesseract.min.js"></script>
     <script src="app/app.js"></script>
     <script src="app/services/pdfService.js"></script>
     <script src="app/services/highlightService.js"></script>
@@ -32,6 +35,7 @@
     <script src="app/services/pagesService.js"></script>
     <script src="app/services/printService.js"></script>
     <script src="app/services/recentFilesService.js"></script>
+    <script src="app/services/ocrService.js"></script>
     <script src="app/services/searchService.js"></script>
     <script src="app/directives/fileInputDirective.js"></script>
     <script src="app/directives/menuBarDirective.js"></script>
@@ -42,5 +46,6 @@
     <script src="app/controllers/pdfViewerController.js"></script>
     <script src="app/controllers/toolsController.js"></script>
     <script src="app/controllers/findController.js"></script>
+    <script src="app/controllers/ocrController.js"></script>
 </body>
 </html>

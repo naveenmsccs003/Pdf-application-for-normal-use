@@ -898,7 +898,8 @@
             vm.ribbonTabs = [
                 { id: 'file', label: 'File' }, { id: 'pages', label: 'Pages' }, { id: 'output', label: 'Output' }, { id: 'zoom', label: 'Zoom' },
                 { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' },
-                { id: 'measure', label: 'Measure' }, { id: 'review', label: 'Review' }, { id: 'revision', label: 'Revision' }
+                { id: 'measure', label: 'Measure' }, { id: 'review', label: 'Review' }, { id: 'revision', label: 'Revision' },
+                { id: 'ocr', label: 'OCR' }
             ];
             vm.ribbonTab = 'file';
 

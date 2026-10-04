@@ -231,7 +231,7 @@
             }
 
             /**
-             * Saves a report: 'csv' or 'html' (`content`, made here), 'pdf' or 'xlsx' (`table`, written by the host;
+             * Saves a report: 'csv', 'html' or 'txt' (`content`, made here), 'pdf' or 'xlsx' (`table`, written by the host;
              * reportService.toHost). A download on the web, the save dialog on desktop. CSV gets a byte order mark so
              * Excel reads it as UTF-8. `suffix` ends the file name (default "markups").
              */
@@ -251,7 +251,7 @@
                 var name = base + '.' + format;
                 var blob = format === 'csv'
                     ? new Blob(['\ufeff' + content], { type: 'text/csv;charset=utf-8' })
-                    : new Blob([content], { type: 'text/html;charset=utf-8' });
+                    : new Blob([content], { type: (format === 'txt' ? 'text/plain' : 'text/html') + ';charset=utf-8' });
                 saveBlob(blob, name);
                 return $q.when('Downloaded ' + name + '.');
             }
