@@ -284,7 +284,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     check('click outside closes the menu', !m.file, m);
 
     await page.focus('#menu-file-button'); await page.keyboard.press('ArrowDown'); await sleep(100); m = await menuState();
-    check('ArrowDown opens File menu, focus on first item', m.file && m.focus.startsWith('Open PDF'), m);
+    check('ArrowDown opens File menu, focus on first item', m.file && m.focus.startsWith('New PDF'), m);
     await page.keyboard.press('ArrowRight'); await sleep(100); m = await menuState(); s = await state();
     check('ArrowRight switches to Edit menu (page unchanged)', m.edit && !m.file && m.focus.startsWith('Find') && s.pageStatus === 'Page: 1 / 10', [m, s.pageStatus]);
     await page.keyboard.press('ArrowRight'); await sleep(100); m = await menuState(); s = await state();
@@ -794,7 +794,7 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     }));
     await open('ten-pages.pdf'); await click('Actual size');
     await page.click('#ribbon-tab-file'); await sleep(100); let rb = await ribbon();
-    check('ribbon: File, Zoom, Navigation, Markup, Measure, Review, Revision tabs; one panel shown', rb.tabs.join('|') === 'File|Zoom|Navigation|Markup|Measure|Review|Revision' &&
+    check('ribbon: File, Pages, Zoom, Navigation, Markup, Measure, Review, Revision tabs; one panel shown', rb.tabs.join('|') === 'File|Pages|Zoom|Navigation|Markup|Measure|Review|Revision' &&
         rb.selected === 'File' && rb.visible.join() === 'ribbon-file', rb);
     await page.click('#ribbon-tab-zoom'); await sleep(100); rb = await ribbon();
     check('ribbon: Zoom tab shows the zoom tools and level', rb.visible.join() === 'ribbon-zoom' && rb.zoomLevel === '100%', rb);
@@ -1343,6 +1343,146 @@ const hasFixture = f => fs.existsSync(path.join(FIXTURES, f));
     } else skip('find: real-world PDF', 'tracemonkey.pdf missing');
     await shot('find');
     await page.keyboard.press('Escape'); await sleep(200);
+
+    // ===== Pages: new, save, insert, delete, extract, reorder, duplicate, rotate, replace =====
+    // Reads a PDF with pdf.js in the page: per page the first text, displayed size and /Rotate.
+    const pdfPages = buf => page.evaluate(async b64 => {
+        const data = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+        const out = [];
+        for (let i = 1; i <= doc.numPages; i++) {
+            const p = await doc.getPage(i);
+            const v = p.getViewport({ scale: 1 });
+            const items = (await p.getTextContent()).items.filter(t => t.str.trim());
+            out.push({ text: items.length ? items[0].str.trim() : '', w: Math.round(v.width), h: Math.round(v.height), rotate: p.rotate });
+        }
+        await doc.destroy();
+        return out;
+    }, buf.toString('base64'));
+    const pagesDialog = () => page.evaluate(() => ({
+        open: !!document.querySelector('#pages-form'),
+        title: (document.querySelector('#pages-dialog-title') || {}).textContent || '',
+        error: (document.querySelector('.dialog-message.is-error') || {}).textContent || ''
+    }));
+    const setField = async (selector, value) => {
+        if (await page.$eval(selector, e => e.tagName) === 'SELECT') {
+            // ng-options values look like "string:letter".
+            const option = await page.$eval(selector, (e, v) => [...e.options].find(o => o.value === v || o.value === 'string:' + v).value, value);
+            await page.select(selector, option);
+            return;
+        }
+        await page.$eval(selector, e => { e.value = ''; });
+        await page.type(selector, String(value));
+    };
+    // Opens a Pages tab dialog, fills it ({ selector: value }, `file` for the PDF to insert) and runs it.
+    const pagesOp = async (label, fields = {}, file) => {
+        await page.click('#ribbon-tab-pages'); await sleep(100);
+        await page.click(`#ribbon-pages button[aria-label="${label}"]`); await sleep(200);
+        for (const [selector, value] of Object.entries(fields)) await setField(selector, value);
+        if (file) { await (await page.$('#pages-form input[type=file]')).uploadFile(path.join(FIXTURES, file)); await sleep(200); }
+        await page.click('.dialog-footer .tool-primary');
+        await page.waitForFunction(() => !document.querySelector('#pages-form') || document.querySelector('.dialog-message.is-error'), { timeout: 30000 });
+        await settle();
+        return pagesDialog();
+    };
+    const docState = () => page.evaluate(() => ({
+        modified: !!document.querySelector('.doc-modified'),
+        unsaved: !!document.querySelector('#unsaved-title'),
+        tabs: [...document.querySelectorAll('.ribbon-tab')].map(t => t.textContent.trim())
+    }));
+    const pageTotal = async () => Number((await state()).pageStatus.split('/')[1]);
+
+    await open('ten-pages.pdf'); await click('Actual size');
+    await goTo(2); await click('Highlight'); await drag(40, 100, 300, 130); await click('Highlight');
+    let ds = await docState(); s = await state();
+    check('pages: a Pages tab after File; a newly opened PDF is not modified',
+        ds.tabs[1] === 'Pages' && !ds.modified && s.highlights.length === 1, [ds, s.highlights.length]);
+
+    let po = await pagesOp('Delete pages', { '#pages-input': 'all' });
+    check('pages: deleting every page is refused', po.open && /at least one page/.test(po.error), po);
+    await setField('#pages-input', '3-99'); await page.click('.dialog-footer .tool-primary'); await sleep(200); po = await pagesDialog();
+    check('pages: a page range outside the document is refused', po.open && /outside pages 1 to 10/.test(po.error), po);
+    await setField('#pages-input', '1'); await page.click('.dialog-footer .tool-primary');
+    await page.waitForFunction(() => !document.querySelector('#pages-form'), { timeout: 30000 }); await settle();
+    s = await state(); ds = await docState();
+    check('pages: delete page 1: 9 pages, marked as not saved, the highlight moved to page 1',
+        s.pageStatus === 'Page: 1 / 9' && ds.modified && /^Deleted 1 page\./.test(s.status) && s.highlights.length === 1 &&
+        s.thumbs.find(t => t.page === 1).marks === 1, [s.pageStatus, s.status, ds.modified, s.thumbs.slice(0, 2)]);
+
+    po = await pagesOp('Duplicate pages', { '#pages-input': '1' }); s = await state();
+    check('pages: duplicate page 1: the copy follows it with a copy of its highlight',
+        !po.open && s.pageStatus === 'Page: 2 / 10' && s.markups.length === 2 && s.thumbs.filter(t => t.page <= 2 && t.marks === 1).length === 2,
+        [po, s.pageStatus, s.markups.length]);
+
+    await goTo(1); s = await state(); const before = s.highlights[0];
+    po = await pagesOp('Rotate right', { '#pages-input': '1' }); s = await state();
+    check('pages: rotate page 1 right: the page turns and its highlight turns with it',
+        !po.open && s.canvasW > s.canvasH && s.highlights.length === 1 && near(s.highlights[0].w, before.h, 2) && near(s.highlights[0].h, before.w, 2),
+        [s.canvasW, s.canvasH, before, s.highlights[0]]);
+
+    po = await pagesOp('Move pages', { '#pages-input': '10', 'select[aria-label="Where"]': 'start' }); s = await state();
+    check('pages: move the last page to the start', !po.open && s.pageStatus === 'Page: 1 / 10' && /^Moved 1 page/.test(s.status), [s.pageStatus, s.status]);
+
+    po = await pagesOp('Blank page', { '#pages-count-input': 2, 'select[aria-label="Where"]': 'end' }); s = await state();
+    check('pages: insert 2 blank pages at the end', !po.open && s.pageStatus === 'Page: 11 / 12' && /^Inserted 2 blank pages/.test(s.status), [s.pageStatus, s.status]);
+
+    po = await pagesOp('Insert from file', { '#pages-at-input': 1, '#pages-file-pages-input': '2-3' }, 'landscape.pdf'); s = await state();
+    check('pages: insert pages 2-3 of another PDF after page 1', !po.open && s.pageStatus === 'Page: 2 / 14' && /^Inserted 2 pages/.test(s.status), [po, s.pageStatus, s.status]);
+
+    po = await pagesOp('Replace pages', { '#pages-input': '13-14' }, 'one-page.pdf'); s = await state();
+    check('pages: replace the 2 blank pages with a 1-page PDF', !po.open && await pageTotal() === 13 && /^Replaced 2 pages/.test(s.status), [po, s.pageStatus, s.status]);
+
+    po = await pagesOp('Extract pages', { '#pages-input': '1, 4-5' }); s = await state();
+    check('pages: extract pages 1, 4-5 into a new PDF (the document stays as it is)',
+        !po.open && /Downloaded ten-pages-pages\.pdf \(3 pages\)/.test(s.status) && await pageTotal() === 13, s.status);
+    if (canCheckDownloads) {
+        const extracted = await waitForDownload('ten-pages-pages.pdf');
+        const pp = extracted && await pdfPages(extracted);
+        check('pages: the extracted PDF has those pages', pp && pp.map(p => p.text).join('|') === 'Page 10|Page 2|Page 2', pp);
+    }
+
+    await shortcut('KeyS'); await settle(); s = await state(); ds = await docState();
+    check('pages: Ctrl+S saves the changed PDF (a download on the web)', /^Downloaded ten-pages\.pdf\. Markups are not in it/.test(s.status) && !ds.modified, [s.status, ds]);
+    if (canCheckDownloads) {
+        const saved = await waitForDownload('ten-pages.pdf');
+        const pp = saved && await pdfPages(saved);
+        const expected = 'Page 10|Page 2|Page 3|Page 2|Page 2|Page 3|Page 4|Page 5|Page 6|Page 7|Page 8|Page 9|Page 1';
+        check('pages: the saved PDF has every change: order, copies, inserted, rotated and replaced pages',
+            pp && pp.map(p => p.text).join('|') === expected && pp[1].w === 842 && pp[2].w === 842 && pp[3].rotate === 90 && pp[3].w === 842 && pp[4].rotate === 0,
+            pp && pp.map(p => `${p.text} ${p.w}x${p.h} r${p.rotate}`));
+    }
+
+    await page.keyboard.down('Control'); await page.keyboard.down('Shift'); await page.keyboard.press('KeyS');
+    await page.keyboard.up('Shift'); await page.keyboard.up('Control'); await sleep(200);
+    await setField('#save-as-input', 'edited copy'); await page.click('.dialog-footer .tool-primary'); await settle(); s = await state();
+    check('pages: Save as asks for the name; the document takes it', s.fileName === 'edited copy.pdf' && /Downloaded edited copy\.pdf/.test(s.status), [s.fileName, s.status]);
+    if (canCheckDownloads) check('pages: Save as downloads under the new name', !!(await waitForDownload('edited copy.pdf')));
+
+    await pagesOp('Delete pages', { '#pages-input': '13' });
+    await page.click('.doc-tab-close'); await sleep(200); ds = await docState();
+    check('pages: closing with unsaved page changes asks first', ds.unsaved && (await state()).fileName === 'edited copy.pdf', ds);
+    await click('Cancel'); ds = await docState();
+    check('pages: Cancel keeps the document open', !ds.unsaved && ds.modified, ds);
+    await (await page.$('.toolbar input[type=file]')).uploadFile(path.join(FIXTURES, 'one-page.pdf')); await sleep(300); ds = await docState();
+    check('pages: opening another PDF over unsaved changes asks first', ds.unsaved, ds);
+    await click("Don't save"); await settle(); s = await state(); ds = await docState();
+    check("pages: Don't save opens the other PDF", s.fileName === 'one-page.pdf' && !ds.modified && !ds.unsaved, [s.fileName, ds]);
+
+    await page.click('#ribbon-tab-file'); await sleep(100); await click('New PDF');
+    await setField('#new-count-input', 3); await setField('#new-form select[aria-label="Page size"]', 'letter');
+    await setField('#new-form select[aria-label="Orientation"]', 'landscape');
+    await page.click('.dialog-footer .tool-primary'); await settle(); s = await state(); ds = await docState();
+    check('new PDF: 3 blank Letter landscape pages, untitled and not saved',
+        s.fileName === 'Untitled.pdf' && s.pageStatus === 'Page: 1 / 3' && ds.modified && s.canvasW > s.canvasH, [s.fileName, s.pageStatus, ds, s.canvasW, s.canvasH]);
+    await click('Save'); await settle(); s = await state();
+    check('new PDF: Save downloads it', /Downloaded Untitled\.pdf/.test(s.status) && !(await docState()).modified, s.status);
+    if (canCheckDownloads) {
+        const created = await waitForDownload('Untitled.pdf');
+        const pp = created && await pdfPages(created);
+        check('new PDF: the file has 3 blank 792 x 612 pages', pp && pp.length === 3 && pp.every(p => p.w === 792 && p.h === 612 && !p.text), pp);
+    }
+    await shot('pages');
+    await click('Close');
 
     // ===== Light / dark theme =====
     const theme = () => page.evaluate(() => ({

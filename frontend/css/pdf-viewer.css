@@ -1016,6 +1016,25 @@ pdf-viewer { display: block; position: relative; height: 100%; }
 }
 
 .dialog-sm { max-width: 320px; }
+.dialog-md { max-width: 420px; }
+
+/* Pages tab dialogs: one row per field */
+.pages-form .pages-field { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 10px; }
+.pages-form .pages-field > span:first-child, .pages-form .pages-field > label:first-child { min-width: 96px; }
+.pages-form select {
+    height: 26px;
+    padding: 0 4px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+}
+.pages-form .choice-inline { display: flex; align-items: center; gap: 6px; flex-basis: 100%; margin-left: 104px; cursor: pointer; }
+.pages-form .choice-inline:first-of-type { margin-top: -2px; }
+.pages-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); max-width: 180px; }
+.save-as-name { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+.doc-modified { color: var(--primary); font-size: 10px; line-height: 1; }
 .custom-zoom-field { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
 
 .dialog-header {

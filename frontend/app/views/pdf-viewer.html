@@ -48,6 +48,17 @@
     <symbol id="i-compress" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4"/><path d="M12 9v4M10 11l2 2 2-2M10 17h4"/></symbol>
     <symbol id="i-convert" viewBox="0 0 24 24"><path d="M4 7h13l-3-3M20 17H7l3 3"/></symbol>
     <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 3h11l3 3v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></symbol>
+    <symbol id="i-new" viewBox="0 0 24 24"><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7z"/><path d="M14 3v4h4M12 11v6M9 14h6"/></symbol>
+    <symbol id="i-save-as" viewBox="0 0 24 24"><path d="M12 21H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10l3 3v5"/><path d="M8 3v5h7V3"/><path d="M14 21l1-3 5-5 2 2-5 5z"/></symbol>
+    <symbol id="i-page-blank" viewBox="0 0 24 24"><rect x="5" y="3" width="12" height="16" rx="1"/><path d="M19 15v6M16 18h6"/></symbol>
+    <symbol id="i-page-insert" viewBox="0 0 24 24"><rect x="3" y="7" width="10" height="14" rx="1"/><path d="M15 3h5v5M20 3l-7 7"/></symbol>
+    <symbol id="i-page-delete" viewBox="0 0 24 24"><rect x="5" y="3" width="12" height="16" rx="1"/><path d="M16 16l5 5M21 16l-5 5"/></symbol>
+    <symbol id="i-page-extract" viewBox="0 0 24 24"><rect x="3" y="3" width="10" height="14" rx="1"/><path d="M13 14h8M18 11l3 3-3 3"/></symbol>
+    <symbol id="i-page-duplicate" viewBox="0 0 24 24"><rect x="8" y="7" width="12" height="14" rx="1"/><path d="M5 17V4a1 1 0 0 1 1-1h10"/></symbol>
+    <symbol id="i-page-move" viewBox="0 0 24 24"><rect x="4" y="3" width="9" height="12" rx="1"/><path d="M8 19h12M17 16l3 3-3 3"/></symbol>
+    <symbol id="i-page-replace" viewBox="0 0 24 24"><rect x="2" y="5" width="8" height="11" rx="1"/><rect x="14" y="8" width="8" height="11" rx="1"/><path d="M6 19c0 2 2 2 4 2h3M17 5c0-2-2-2-4-2h-2M11 1l2 2-2 2M13 19l-2 2 2 2"/></symbol>
+    <symbol id="i-rotate-left" viewBox="0 0 24 24"><path d="M4 4v5h5"/><path d="M4.6 9A8 8 0 1 1 6 17.5"/></symbol>
+    <symbol id="i-rotate-right" viewBox="0 0 24 24"><path d="M20 4v5h-5"/><path d="M19.4 9A8 8 0 1 0 18 17.5"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
@@ -71,14 +82,21 @@
             <button type="button" class="menu-button" role="menuitem" data-menu-button aria-haspopup="menu"
                     aria-expanded="false" aria-controls="menu-file" id="menu-file-button">File</button>
             <div class="menu" role="menu" id="menu-file" aria-labelledby="menu-file-button" hidden>
+                <button type="button" class="menu-item" role="menuitem" ng-click="vm.openNewDialog()" ng-disabled="vm.busy">
+                    <svg class="icon icon-sm"><use href="#i-new"></use></svg><span>New PDF&hellip;</span></button>
                 <button type="button" class="menu-item" role="menuitem" ng-click="vm.chooseFile()" ng-disabled="vm.busy">
                     <svg class="icon icon-sm"><use href="#i-open"></use></svg><span>Open PDF&hellip;</span><kbd>{{ vm.modKey }}O</kbd></button>
                 <button type="button" class="menu-item" role="menuitem" ng-click="vm.closeDocument()" ng-disabled="!vm.hasDocument() || vm.busy">
                     <svg class="icon icon-sm"><use href="#i-close"></use></svg><span>Close PDF</span></button>
                 <div class="menu-separator" role="separator"></div>
+                <button type="button" class="menu-item" role="menuitem" ng-click="vm.save(false)" ng-disabled="!vm.canSave()"
+                        title="{{ vm.isDesktop ? 'Save the page changes to the file' : 'Download the PDF with its page changes' }}">
+                    <svg class="icon icon-sm"><use href="#i-save"></use></svg><span>Save</span><kbd ng-if="vm.modified">{{ vm.modKey }}S</kbd></button>
+                <button type="button" class="menu-item" role="menuitem" ng-click="vm.save(true)" ng-disabled="!vm.canSave()">
+                    <svg class="icon icon-sm"><use href="#i-save-as"></use></svg><span>Save as&hellip;</span><kbd>{{ vm.modKey }}Shift+S</kbd></button>
                 <button type="button" class="menu-item" role="menuitem" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
-                        title="Saves a copy with the markups; the original PDF is never changed">
-                    <svg class="icon icon-sm"><use href="#i-save"></use></svg><span>Save copy with markups&hellip;</span><kbd>{{ vm.modKey }}S</kbd></button>
+                        title="Saves a copy with the markups; the open PDF is not changed">
+                    <svg class="icon icon-sm"><use href="#i-save"></use></svg><span>Save copy with markups&hellip;</span><kbd ng-if="!vm.modified">{{ vm.modKey }}S</kbd></button>
                 <div class="menu-separator" role="separator"></div>
                 <div class="menu-heading" role="presentation">Recent files</div>
                 <button type="button" class="menu-item menu-item-recent" role="menuitem" ng-repeat="f in vm.recentFiles track by f.id"
@@ -165,6 +183,10 @@
     <div class="ribbon-panel" role="tabpanel" id="ribbon-file" aria-labelledby="ribbon-tab-file" ng-show="vm.ribbonTab === 'file'">
         <div class="ribbon-group" role="group" aria-label="Document">
             <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openNewDialog()" ng-disabled="vm.busy"
+                        aria-label="New PDF" title="Create a new PDF with blank pages">
+                    <svg class="icon"><use href="#i-new"></use></svg><span>New</span>
+                </button>
                 <label class="tool tool-labelled tool-primary" ng-if="!vm.isDesktop" ng-class="{'is-disabled': vm.busy}" title="Open a PDF from your computer">
                     <input type="file" accept="application/pdf,.pdf" class="visually-hidden"
                            on-file-selected="vm.openFile(file)" ng-disabled="vm.busy">
@@ -174,8 +196,16 @@
                         aria-label="Open PDF" title="Open a PDF from your computer">
                     <svg class="icon"><use href="#i-open"></use></svg><span>Open PDF</span>
                 </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.save(false)" ng-disabled="!vm.canSave()"
+                        aria-label="Save" title="{{ vm.isDesktop ? 'Save the page changes to the file' : 'Download the PDF with its page changes' }}">
+                    <svg class="icon"><use href="#i-save"></use></svg><span>Save</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.save(true)" ng-disabled="!vm.canSave()"
+                        aria-label="Save as" title="Save the PDF as another file ({{ vm.modKey }}Shift+S)">
+                    <svg class="icon"><use href="#i-save-as"></use></svg><span>Save as</span>
+                </button>
                 <button type="button" class="tool tool-labelled" ng-click="tools.saveHighlights()" ng-disabled="!tools.canSaveHighlights()"
-                        aria-label="Save copy" title="Save a copy of the PDF with the markups (the original is not changed)">
+                        aria-label="Save copy" title="Save a copy of the PDF with the markups (the open PDF is not changed)">
                     <svg class="icon"><use href="#i-save"></use></svg><span>Save copy</span>
                 </button>
                 <button type="button" class="tool tool-labelled" ng-click="vm.closeDocument()" ng-disabled="!vm.hasDocument() || vm.busy"
@@ -204,6 +234,66 @@
                 </button>
             </div>
             <span class="ribbon-caption">PDF tools</span>
+        </div>
+    </div>
+
+    <!-- Pages -->
+    <div class="ribbon-panel" role="tabpanel" id="ribbon-pages" aria-labelledby="ribbon-tab-pages" ng-show="vm.ribbonTab === 'pages'">
+        <div class="ribbon-group" role="group" aria-label="Insert pages">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('blank')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Blank page" title="Insert blank pages">
+                    <svg class="icon"><use href="#i-page-blank"></use></svg><span>Blank page</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('insert')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Insert from file" title="Insert pages from another PDF">
+                    <svg class="icon"><use href="#i-page-insert"></use></svg><span>From file</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Insert</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Organize pages">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('move')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Move pages" title="Reorder: move pages to another place">
+                    <svg class="icon"><use href="#i-page-move"></use></svg><span>Move</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('duplicate')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Duplicate pages" title="Add a copy of pages right after them">
+                    <svg class="icon"><use href="#i-page-duplicate"></use></svg><span>Duplicate</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('delete')" ng-disabled="!vm.hasDocument() || vm.busy || vm.pageCount < 2"
+                        aria-label="Delete pages" title="Delete pages">
+                    <svg class="icon"><use href="#i-page-delete"></use></svg><span>Delete</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Organize</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Rotate pages">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('rotate', 270)" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Rotate left" title="Turn pages anticlockwise">
+                    <svg class="icon"><use href="#i-rotate-left"></use></svg><span>Left</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('rotate', 90)" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Rotate right" title="Turn pages clockwise">
+                    <svg class="icon"><use href="#i-rotate-right"></use></svg><span>Right</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Rotate</span>
+        </div>
+        <div class="ribbon-group" role="group" aria-label="Extract and replace pages">
+            <div class="ribbon-tools">
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('extract')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Extract pages" title="Save pages as a new PDF">
+                    <svg class="icon"><use href="#i-page-extract"></use></svg><span>Extract</span>
+                </button>
+                <button type="button" class="tool tool-labelled" ng-click="vm.openPagesDialog('replace')" ng-disabled="!vm.hasDocument() || vm.busy"
+                        aria-label="Replace pages" title="Replace pages with pages from another PDF">
+                    <svg class="icon"><use href="#i-page-replace"></use></svg><span>Replace</span>
+                </button>
+            </div>
+            <span class="ribbon-caption">Extract &amp; replace</span>
         </div>
     </div>
 
@@ -596,6 +686,7 @@
             <div class="doc-tab is-active" role="tab" aria-selected="true" title="{{ vm.fileName }}">
                 <svg class="icon icon-sm"><use href="#i-file"></use></svg>
                 <span class="file-name">{{ vm.fileName }}</span>
+                <span class="doc-modified" ng-if="vm.modified" title="Not saved yet" aria-label="(not saved)">&#9679;</span>
                 <button type="button" class="doc-tab-close" ng-click="vm.closeDocument()" ng-disabled="vm.busy"
                         aria-label="Close document" title="Close">
                     <svg class="icon icon-sm"><use href="#i-close"></use></svg>
@@ -960,6 +1051,159 @@
         <div class="dialog-footer">
             <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closeScaleDialog()">Cancel</button>
             <button type="submit" form="scale-form" class="tool tool-labelled tool-primary">Set scale</button>
+        </div>
+    </div>
+</div>
+
+<!-- Page operations dialog (Pages tab) -->
+<div class="dialog-backdrop" ng-if="vm.pagesDialog" ng-click="vm.closePagesDialog()">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="pages-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="pages-dialog-title">{{ vm.pageOps[vm.pagesDialog.op].title }}</h2>
+            <button type="button" class="panel-close" ng-click="vm.closePagesDialog()" ng-disabled="vm.pagesDialog.busy" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body pages-form" novalidate ng-submit="vm.applyPagesDialog()" id="pages-form">
+            <p class="dialog-intro">{{ vm.fileName }} has {{ vm.pageCount }} page{{ vm.pageCount === 1 ? '' : 's' }}.</p>
+
+            <label class="pages-field" ng-if="vm.pagesDialog.op !== 'blank' && vm.pagesDialog.op !== 'insert'">
+                <span>{{ vm.pagesDialog.op === 'replace' ? 'Replace pages' : 'Pages' }}</span>
+                <input type="text" id="pages-input" class="inline-text" autocomplete="off" ng-model="vm.pagesDialog.pages"
+                       ng-change="vm.pagesDialog.error = ''" placeholder="e.g. 1-3, 5 or all" aria-describedby="pages-hint">
+            </label>
+
+            <div class="pages-field" ng-if="vm.pagesDialog.op === 'rotate'" role="radiogroup" aria-label="Direction">
+                <span>Turn</span>
+                <label class="choice-inline"><input type="radio" name="pages-degrees" value="270" ng-model="vm.pagesDialog.degrees"> Left (anticlockwise)</label>
+                <label class="choice-inline"><input type="radio" name="pages-degrees" value="90" ng-model="vm.pagesDialog.degrees"> Right (clockwise)</label>
+                <label class="choice-inline"><input type="radio" name="pages-degrees" value="180" ng-model="vm.pagesDialog.degrees"> Upside down (180&deg;)</label>
+            </div>
+
+            <div class="pages-field" ng-if="vm.pagesDialog.op === 'blank'">
+                <label for="pages-count-input">Number of pages</label>
+                <input type="number" id="pages-count-input" class="inline-number" min="1" max="1000" ng-model="vm.pagesDialog.count">
+                <select ng-model="vm.pagesDialog.size" aria-label="Page size"
+                        ng-options="key as size.label for (key, size) in vm.pageSizes"></select>
+                <select ng-model="vm.pagesDialog.orientation" aria-label="Orientation">
+                    <option value="portrait">Portrait</option><option value="landscape">Landscape</option>
+                </select>
+            </div>
+
+            <div class="pages-field" ng-if="vm.pagesDialog.op === 'insert' || vm.pagesDialog.op === 'replace'">
+                <span>From</span>
+                <label class="tool tool-labelled tool-outline" ng-if="!vm.isDesktop">
+                    <input type="file" accept="application/pdf,.pdf" class="visually-hidden" on-file-selected="vm.setPagesFile(file)">
+                    <span>Choose PDF&hellip;</span>
+                </label>
+                <button type="button" class="tool tool-labelled tool-outline" ng-if="vm.isDesktop" ng-click="vm.pickPagesFile()">Choose PDF&hellip;</button>
+                <span class="pages-file-name">{{ vm.pagesDialog.file ? vm.pagesDialog.file.name : 'no file chosen' }}</span>
+            </div>
+            <label class="pages-field" ng-if="vm.pagesDialog.op === 'insert' || vm.pagesDialog.op === 'replace'">
+                <span>Its pages</span>
+                <input type="text" id="pages-file-pages-input" class="inline-text" autocomplete="off" ng-model="vm.pagesDialog.filePages"
+                       ng-change="vm.pagesDialog.error = ''" placeholder="all, or e.g. 1-2">
+            </label>
+
+            <div class="pages-field" ng-if="vm.pagesDialog.op === 'blank' || vm.pagesDialog.op === 'insert' || vm.pagesDialog.op === 'move'">
+                <span>{{ vm.pagesDialog.op === 'move' ? 'Move to' : 'Insert' }}</span>
+                <select ng-model="vm.pagesDialog.position" aria-label="Where">
+                    <option value="before">before page</option><option value="after">after page</option>
+                    <option value="start">at the start</option><option value="end">at the end</option>
+                </select>
+                <input type="number" id="pages-at-input" class="inline-number" min="1" max="{{ vm.pageCount }}" aria-label="Page number"
+                       ng-model="vm.pagesDialog.at" ng-show="vm.pagesDialog.position === 'before' || vm.pagesDialog.position === 'after'"
+                       ng-change="vm.pagesDialog.error = ''">
+            </div>
+
+            <p class="dialog-note" id="pages-hint" ng-switch="vm.pagesDialog.op">
+                <span ng-switch-when="extract">The pages are saved as a new PDF; this document stays as it is.</span>
+                <span ng-switch-when="replace">The other file's pages take the place of these pages.</span>
+                <span ng-switch-when="duplicate">Each copy goes right after its page.</span>
+                <span ng-switch-default>Markups move with their pages. Nothing is written to disk until you save.</span>
+            </p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.pagesDialog.error">{{ vm.pagesDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.closePagesDialog()" ng-disabled="vm.pagesDialog.busy">Cancel</button>
+            <button type="submit" form="pages-form" class="tool tool-labelled tool-primary" ng-disabled="vm.pagesDialog.busy">
+                {{ vm.pagesDialog.busy ? 'Working…' : vm.pageOps[vm.pagesDialog.op].button }}</button>
+        </div>
+    </div>
+</div>
+
+<!-- New PDF dialog (File > New) -->
+<div class="dialog-backdrop" ng-if="vm.newDialog" ng-click="vm.newDialog = null">
+    <div class="dialog dialog-md" role="dialog" aria-modal="true" aria-labelledby="new-dialog-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="new-dialog-title">New PDF</h2>
+            <button type="button" class="panel-close" ng-click="vm.newDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body pages-form" novalidate ng-submit="vm.applyNewDialog()" id="new-form">
+            <div class="pages-field">
+                <label for="new-count-input">Blank pages</label>
+                <input type="number" id="new-count-input" class="inline-number" min="1" max="1000" ng-model="vm.newDialog.count"
+                       ng-change="vm.newDialog.error = ''">
+            </div>
+            <div class="pages-field">
+                <span>Size</span>
+                <select ng-model="vm.newDialog.size" aria-label="Page size" ng-options="key as size.label for (key, size) in vm.pageSizes"></select>
+                <select ng-model="vm.newDialog.orientation" aria-label="Orientation">
+                    <option value="portrait">Portrait</option><option value="landscape">Landscape</option>
+                </select>
+            </div>
+            <p class="dialog-note">Add pages from other PDFs on the Pages tab; Save writes the new file.</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.newDialog.error">{{ vm.newDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.newDialog = null">Cancel</button>
+            <button type="submit" form="new-form" class="tool tool-labelled tool-primary">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Save as dialog (web: the download's name) -->
+<div class="dialog-backdrop" ng-if="vm.saveAsDialog" ng-click="vm.saveAsDialog = null">
+    <div class="dialog dialog-sm" role="dialog" aria-modal="true" aria-labelledby="save-as-title" ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="save-as-title">Save as</h2>
+            <button type="button" class="panel-close" ng-click="vm.saveAsDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <form class="dialog-body" novalidate ng-submit="vm.applySaveAs()" id="save-as-form">
+            <label for="save-as-input">File name</label>
+            <input type="text" id="save-as-input" class="inline-text save-as-name" autocomplete="off" maxlength="120"
+                   ng-model="vm.saveAsDialog.name" ng-change="vm.saveAsDialog.error = ''">
+            <p class="dialog-note">The PDF is downloaded with this name (to your browser's download folder unless it asks).</p>
+            <div class="dialog-message is-error" role="alert" ng-if="vm.saveAsDialog.error">{{ vm.saveAsDialog.error }}</div>
+        </form>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.saveAsDialog = null">Cancel</button>
+            <button type="submit" form="save-as-form" class="tool tool-labelled tool-primary">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Unsaved page changes (before close / open / new) -->
+<div class="dialog-backdrop" ng-if="vm.unsavedDialog" ng-click="vm.unsavedDialog = null">
+    <div class="dialog dialog-md" role="alertdialog" aria-modal="true" aria-labelledby="unsaved-title" aria-describedby="unsaved-text"
+         ng-click="$event.stopPropagation()">
+        <div class="dialog-header">
+            <h2 id="unsaved-title">Save changes?</h2>
+            <button type="button" class="panel-close" ng-click="vm.unsavedDialog = null" aria-label="Close dialog">
+                <svg class="icon icon-sm"><use href="#i-close"></use></svg>
+            </button>
+        </div>
+        <div class="dialog-body">
+            <p class="dialog-intro" id="unsaved-text">{{ vm.fileName }} has page changes that are not saved.</p>
+        </div>
+        <div class="dialog-footer">
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.unsavedDialog = null">Cancel</button>
+            <button type="button" class="tool tool-labelled tool-outline" ng-click="vm.discardAndContinue()">Don't save</button>
+            <button type="button" class="tool tool-labelled tool-primary" id="unsaved-save" ng-click="vm.saveAndContinue()">Save</button>
         </div>
     </div>
 </div>

@@ -64,12 +64,13 @@ PDFium reads only the parts of a file it needs, so opening is fast regardless of
 A desktop-style PDF workspace (layout inspired by professional PDF markup tools such as Bluebeam Revu):
 
 - **Title bar** with the open file name and the light/dark switch
-- **Menu bar**: **File** (Open, Close PDF, Save copy with highlights, Recent files, Clear recent files),
+- **Menu bar**: **File** (New PDF, Open, Close PDF, Save, Save as, Save copy with markups, Recent files, Clear recent files),
   **Edit** (Find, Find next, Find previous) and **Zoom** (Zoom in / out, Fit to page, Fit to width, Actual size, Custom zoom). Keyboard: arrow keys move
   through and between menus, Esc closes them
 - **Tool bar** (ribbon): category tabs, each showing its tools in captioned groups; panel switches on the right.
   Arrow keys, Home and End move between the tabs.
-  - **File**: Open PDF, Save copy, Close; Merge, Split, Compress, Convert
+  - **File**: New, Open PDF, Save, Save as, Save copy, Close; Merge, Split, Compress, Convert
+  - **Pages**: Blank page, From file; Move, Duplicate, Delete; Rotate left / right; Extract, Replace (see below)
   - **Zoom**: zoom out / level (click for a custom zoom) / zoom in; Fit page, Fit width, Actual size
   - **Navigation**: first / previous / page / next / last; Find
   - **Markup**: Pan, Highlight; shapes (rectangle, ellipse, cloud, line, arrow, freehand); text note, callout;
@@ -145,6 +146,36 @@ On the **Revision** tab (web and desktop):
   counts by type and page; for all markups or one revision. **Save CSV** (opens in Excel) or **Save printable
   report** (an HTML page to print or save as PDF). Web: downloads; desktop: asks where to save.
 
+## Pages, New, Save and Save as
+
+On the **Pages** tab (web and desktop) each tool opens a small dialog. Pages are typed like `1-3, 5` or `all`;
+the current page is filled in.
+
+| Tool | What it does |
+| --- | --- |
+| **Blank page** | inserts 1–1000 blank pages (A4, A3, Letter, Legal; portrait or landscape) before / after a page, or at the start / end |
+| **From file** | inserts pages of another PDF (all, or e.g. `2-3`) at the chosen place |
+| **Move** | reorders: moves the pages before / after a page, or to the start / end |
+| **Duplicate** | adds a copy of each page right after it |
+| **Delete** | removes pages (at least one page must stay) |
+| **Left / Right** | turns pages 90° anticlockwise / clockwise, or 180° |
+| **Extract** | saves the pages as a new PDF; the open document stays as it is |
+| **Replace** | the pages of another PDF take the place of the chosen pages |
+
+- Markups move with their pages: a duplicated page gets copies, a turned page turns its markups, and markups on
+  deleted pages are removed (the status bar says how many). Drawing scales move with their pages too.
+- Edits are not written anywhere until you save; the tab shows a dot meanwhile. Closing, opening another PDF or
+  starting a new one asks **Save / Don't save / Cancel**. An open comparison (Revision tab) closes after an edit.
+- **Save** (Ctrl+S when there are page changes; otherwise Ctrl+S still saves a copy with markups) and **Save as**
+  (Ctrl+Shift+S):
+  - Desktop: Save writes the file it was opened from (through a temp file, so a failed save never leaves half a
+    file); Save as asks where. Until then edits live in a working copy in the temp folder (`pdf-viewer-desktop`).
+  - Web: Save downloads the PDF under its name; Save as asks for the name first.
+  - Save writes the pages, not the markups: **Save copy with markups** still adds those to a copy.
+- **New PDF** (File): a document with blank pages, named *Untitled.pdf* until it is saved (desktop: Save asks where).
+- Pages keep their content, links and annotations. Edits work on the document itself, so bookmarks and form fields
+  stay for the pages that remain.
+
 ## PDF tools
 
 On the **File** tab of the toolbar, in the **PDF tools** group (web and desktop):
@@ -179,7 +210,8 @@ Notes:
   A click without moving still selects a highlight. On touch screens, scroll with your finger as usual.
 - Zoom in / out (25%–300%), or set any percentage in that range with **Zoom > Custom zoom…** (a small dialog) or by
   typing it into the zoom box in the status bar (values outside are clamped)
-- Shortcuts (Cmd on macOS): **Ctrl+O** open, **Ctrl+S** save a copy with highlights, **Ctrl+=** / **Ctrl+−**
+- Shortcuts (Cmd on macOS): **Ctrl+O** open, **Ctrl+S** save (page changes) or save a copy with markups,
+  **Ctrl+Shift+S** save as, **Ctrl+=** / **Ctrl+−**
   zoom, **Ctrl+0** actual size. Close has no shortcut because browsers reserve Ctrl+W.
 - **Recent files** in the File menu and on the start screen:
   - Desktop: the last 10 file paths, reopened from disk, stored in `~/.config/PdfViewer/recent-files.json`
@@ -220,6 +252,9 @@ Notes:
 | POST | `/api/tools/split` | `id` or `file`, `mode` (`pages`/`chunks`/`ranges`), `pagesPerFile`, `ranges` |
 | POST | `/api/tools/compress` | `id` or `file`, `level` (`small`/`medium`/`high`) |
 | POST | `/api/tools/convert` | `id` or `file`, `format` (`docx`/`xlsx`/`png`), `dpi` |
+| POST | `/api/pages/new` | JSON `{ count, width, height }` (points): a blank PDF, stored like an upload. Returns `{ id, fileName, size, pageCount }` |
+| POST | `/api/pages/rearrange` | `id`, `name`, `layout` (JSON list of `{ source, page, rotate, width, height }`: source 0 = the document, 1..n = `files`, −1 = blank page; page 0 of a file = all its pages) + `files`. The result is stored as a new upload; returns as above |
+| POST | `/api/pages/extract` | `id`, `name`, `layout`: the pages as a download |
 
 Uploads are stored under random GUID names in the system temp folder (`pdf-viewer-uploads`) and
 deleted automatically after `PdfStorage:RetentionMinutes` (default 60); a background task checks
@@ -234,6 +269,7 @@ backend/
   Services/PdfService.cs          validation, filename sanitising, temp storage, cleanup
   Services/PdfCleanupService.cs   periodic deletion of expired uploads
   Controllers/ToolsController.cs  merge / split / compress / convert endpoints
+  Controllers/PagesController.cs  new PDF and page edits (stored as new uploads), extract
   Models/PdfFileModel.cs          response model, options, validation exception
   Program.cs                      serves ../frontend, security headers, size limits, error handling
   appsettings.json
@@ -249,6 +285,7 @@ frontend/
   app/services/desktopService.js  bridge to the desktop host (inactive in a normal browser)
   app/services/recentFilesService.js  web Recent Files (copies kept in IndexedDB)
   app/services/toolsService.js    tools: web downloads or desktop host messages
+  app/services/pagesService.js    page edit layouts, New, Save / Save as (web and desktop)
   app/controllers/toolsController.js  tools dialog
   app/directives/pdfViewerDirective.js  canvas layer + interaction layer + highlight overlay
   app/directives/thumbnailsDirective.js virtualized page thumbnails panel
@@ -262,17 +299,18 @@ shared/PdfViewer.Tools/          PDF tools used by both apps
   OfficeExport.cs                 text-only Word and Excel files (Open XML SDK)
   Ghostscript.cs                  compression via Ghostscript
   PageRanges.cs                   "1-3, 5" parsing, chunks
+  PageEditor.cs                   blank PDFs; rebuild a document's pages (delete, insert, move, copy, rotate, replace)
   Pdfium.cs                       shared PDFium lock, open and save helpers
   PngEncoder.cs                   small PNG writer
 desktop/
   Program.cs                      starts the local server (127.0.0.1, random port) and the native window
-  DesktopBridge.cs                messages between UI and host: open, close, recent files, tools
-  DesktopTools.cs                 tools on disk with native save / folder dialogs
+  DesktopBridge.cs                messages between UI and host: open, close, recent files, tools, pages, save
+  DesktopTools.cs                 tools, page edits, New and Save on disk with native save / folder dialogs
   FileDialogs.cs                  native dialogs (and preset answers for tests)
   LinuxEnvironment.cs             fixes snap environment leaks (e.g. VS Code snap terminal) for WebKit
   Controllers/LocalPdfController.cs  page sizes and rendered page images for the opened file
   Controllers/LocalSearchController.cs  text search in the opened file, in steps
-  Services/PdfiumService.cs       open with PDFium, render pages, find text
+  Services/PdfiumService.cs       open with PDFium, render pages, find text, working copy after page edits
   Services/PdfPreflight.cs        detects files PDFium cannot read before trying
   Services/RecentFiles.cs         recent file paths (JSON in the user's app data folder)
   Services/PngEncoder.cs          small PNG writer for rendered pages
@@ -303,6 +341,8 @@ a 45 MB PDF, landscape, rotated and mixed page sizes, image-based and form PDFs,
 highlight create / select / remove / clear and their positions after zoom, fit, page change and window resize,
 menu bar, shortcuts, custom zoom, pan (drag, Space, middle button), find (as you type, next / previous, match case, whole words, rotated pages,
 1,000-match limit; web and desktop), recent files (web and desktop, including moved files and Clear),
+page edits (insert blank / from a file, delete, extract, move, duplicate, rotate, replace; the saved PDF is checked
+page by page), New PDF, Save / Save as and the unsaved-changes prompt (web and desktop),
 render failure recovery, light / dark theme, tablet viewport with touch highlighting, and no console errors.
 `password.pdf` needs Ghostscript and `tracemonkey.pdf` needs internet; those tests are skipped otherwise.
 The desktop tests also open sparse 8 GB and 60 GB PDFs (generated on Linux/macOS only; they use a few KB of disk).

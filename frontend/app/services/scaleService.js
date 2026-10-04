@@ -50,6 +50,16 @@
             service.version++;
         }
 
+        /** After a page edit: `map[i]` is the old page number of new page i + 1 (null for an added page). */
+        function remap(map) {
+            var old = pages;
+            pages = {};
+            map.forEach(function (from, i) {
+                if (from && old[from]) { pages[i + 1] = old[from]; }
+            });
+            service.version++;
+        }
+
         function format(value, unit, decimals) {
             var d = decimals === undefined ? DECIMALS[unit] : decimals;
             return value.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -78,6 +88,7 @@
             forPage: forPage,
             set: set,
             clear: clear,
+            remap: remap,
             formatLength: formatLength,
             formatArea: formatArea
         });

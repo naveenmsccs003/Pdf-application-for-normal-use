@@ -342,6 +342,103 @@ async function startHost() {
         check('desktop: closing the comparison tells the host and clears the view',
             rvs.regions === 0 && rvs.file === '' && (await state()).sent.includes('close-compare'), rvs);
 
+        // ----- Pages: edits go to a working copy; Save writes the file; Save As, Extract, New -----
+        const pdfPages = file => page.evaluate(async b64 => {
+            const data = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+            const out = [];
+            for (let i = 1; i <= doc.numPages; i++) {
+                const p = await doc.getPage(i);
+                const v = p.getViewport({ scale: 1 });
+                const items = (await p.getTextContent()).items.filter(t => t.str.trim());
+                out.push({ text: items.length ? items[0].str.trim() : '', w: Math.round(v.width), rotate: p.rotate });
+            }
+            await doc.destroy();
+            return out;
+        }, fs.readFileSync(file).toString('base64'));
+        // Runs `action` with the given answers for the native dialogs and waits for the host's reply.
+        const withHost = async (dialog, action) => {
+            const before = await page.evaluate(d => { window.__dialog = d; return window.__replyCount || 0; }, dialog);
+            await action();
+            await page.waitForFunction(n => (window.__replyCount || 0) > n, { timeout: 30000 }, before);
+            await settle();
+        };
+        const pagesOp = async (label, fields, dialog = {}) => {
+            await page.click('#ribbon-tab-pages'); await sleep(100);
+            await page.click(`#ribbon-pages button[aria-label="${label}"]`); await sleep(200);
+            for (const [selector, value] of Object.entries(fields)) {
+                if (await page.$eval(selector, e => e.tagName) === 'SELECT') { await page.select(selector, value); continue; }
+                await page.$eval(selector, e => { e.value = ''; }); await page.type(selector, String(value));
+            }
+            await withHost(dialog, () => page.click('.dialog-footer .tool-primary'));
+        };
+        const docInfo = () => page.evaluate(() => ({
+            status: document.querySelector('.status-text').textContent.trim(),
+            fileName: document.querySelector('.file-name') ? document.querySelector('.file-name').textContent.trim() : '',
+            pages: document.querySelector('.page-total').textContent.replace('of', '').trim(),
+            modified: !!document.querySelector('.doc-modified'),
+            unsaved: !!document.querySelector('#unsaved-title'),
+            dialog: !!document.querySelector('#pages-form')
+        }));
+        const workPath = path.join(outDir, 'pages-work.pdf');
+        fs.copyFileSync(fixture('ten-pages.pdf'), workPath);
+        const originalSize = fs.statSync(workPath).size;
+        await open(workPath);
+        await pagesOp('Delete pages', { '#pages-input': '1' }); let di = await docInfo();
+        check('desktop pages: delete page 1 shows 9 pages, not saved; the file is unchanged',
+            di.pages === '9' && di.modified && /^Deleted 1 page/.test(di.status) && fs.statSync(workPath).size === originalSize, [di, fs.statSync(workPath).size]);
+        await page.click('#ribbon-pages button[aria-label="Insert from file"]'); await sleep(200);
+        await withHost({ files: [fixture('landscape.pdf')] }, () => page.click('#pages-form button.tool-outline'));
+        await page.select('#pages-form select[aria-label="Where"]', 'end');
+        await withHost({}, () => page.click('.dialog-footer .tool-primary')); di = await docInfo();
+        check('desktop pages: insert every page of a file picked in the native dialog', di.pages === '12' && /^Inserted 3 pages/.test(di.status) && !di.dialog, di);
+        await pagesOp('Rotate right', { '#pages-input': '1' });
+        await pagesOp('Duplicate pages', { '#pages-input': '2' }); di = await docInfo();
+        check('desktop pages: rotate and duplicate', di.pages === '13' && /^Duplicated 1 page/.test(di.status), di);
+
+        await withHost({}, async () => { await page.keyboard.down('Control'); await page.keyboard.press('KeyS'); await page.keyboard.up('Control'); });
+        di = await docInfo();
+        let pp = await pdfPages(workPath);
+        check('desktop pages: Ctrl+S writes the changes to the file', /^Saved pages-work\.pdf\./.test(di.status) && !di.modified &&
+            pp.length === 13 && pp[0].text === 'Page 2' && pp[0].rotate === 90 && pp[1].text === 'Page 3' && pp[2].text === 'Page 3' &&
+            pp.slice(10).every(p => p.w === 842), [di.status, pp.map(p => `${p.text} ${p.w} r${p.rotate}`)]);
+
+        const saveAsPath = path.join(outDir, 'pages-save-as');   // the app adds .pdf
+        await page.click('#ribbon-tab-file');
+        await withHost({ save: saveAsPath }, () => page.click('button[aria-label="Save as"]')); di = await docInfo();
+        check('desktop pages: Save as writes another file, which the document then belongs to',
+            di.fileName === 'pages-save-as.pdf' && fs.existsSync(saveAsPath + '.pdf') && (await pdfPages(saveAsPath + '.pdf')).length === 13, di);
+        await withHost({}, () => page.click('button[aria-label="Save as"]')); di = await docInfo();
+        check('desktop pages: cancelling Save as saves nothing', di.status === 'Not saved.' && di.fileName === 'pages-save-as.pdf', di);
+
+        const extractPath = path.join(outDir, 'extracted.pdf');
+        await pagesOp('Extract pages', { '#pages-input': '1-2, 13' }, { save: extractPath }); di = await docInfo();
+        pp = fs.existsSync(extractPath) ? await pdfPages(extractPath) : [];
+        check('desktop pages: extract pages into a new file (save dialog)', /Saved 3 pages as extracted\.pdf/.test(di.status) && pp.length === 3 &&
+            pp[0].text === 'Page 2' && pp[2].w === 842 && di.pages === '13', [di.status, pp]);
+
+        await pagesOp('Delete pages', { '#pages-input': '13' });
+        await page.evaluate(p => { window.__dialog = { files: [p] }; }, fixture('one-page.pdf'));
+        await page.click('#ribbon-tab-file'); await click('Open PDF'); di = await docInfo();
+        check('desktop pages: opening another PDF over unsaved changes asks first', di.unsaved && di.fileName === 'pages-save-as.pdf', di);
+        const openBefore = await page.evaluate(() => window.__openReplies || 0);
+        await click("Don't save");
+        await page.waitForFunction(n => (window.__openReplies || 0) > n, { timeout: 30000 }, openBefore); await settle(); di = await docInfo();
+        check("desktop pages: Don't save opens the other PDF and leaves the saved file as it was",
+            di.fileName === 'one-page.pdf' && !di.modified && (await pdfPages(saveAsPath + '.pdf')).length === 13, di);
+
+        await click('New PDF'); await page.$eval('#new-count-input', e => { e.value = ''; }); await page.type('#new-count-input', '2');
+        await withHost({}, () => page.click('.dialog-footer .tool-primary')); di = await docInfo();
+        check('desktop pages: New PDF opens 2 blank pages, untitled and not saved', di.fileName === 'Untitled.pdf' && di.pages === '2' && di.modified, di);
+        const newPath = path.join(outDir, 'brand-new.pdf');
+        await withHost({ save: newPath }, () => page.click('button[aria-label="Save"]')); di = await docInfo();
+        pp = fs.existsSync(newPath) ? await pdfPages(newPath) : [];
+        check('desktop pages: Save of a new PDF asks where, then writes it', di.fileName === 'brand-new.pdf' && !di.modified &&
+            pp.length === 2 && pp.every(p => p.w === 595 && !p.text), [di, pp]);
+        const recentNames = await page.evaluate(() => [...document.querySelectorAll('.menu-recent-name')].map(e => e.textContent.trim()));
+        check('desktop pages: saved files join Recent files', recentNames[0] === 'brand-new.pdf' && recentNames.includes('pages-save-as.pdf'), recentNames);
+        await click('Close');
+
         const leftovers = fs.readdirSync(outDir).filter(f => f.endsWith('.tmp'));
         check('no temporary files left behind', leftovers.length === 0, leftovers);
         fs.rmSync(outDir, { recursive: true, force: true });

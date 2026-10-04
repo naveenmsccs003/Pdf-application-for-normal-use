@@ -54,7 +54,7 @@
                 form.append('name', fileName);
             }
 
-            /** Posts FormData (multipart) or a plain object (JSON) and downloads the response. */
+            /** Posts FormData (multipart) or a plain object (JSON) to api/tools/{endpoint} (or a full api/ path) and downloads the response. */
             function post(endpoint, body) {
                 var config = { responseType: 'blob' };
                 if (body instanceof FormData) {
@@ -63,7 +63,7 @@
                     config.transformRequest = angular.identity;
                     config.headers = { 'Content-Type': undefined };
                 }
-                return $http.post('api/tools/' + endpoint, body, config).then(function (response) {
+                return $http.post(endpoint.indexOf('api/') === 0 ? endpoint : 'api/tools/' + endpoint, body, config).then(function (response) {
                     var name = downloadName(response.headers('Content-Disposition')) || 'download';
                     saveBlob(response.data, name);
                     return { name: name, headers: response.headers };
@@ -198,6 +198,20 @@
                 });
             }
 
+            /** Pages > Extract: the pages of `layout` as a new PDF (download / save dialog); the document stays as it is. */
+            function extractPages(source, fileName, layout) {
+                if (desktopService.isDesktop) {
+                    return runDesktop('extract', ['current'], { layout: layout });
+                }
+                var form = new FormData();
+                appendSource(form, source, fileName);
+                form.append('layout', JSON.stringify(layout));
+                return post('api/pages/extract', form).then(function (result) {
+                    var count = result.headers('X-Page-Count');
+                    return 'Downloaded ' + result.name + ' (' + count + ' page' + (count === '1' ? '' : 's') + ').';
+                });
+            }
+
             /**
              * Saves the markup report (`format` 'csv' or 'html'): a download on the web, the save dialog on desktop.
              * CSV gets a byte order mark so Excel reads it as UTF-8.
@@ -218,6 +232,8 @@
                 isDesktop: desktopService.isDesktop,
                 saveHighlights: saveHighlights,
                 saveReport: saveReport,
+                extractPages: extractPages,
+                saveBlob: saveBlob,
                 validateFile: pdfService.validateFile,
                 pickDesktopFiles: pickDesktopFiles,
                 merge: merge,

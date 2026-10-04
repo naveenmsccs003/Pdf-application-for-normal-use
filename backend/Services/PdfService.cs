@@ -60,6 +60,28 @@ public class PdfService
         return new PdfFileModel(id, fileName, file.Length);
     }
 
+    /// <summary>
+    /// Stores a PDF the server made (page edits, a new document) like an upload, so the viewer can open it.
+    /// <paramref name="write"/> runs on a background thread.
+    /// </summary>
+    public async Task<PdfFileModel> StoreGeneratedAsync(string fileName, Action<Stream> write, CancellationToken ct)
+    {
+        DeleteExpiredFiles();
+        var id = Guid.NewGuid();
+        var path = GetPath(id);
+        try
+        {
+            await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write))
+                await Task.Run(() => write(output), ct);
+        }
+        catch
+        {
+            File.Delete(path);
+            throw;
+        }
+        return new PdfFileModel(id, SanitizeFileName(fileName), new FileInfo(path).Length);
+    }
+
     /// <summary>Opens a stored PDF for reading, or returns null if it does not exist.</summary>
     public Stream? OpenRead(Guid id)
     {

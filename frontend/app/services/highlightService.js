@@ -53,6 +53,21 @@
             return null;
         }
 
+        /**
+         * After a page edit: `placements` ([{ from, pageNumber, fields }]) become the markups. A markup placed a second
+         * time (a duplicated page) is a copy with a new id; markups not placed (deleted pages) are dropped.
+         */
+        function rearrange(placements) {
+            var placed = {};
+            var result = placements.map(function (p) {
+                var id = placed[p.from.id] ? nextId++ : p.from.id;
+                placed[p.from.id] = true;
+                return angular.extend({}, p.from, p.fields, { id: id, pageNumber: p.pageNumber });
+            });
+            highlights.length = 0;
+            Array.prototype.push.apply(highlights, result);
+        }
+
         // Mutate in place so views bound to the array stay in sync.
         function clear() {
             highlights.length = 0;
@@ -64,6 +79,7 @@
             remove: remove,
             update: update,
             find: find,
+            rearrange: rearrange,
             clear: clear
         };
     });

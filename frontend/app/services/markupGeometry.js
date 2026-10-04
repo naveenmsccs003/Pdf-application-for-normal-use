@@ -362,6 +362,51 @@
             return moved;
         }
 
+        // Boxes that hold upright text or an icon keep their size when the page turns; only their place moves.
+        var UPRIGHT_BOXES = { text: true, callout: true, comment: true, revtag: true };
+
+        /**
+         * The markup's fields after its page (width x height at scale 1) is turned clockwise by `turns` quarter
+         * turns, so the markup stays on the same content (Pages > Rotate).
+         */
+        function rotate(m, turns, width, height) {
+            var r = angular.extend({}, m);
+            for (var t = 0; t < ((turns % 4) + 4) % 4; t++) {
+                // A quarter turn clockwise: (x, y) on a width x height page -> (height - y, x).
+                var h = height;
+                ['x1', 'x2', 'tipX'].forEach(function (k, i) {
+                    var ky = ['y1', 'y2', 'tipY'][i];
+                    if (typeof r[k] === 'number') {
+                        var x = r[k];
+                        r[k] = round(h - r[ky]);
+                        r[ky] = round(x);
+                    }
+                });
+                if (r.points) {
+                    var p = r.points, turned = [];
+                    for (var i = 0; i < p.length; i += 2) { turned.push(round(h - p[i + 1]), round(p[i])); }
+                    r.points = turned;
+                }
+                if (typeof r.x === 'number' && typeof r.width === 'number') {
+                    if (UPRIGHT_BOXES[r.type]) {
+                        var cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+                        r.x = round(h - cy - r.width / 2);
+                        r.y = round(cx - r.height / 2);
+                    } else {
+                        var x0 = r.x;
+                        r.x = round(h - (r.y + r.height));
+                        r.y = round(x0);
+                        var w = r.width;
+                        r.width = r.height;
+                        r.height = w;
+                    }
+                }
+                height = width;
+                width = h;
+            }
+            return r;
+        }
+
         function hasText(m) { return TEXT_TYPES[m.type] === true; }
 
         // ----- Text boxes -----
@@ -477,6 +522,7 @@
             replaceLabel: replaceLabel,
             revtagLines: revtagLines,
             translate: translate,
+            rotate: rotate,
             measureText: measureText,
             measureLabel: measureLabel
         };

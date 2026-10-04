@@ -11,12 +11,16 @@ namespace PdfViewer.Desktop;
 ///               | { type: "open-recent", path } | { type: "clear-recent" }
 ///               | { type: "pick-pdfs" } | { type: "run-tool", tool, inputs, options }
 ///               | { type: "open-compare" } | { type: "close-compare" }
+///               | { type: "new-document", count, width, height } | { type: "edit-pages", layout, inputs }
+///               | { type: "save", saveAs }
 ///   host -> UI: { type: "opening", fileName } | { type: "opened", token, fileName, size, pageCount }
 ///             | { type: "open-error", message } | { type: "open-cancelled" }
 ///             | { type: "recent-files", files: [{ path, fileName, folder, exists }] }
 ///             | { type: "picked-pdfs", files } | { type: "tool-done" | "tool-error", message } | { type: "tool-cancelled" }
 ///             | { type: "compare-opened", token, fileName, pageCount } | { type: "compare-error", message }
 ///             | { type: "compare-cancelled" }
+///             | { type: "pages-edited", token, fileName, size, pageCount } | { type: "edit-error", message }
+///             | { type: "saved", fileName, message } | { type: "save-error", message } | { type: "save-cancelled" }
 /// </summary>
 public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles recent, ILogger<DesktopBridge> logger)
 {
@@ -114,6 +118,24 @@ public class DesktopBridge(PdfiumService pdfium, DesktopTools tools, RecentFiles
 
             case "run-tool":
                 Send(await tools.RunAsync(dialogs, root));
+                break;
+
+            case "new-document":
+                Send(await tools.NewDocumentAsync(root));
+                break;
+
+            case "edit-pages":
+                Send(await tools.EditPagesAsync(root));
+                break;
+
+            case "save":
+                var (saved, reply) = await tools.SaveAsync(dialogs, root.TryGetProperty("saveAs", out var a) && a.GetBoolean());
+                if (saved is not null)
+                {
+                    recent.Add(saved);
+                    SendRecent();
+                }
+                Send(reply);
                 break;
         }
     }

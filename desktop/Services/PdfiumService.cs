@@ -23,23 +23,58 @@ public sealed class PdfiumService : IDisposable
     private readonly object _gate = Pdfium.Lock;
     private FpdfDocumentT? _document;
     private Guid _token;
-    private string? _path;
+    private string? _path;          // the file PDFium reads: the user's file, or a temp working copy after page edits
+    private string? _name;          // file name shown in the viewer
+    private string? _savePath;      // where Save writes; null for a new document that was never saved
+    private bool _pathIsTemp;
     private FpdfDocumentT? _compare;
     private Guid _compareToken;
 
     public PdfiumService()
     {
         Pdfium.EnsureInitialized();
+        DeleteStaleWorkingCopies();
     }
 
-    /// <summary>Path and name of the document open in the viewer, or null.</summary>
+    // Working copies are deleted when the document closes; these were left by a crash. Only old ones,
+    // so another running copy of the app keeps its own.
+    private static void DeleteStaleWorkingCopies()
+    {
+        if (!Directory.Exists(WorkingFolder)) return;
+        foreach (var file in Directory.EnumerateFiles(WorkingFolder, "*.pdf"))
+        {
+            try
+            {
+                if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddDays(-1))
+                    File.Delete(file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* in use */ }
+        }
+    }
+
+    /// <summary>Path and name of the document open in the viewer (its working copy after page edits), or null.</summary>
     public (string Path, string Name)? Current
     {
         get
         {
             lock (_gate)
-                return _path is null ? null : (_path, Path.GetFileName(_path));
+                return _path is null ? null : (_path, _name!);
         }
+    }
+
+    /// <summary>The file Save writes to, or null for a new document that was never saved.</summary>
+    public string? SavePath
+    {
+        get { lock (_gate) return _savePath; }
+    }
+
+    /// <summary>Temp folder for working copies (page edits, new documents); see <see cref="OpenWorkingCopy"/>.</summary>
+    public static string WorkingFolder { get; } = Path.Combine(Path.GetTempPath(), "pdf-viewer-desktop");
+
+    public static string NewWorkingPath()
+    {
+        Directory.CreateDirectory(WorkingFolder);
+        return Path.Combine(WorkingFolder, $"{Guid.NewGuid():N}.pdf");
     }
 
     /// <summary>
@@ -89,7 +124,50 @@ public sealed class PdfiumService : IDisposable
             _document = document;
             _token = Guid.NewGuid();
             _path = path;
-            return new LocalPdfInfo(_token, Path.GetFileName(path), new FileInfo(path).Length, pageCount);
+            _name = Path.GetFileName(path);
+            _savePath = path;
+            _pathIsTemp = false;
+            return new LocalPdfInfo(_token, _name, new FileInfo(path).Length, pageCount);
+        }
+    }
+
+    /// <summary>
+    /// Shows a working copy in the viewer (the result of a page edit, or a new document), in place of the
+    /// current document; the previous working copy is deleted. The user's file is only written by Save.
+    /// </summary>
+    public LocalPdfInfo OpenWorkingCopy(string tempPath, string name, string? savePath)
+    {
+        lock (_gate)
+        {
+            (FpdfDocumentT Document, int PageCount) loaded;
+            try
+            {
+                loaded = LoadDocument(tempPath);
+            }
+            catch
+            {
+                File.Delete(tempPath);
+                throw;
+            }
+            CloseCurrent();
+            CloseCompareDocument();
+            _document = loaded.Document;
+            _token = Guid.NewGuid();
+            _path = tempPath;
+            _name = name;
+            _savePath = savePath;
+            _pathIsTemp = true;
+            return new LocalPdfInfo(_token, name, new FileInfo(tempPath).Length, loaded.PageCount);
+        }
+    }
+
+    /// <summary>After Save / Save As: the document now belongs to that file.</summary>
+    public void MarkSaved(string savePath)
+    {
+        lock (_gate)
+        {
+            _savePath = savePath;
+            _name = Path.GetFileName(savePath);
         }
     }
 
@@ -320,7 +398,13 @@ public sealed class PdfiumService : IDisposable
         {
             fpdfview.FPDF_CloseDocument(_document);
             _document = null;
-            _path = null;
+            if (_pathIsTemp)
+            {
+                try { File.Delete(_path!); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { /* left in the temp folder */ }
+            }
+            _path = _name = _savePath = null;
+            _pathIsTemp = false;
         }
     }
 

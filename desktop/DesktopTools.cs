@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PdfViewer.Desktop.Models;
 using PdfViewer.Desktop.Services;
 using PdfViewer.Tools;
 
@@ -115,6 +116,16 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
                     });
                     return Done($"Saved {Path.GetFileName(output)}.");
                 }
+                case "extract":
+                {
+                    // Selected pages into a new file; the open document stays as it is.
+                    var (path, name) = Single(inputs);
+                    var layout = ReadLayout(options);
+                    var output = AskSaveFile(dialogs, "Save the extracted pages", path, ".pdf", inputs, $"{BaseName(name)}-pages");
+                    if (output is null) return Cancelled;
+                    var pages = await WriteFileAsync(output, stream => PageEditor.Rearrange(path, layout, [], stream));
+                    return Done($"Saved {pages} page{(pages == 1 ? "" : "s")} as {Path.GetFileName(output)}.");
+                }
                 case "save-highlights":
                 {
                     var (path, name) = Single(inputs);
@@ -153,6 +164,111 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
             return new { type = "tool-error", message = "Something went wrong. Please try again." };
         }
     }
+
+    /// <summary>New document with blank pages, shown in the viewer as an unsaved working copy.</summary>
+    public async Task<object> NewDocumentAsync(JsonElement message)
+    {
+        try
+        {
+            var count = message.GetProperty("count").GetInt32();
+            var width = message.GetProperty("width").GetDouble();
+            var height = message.GetProperty("height").GetDouble();
+            var temp = PdfiumService.NewWorkingPath();
+            await WriteFileAsync(temp, stream => { PageEditor.CreateBlank(count, width, height, stream); return 0; });
+            var info = await Task.Run(() => pdfium.OpenWorkingCopy(temp, "Untitled.pdf", null));
+            return new { type = "opened", info.Token, info.FileName, info.Size, info.PageCount, untitled = true };
+        }
+        catch (Exception ex)
+        {
+            return new { type = "open-error", message = ErrorMessage(ex, "Unable to create the PDF.") };
+        }
+    }
+
+    /// <summary>
+    /// Page edit: the open document rebuilt with the pages in <c>layout</c> (a list of <see cref="PageSpec"/>),
+    /// with <c>inputs</c> (picked files) as sources 1..n. The result replaces the document in the viewer as a
+    /// working copy; the user's file is not changed until Save.
+    /// </summary>
+    public async Task<object> EditPagesAsync(JsonElement message)
+    {
+        try
+        {
+            var current = pdfium.Current ?? throw new ToolException("Open a PDF first.");
+            var savePath = pdfium.SavePath;
+            var layout = ReadLayout(message);
+            var others = message.TryGetProperty("inputs", out var i) && i.GetArrayLength() > 0 ? ResolveInputs(i) : [];
+            var temp = PdfiumService.NewWorkingPath();
+            await WriteFileAsync(temp, stream => PageEditor.Rearrange(current.Path, layout, others, stream));
+            var info = await Task.Run(() => pdfium.OpenWorkingCopy(temp, current.Name, savePath));
+            return new { type = "pages-edited", info.Token, info.FileName, info.Size, info.PageCount };
+        }
+        catch (Exception ex)
+        {
+            return new { type = "edit-error", message = ErrorMessage(ex, "Unable to change the pages.") };
+        }
+    }
+
+    /// <summary>
+    /// Save: writes the document (with its page edits) to its file. Save As, or Save of a new document, asks
+    /// for the file first. Returns the saved path (null when cancelled) and the reply for the UI.
+    /// </summary>
+    public async Task<(string? Path, object Reply)> SaveAsync(IFileDialogs dialogs, bool saveAs)
+    {
+        try
+        {
+            var current = pdfium.Current ?? throw new ToolException("Open a PDF first.");
+            var target = saveAs ? null : pdfium.SavePath;
+            if (target is null)
+            {
+                var near = pdfium.SavePath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), current.Name);
+                var chosen = dialogs.SaveFile($"Save as (e.g. {current.Name})", Path.GetDirectoryName(near), PdfFilter);
+                if (string.IsNullOrWhiteSpace(chosen))
+                    return (null, new { type = "save-cancelled" });
+                target = chosen.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase) ? chosen : chosen + ".pdf";
+            }
+
+            // Unchanged and saved to the file it came from: nothing to write.
+            if (!SamePath(current.Path, target))
+                await WriteFileAsync(target, stream =>
+                {
+                    using var source = File.OpenRead(current.Path);
+                    source.CopyTo(stream);
+                    return 0;
+                });
+            pdfium.MarkSaved(target);
+            return (target, new { type = "saved", fileName = Path.GetFileName(target), message = $"Saved {Path.GetFileName(target)}." });
+        }
+        catch (Exception ex)
+        {
+            return (null, new { type = "save-error", message = ErrorMessage(ex, "Unable to save the PDF.") });
+        }
+    }
+
+    private string ErrorMessage(Exception ex, string fallback)
+    {
+        switch (ex)
+        {
+            case ToolException or LocalPdfException:
+                return ex.Message;
+            case KeyNotFoundException or InvalidOperationException or FormatException:
+                logger.LogWarning(ex, "Malformed page request");
+                return "Invalid request.";
+            case IOException or UnauthorizedAccessException:
+                logger.LogWarning(ex, "Could not write the PDF");
+                return "Could not write the file. Check that it is not open in another program, the folder permissions and free disk space.";
+            default:
+                logger.LogError(ex, "Page operation failed");
+                return fallback;
+        }
+    }
+
+    private static List<PageSpec> ReadLayout(JsonElement element) =>
+        element.GetProperty("layout").Deserialize<List<PageSpec>>(JsonSerializerOptions.Web)
+        ?? throw new ToolException("Invalid page edit.");
+
+    private static bool SamePath(string a, string b) =>
+        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b),
+            OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
     private static readonly object Cancelled = new { type = "tool-cancelled" };
     private static object Done(string message) => new { type = "tool-done", message };
@@ -257,8 +373,7 @@ public class DesktopTools(PdfiumService pdfium, ILogger<DesktopTools> logger)
         if (!chosen.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
             chosen += extension;
 
-        var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        if (inputs.Any(i => string.Equals(Path.GetFullPath(i.Path), Path.GetFullPath(chosen), comparison)))
+        if (inputs.Any(i => SamePath(i.Path, chosen)))
             throw new ToolException("Choose a different file name: the output cannot replace one of the input files.");
         return chosen;
     }

@@ -5,10 +5,10 @@
     angular.module('pdfViewerApp').controller('PdfViewerController', [
         '$scope', '$document', '$window', '$timeout', 'pdfService', 'highlightService', 'themeService', 'desktopService',
         'recentFilesService', 'markupGeometry', 'scaleService', 'compareService', 'revisionService', 'reportService',
-        'toolsService', 'VIEWER_CONFIG',
+        'toolsService', 'pagesService', 'VIEWER_CONFIG', '$q',
         function ($scope, $document, $window, $timeout, pdfService, highlightService, themeService, desktopService,
                   recentFilesService, markupGeometry, scaleService, compareService, revisionService, reportService,
-                  toolsService, VIEWER_CONFIG) {
+                  toolsService, pagesService, VIEWER_CONFIG, $q) {
             var vm = this;
             var zoomSteps = VIEWER_CONFIG.zoomSteps;
             var EPSILON = 0.001;
@@ -37,6 +37,7 @@
             vm.isDesktop = desktopService.isDesktop;
             vm.recentFiles = [];        // [{ id, name, detail, missing }], newest first
             vm.zoomInput = '100%';
+            vm.modified = false;        // page edits not saved yet, or a new document that was never saved
             // Shortcut labels shown in the menus.
             vm.modKey = /Mac|iPhone|iPad/.test($window.navigator.platform || '') ? '\u2318' : 'Ctrl+';
 
@@ -60,6 +61,10 @@
             // ----- Open -----
             /** Web: uploads the selected file. Desktop: asks the host to show the native open dialog. */
             vm.openFile = function (file) {
+                if (vm.modified) {
+                    guardUnsaved(function () { vm.openFile(file); });
+                    return;
+                }
                 if (vm.isDesktop) {
                     if (!vm.busy) {
                         desktopService.send('open');
@@ -113,6 +118,10 @@
 
             vm.openRecent = function (item) {
                 if (vm.busy || !item) { return; }
+                if (vm.modified) {
+                    guardUnsaved(function () { vm.openRecent(item); });
+                    return;
+                }
                 if (vm.isDesktop) {
                     desktopService.send('open-recent', { path: item.id });
                     return;
@@ -154,7 +163,7 @@
                 desktopService.on('opened', function (message) {
                     pdfService.loadLocal(message).then(function (pageCount) {
                         vm.source = { kind: 'desktop' };
-                        return showDocument(message.fileName, pageCount, message.size);
+                        return showDocument(message.fileName, pageCount, message.size, message.untitled);
                     }).catch(openFailed).finally(function () {
                         vm.busy = false;
                     });
@@ -185,6 +194,10 @@
                 if (!vm.hasDocument() || vm.busy) {
                     return;
                 }
+                if (vm.modified) {
+                    guardUnsaved(vm.closeDocument);
+                    return;
+                }
                 pdfService.close();
                 desktopService.send('close');
                 highlightService.clear();
@@ -198,6 +211,7 @@
                 revisionService.useDocument(null);
                 vm.source = null;
                 vm.fileName = '';
+                vm.modified = false;
                 vm.pageCount = 0;
                 vm.currentPage = 0;
                 vm.pageInput = '';
@@ -208,7 +222,8 @@
                 vm.status = 'Open a PDF to get started.';
             };
 
-            function showDocument(fileName, pageCount, size) {
+            function showDocument(fileName, pageCount, size, untitled) {
+                vm.modified = !!untitled;
                 highlightService.clear();
                 vm.selectedHighlightId = null;
                 vm.tool = 'pan';
@@ -390,7 +405,8 @@
             // While a dialog (custom zoom, note text) is open, keys belong to it: Esc closes it, and the
             // viewer's and find shortcuts must not act on the page behind it. Capture phase, so this runs first.
             function onCustomZoomKey(event) {
-                if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog) { return; }
+                if (!vm.customZoom && !vm.noteDialog && !vm.scaleDialog && !vm.editDialog && !vm.revisionsDialog && !vm.reportDialog &&
+                    !vm.pagesDialog && !vm.newDialog && !vm.saveAsDialog && !vm.unsavedDialog) { return; }
                 // The colour pop-up (Edit markup dialog) handles its own keys, Esc included.
                 var popover = $document[0].querySelector('.color-popover');
                 if (popover && popover.contains(event.target)) { return; }
@@ -399,6 +415,8 @@
                     $scope.$apply(function () {
                         vm.closeCustomZoom(); vm.closeNoteDialog(); vm.closeScaleDialog(); vm.closeEditDialog();
                         vm.revisionsDialog = null; vm.reportDialog = null;
+                        if (!vm.pagesDialog || !vm.pagesDialog.busy) { vm.pagesDialog = null; }
+                        vm.newDialog = null; vm.saveAsDialog = null; vm.unsavedDialog = null;
                     });
                 } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && (vm.noteDialog || vm.editDialog)) {
                     event.preventDefault();
@@ -442,9 +460,318 @@
                 }
             };
 
+            // ----- New / Save / Save As -----
+            vm.saving = false;
+            vm.newDialog = null;        // { count, size, orientation, error } while open
+            vm.saveAsDialog = null;     // web: { name, error } while open
+            vm.unsavedDialog = null;    // { action } while asking what to do with unsaved page changes
+            vm.pageSizes = pagesService.PAGE_SIZES;
+
+            /** Asks before `action` would lose unsaved page changes: save first, discard them, or cancel. */
+            function guardUnsaved(action) {
+                if (!vm.modified || !vm.hasDocument()) { action(); return; }
+                vm.unsavedDialog = { action: action };
+            }
+
+            vm.discardAndContinue = function () {
+                var d = vm.unsavedDialog;
+                vm.unsavedDialog = null;
+                vm.modified = false;
+                if (d) { d.action(); }
+            };
+
+            vm.saveAndContinue = function () {
+                var d = vm.unsavedDialog;
+                vm.unsavedDialog = null;
+                // The action runs once saved (desktop: a new document asks where first).
+                saveDocument(false, vm.fileName).then(function (saved) { if (saved && d) { d.action(); } });
+            };
+
+            vm.canSave = function () { return vm.hasDocument() && !vm.busy && !vm.saving; };
+
+            /**
+             * Save: the document with its page changes, to its file (desktop; a new document asks where) or as a
+             * download (web). Save As asks for the file (desktop) or the name (web). Markups are not part of it:
+             * Save copy with markups writes them into a copy.
+             */
+            vm.save = function (saveAs) {
+                if (!vm.canSave()) { return; }
+                if (!vm.isDesktop && saveAs) {
+                    vm.saveAsDialog = { name: vm.fileName, error: '' };
+                    $timeout(function () {
+                        var input = $document[0].getElementById('save-as-input');
+                        if (input) { input.focus(); input.setSelectionRange(0, Math.max(0, input.value.length - 4)); }
+                    });
+                    return;
+                }
+                saveDocument(saveAs, vm.fileName);
+            };
+
+            vm.applySaveAs = function () {
+                var d = vm.saveAsDialog;
+                if (!d) { return; }
+                var name = String(d.name || '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim();
+                if (!name || /^\.pdf$/i.test(name)) { d.error = 'Type a file name.'; return; }
+                if (!/\.pdf$/i.test(name)) { name += '.pdf'; }
+                vm.saveAsDialog = null;
+                saveDocument(true, name);
+            };
+
+            /** Resolves with true once saved, false if cancelled or failed. */
+            function saveDocument(saveAs, name) {
+                vm.saving = true;
+                vm.error = '';
+                vm.status = 'Saving…';
+                return pagesService.save(vm.source, name, saveAs, toolsService.saveBlob).then(function (result) {
+                    if (!result) {
+                        vm.status = 'Not saved.';
+                        return false;
+                    }
+                    vm.fileName = result.fileName;
+                    vm.modified = false;
+                    vm.status = result.message + (vm.highlights.length ? ' Markups are not in it: use Save copy with markups for those.' : '');
+                    return true;
+                }, function (message) {
+                    showError(typeof message === 'string' ? message : 'Unable to save the PDF.');
+                    return false;
+                }).finally(function () { vm.saving = false; });
+            }
+
+            vm.openNewDialog = function () {
+                if (vm.busy) { return; }
+                guardUnsaved(function () {
+                    vm.newDialog = { count: 1, size: 'a4', orientation: 'portrait', error: '' };
+                    $timeout(function () {
+                        var input = $document[0].getElementById('new-count-input');
+                        if (input) { input.focus(); input.select(); }
+                    });
+                });
+            };
+
+            function pageSize(size, orientation) {
+                var s = pagesService.PAGE_SIZES[size] || pagesService.PAGE_SIZES.a4;
+                return orientation === 'landscape' ? { width: s.height, height: s.width } : { width: s.width, height: s.height };
+            }
+
+            vm.applyNewDialog = function () {
+                var d = vm.newDialog;
+                if (!d) { return; }
+                var count = Number(d.count);
+                if (!Number.isInteger(count) || count < 1 || count > 1000) { d.error = 'Enter a number of pages from 1 to 1000.'; return; }
+                var size = pageSize(d.size, d.orientation);
+                vm.newDialog = null;
+                vm.busy = true;
+                vm.error = '';
+                vm.status = 'Creating a new PDF…';
+                pagesService.create(count, size.width, size.height).then(function (created) {
+                    if (!created) { return; }      // desktop: the host answers with "opened"
+                    return pdfService.load(VIEWER_CONFIG.apiBase + '/' + created.id).then(function (pageCount) {
+                        vm.source = { kind: 'web', id: created.id };
+                        return showDocument(created.fileName, pageCount, created.size, true);
+                    });
+                }).catch(openFailed).finally(function () {
+                    if (!vm.isDesktop) { vm.busy = false; }
+                });
+            };
+
+            // ----- Pages: insert, delete, extract, reorder, duplicate, rotate, replace -----
+            vm.pagesDialog = null;      // { op, pages, at, position, degrees, count, size, orientation, file, filePages, error, busy }
+            vm.pageOps = {
+                blank: { title: 'Insert blank pages', button: 'Insert' },
+                insert: { title: 'Insert pages from a file', button: 'Insert' },
+                delete: { title: 'Delete pages', button: 'Delete' },
+                extract: { title: 'Extract pages', button: 'Extract' },
+                duplicate: { title: 'Duplicate pages', button: 'Duplicate' },
+                move: { title: 'Move pages', button: 'Move' },
+                rotate: { title: 'Rotate pages', button: 'Rotate' },
+                replace: { title: 'Replace pages', button: 'Replace' }
+            };
+
+            vm.openPagesDialog = function (op, degrees) {
+                if (!vm.hasDocument() || vm.busy || !vm.pageOps[op]) { return; }
+                vm.pagesDialog = {
+                    op: op, pages: String(vm.currentPage), at: vm.currentPage,
+                    position: op === 'move' ? 'before' : 'after', degrees: String(degrees || 90),
+                    count: 1, size: 'a4', orientation: 'portrait', file: null, filePages: '', error: '', busy: false
+                };
+                $timeout(function () {
+                    var input = $document[0].getElementById(op === 'blank' || op === 'insert' ? 'pages-at-input' : 'pages-input');
+                    if (input) { input.focus(); input.select(); }
+                });
+            };
+
+            vm.closePagesDialog = function () {
+                if (vm.pagesDialog && !vm.pagesDialog.busy) { vm.pagesDialog = null; }
+            };
+
+            /** The file to insert / replace with: a File on the web, a picked { id, name } on desktop. */
+            vm.setPagesFile = function (file) {
+                var d = vm.pagesDialog;
+                if (!d) { return; }
+                var problem = pdfService.validateFile(file);
+                d.error = problem || '';
+                d.file = problem ? null : file;
+            };
+
+            vm.pickPagesFile = function () {
+                var d = vm.pagesDialog;
+                toolsService.pickDesktopFiles().then(function (files) {
+                    if (d === vm.pagesDialog && files.length) {
+                        d.file = files[0];
+                        d.error = '';
+                    }
+                });
+            };
+
+            /** Where pages go (blank, insert, move): before this page number; pageCount + 1 is the end. */
+            function insertionPoint(d) {
+                if (d.position === 'start') { return 1; }
+                if (d.position === 'end') { return vm.pageCount + 1; }
+                var at = Number(d.at);
+                if (!Number.isInteger(at) || at < 1 || at > vm.pageCount) { return null; }
+                return d.position === 'before' ? at : at + 1;
+            }
+
+            vm.applyPagesDialog = function () {
+                var d = vm.pagesDialog;
+                if (!d || d.busy) { return; }
+                var op = d.op, o = { degrees: Number(d.degrees) };
+                d.error = '';
+
+                if (op !== 'blank' && op !== 'insert') {
+                    var parsed = pagesService.parsePages(d.pages, vm.pageCount);
+                    if (parsed.error) { d.error = parsed.error; return; }
+                    o.pages = parsed.pages;
+                }
+                if (op === 'blank' || op === 'insert' || op === 'move') {
+                    o.before = insertionPoint(d);
+                    if (o.before === null) { d.error = 'Enter a page number from 1 to ' + vm.pageCount + '.'; return; }
+                }
+                if (op === 'blank') {
+                    o.count = Number(d.count);
+                    if (!Number.isInteger(o.count) || o.count < 1 || o.count > 1000) { d.error = 'Enter a number of pages from 1 to 1000.'; return; }
+                    var size = pageSize(d.size, d.orientation);
+                    o.width = size.width;
+                    o.height = size.height;
+                }
+                if (op === 'insert' || op === 'replace') {
+                    if (!d.file) { d.error = 'Choose the PDF to take the pages from.'; return; }
+                    if (String(d.filePages || '').trim()) {
+                        var fromFile = pagesService.parsePages(d.filePages, 100000);
+                        if (fromFile.error) { d.error = fromFile.error.replace('outside pages 1 to 100000', 'not valid'); return; }
+                        o.filePages = fromFile.pages;
+                    }
+                }
+
+                var built = pagesService.layoutFor(op, vm.pageCount, o);
+                if (built.error) { d.error = built.error; return; }
+
+                if (op === 'extract') {
+                    d.busy = true;
+                    toolsService.extractPages(vm.source, vm.fileName, built.layout).then(function (message) {
+                        vm.status = message || 'Not saved.';
+                        vm.pagesDialog = null;
+                    }, function (message) {
+                        d.error = typeof message === 'string' ? message : 'Unable to extract the pages.';
+                    }).finally(function () { d.busy = false; });
+                    return;
+                }
+                editPages(d, op, o, built.layout);
+            };
+
+            var EDIT_DONE = {
+                blank: function (n) { return 'Inserted ' + n + ' blank page' + (n === 1 ? '' : 's') + '.'; },
+                insert: function (n) { return 'Inserted ' + n + ' page' + (n === 1 ? '' : 's') + '.'; },
+                delete: function (n) { return 'Deleted ' + n + ' page' + (n === 1 ? '' : 's') + '.'; },
+                duplicate: function (n) { return 'Duplicated ' + n + ' page' + (n === 1 ? '' : 's') + '.'; },
+                move: function (n) { return 'Moved ' + n + ' page' + (n === 1 ? '' : 's') + '.'; },
+                rotate: function (n) { return 'Rotated ' + n + ' page' + (n === 1 ? '' : 's') + '.'; },
+                replace: function (n) { return 'Replaced ' + n + ' page' + (n === 1 ? '' : 's') + '.'; }
+            };
+
+            /** Runs a page edit, then shows the result with the markups and scales moved along with their pages. */
+            function editPages(d, op, o, layout) {
+                // Markups on pages that turn need the page size to turn with them.
+                var sizes = {}, marked = {};
+                vm.highlights.forEach(function (m) { marked[m.pageNumber] = true; });
+                var turning = layout.filter(function (spec) { return spec.source === 0 && spec.rotate && marked[spec.page]; });
+                var markupCount = vm.highlights.length;
+
+                d.busy = true;
+                vm.busy = true;
+                vm.error = '';
+                vm.status = 'Changing the pages…';
+                $q.all(turning.map(function (spec) {
+                    return pdfService.getPageSize(spec.page).then(function (size) { sizes[spec.page] = size; });
+                })).then(function () {
+                    return pagesService.apply(vm.source, vm.fileName, layout, d.file);
+                }).then(function (result) {
+                    var load = vm.isDesktop ? pdfService.loadLocal(result) : pdfService.load(VIEWER_CONFIG.apiBase + '/' + result.id);
+                    return load.then(function (pageCount) {
+                        if (!vm.isDesktop) { vm.source = { kind: 'web', id: result.id }; }
+                        var map = pagesService.pageMap(layout, pageCount);
+                        moveMarkups(map, sizes);
+                        scaleService.remap(map.map(function (entry) { return entry.page; }));
+                        if (compareService.isOpen()) { vm.closeCompare(); }
+                        vm.pageCount = pageCount;
+                        vm.modified = true;
+                        vm.selectedHighlightId = null;
+                        vm.docVersion++;
+                        vm.pagesDialog = null;
+                        goToPage(focusPage(op, o, map, pageCount));
+                        var lost = markupCount - vm.highlights.length;
+                        var changed = op === 'blank' ? o.count : op === 'insert' ? pageCount - countDocPages(layout) : o.pages.length;
+                        vm.status = statusAfterRender = EDIT_DONE[op](changed) +
+                            (lost > 0 ? ' ' + lost + ' markup' + (lost === 1 ? ' was' : 's were') + ' on deleted pages.' : '') +
+                            ' Save to keep the changes.';
+                    });
+                }).catch(function (message) {
+                    var text = typeof message === 'string' ? message : 'Unable to change the pages.';
+                    if (vm.pagesDialog === d) { d.error = text; } else { showError(text); }
+                    vm.status = text;
+                }).finally(function () {
+                    d.busy = false;
+                    vm.busy = false;
+                });
+            }
+
+            function countDocPages(layout) {
+                return layout.filter(function (spec) { return spec.source === 0; }).length;
+            }
+
+            /** Markups follow their page; a duplicated page gets copies; a page that turns turns its markups. */
+            function moveMarkups(map, sizes) {
+                var byPage = {};
+                vm.highlights.forEach(function (m) { (byPage[m.pageNumber] = byPage[m.pageNumber] || []).push(m); });
+                var placements = [];
+                map.forEach(function (entry, i) {
+                    (entry.page ? byPage[entry.page] || [] : []).forEach(function (m) {
+                        var size = sizes[entry.page];
+                        placements.push({ from: m, pageNumber: i + 1,
+                                          fields: entry.rotate && size ? markupGeometry.rotate(m, entry.rotate / 90, size.width, size.height) : {} });
+                    });
+                });
+                highlightService.rearrange(placements);
+            }
+
+            /** The page to show after an edit: the first page added, moved, copied or turned. */
+            function focusPage(op, o, map, pageCount) {
+                var index = -1;
+                if (op === 'blank' || op === 'insert' || op === 'replace') {
+                    index = map.findIndex(function (entry) { return entry.page === null; });
+                } else if (op === 'duplicate') {
+                    index = map.findIndex(function (entry, i) { return entry.page === o.pages[0] && i > 0 && map[i - 1].page === o.pages[0]; });
+                } else if (op === 'move' || op === 'rotate') {
+                    index = map.findIndex(function (entry) { return entry.page === o.pages[0]; });
+                } else if (op === 'delete') {
+                    return Math.min(o.pages[0], pageCount);
+                }
+                return index >= 0 ? index + 1 : Math.min(vm.currentPage, pageCount);
+            }
+
             // ----- Ribbon: tool categories in the toolbar -----
             vm.ribbonTabs = [
-                { id: 'file', label: 'File' }, { id: 'zoom', label: 'Zoom' },
+                { id: 'file', label: 'File' }, { id: 'pages', label: 'Pages' }, { id: 'zoom', label: 'Zoom' },
                 { id: 'navigation', label: 'Navigation' }, { id: 'markup', label: 'Markup' },
                 { id: 'measure', label: 'Measure' }, { id: 'review', label: 'Review' }, { id: 'revision', label: 'Revision' }
             ];
@@ -1023,8 +1350,13 @@
             };
 
             // ----- Status and errors -----
+            var statusAfterRender = null;   // kept when the page renders (the result of a page edit)
+
             vm.onPageRendered = function () {
-                if (vm.tool === 'pan') {
+                if (statusAfterRender) {
+                    vm.status = statusAfterRender;
+                    statusAfterRender = null;
+                } else if (vm.tool === 'pan') {
                     vm.status = pageStatus();
                 }
             };
@@ -1062,8 +1394,11 @@
                 var command = null;
                 if (key === 'o') {
                     command = vm.chooseFile;
+                } else if (key === 's' && event.shiftKey) {
+                    command = function () { vm.save(true); };
                 } else if (key === 's') {
-                    command = function () { $scope.$broadcast('save-copy'); };
+                    // Save the page changes; without any, a copy with the markups as before.
+                    command = vm.modified ? function () { vm.save(false); } : function () { $scope.$broadcast('save-copy'); };
                 } else if (vm.hasDocument() && (key === '=' || key === '+')) {
                     command = vm.zoomIn;
                 } else if (vm.hasDocument() && key === '-') {
