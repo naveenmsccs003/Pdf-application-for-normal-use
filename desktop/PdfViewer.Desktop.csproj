@@ -8,6 +8,16 @@
     <RootNamespace>PdfViewer.Desktop</RootNamespace>
     <AssemblyName>NaveenPdfEditor</AssemblyName>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Name, version and publisher shown in Windows (file Properties > Details, Apps list) and the installer. -->
+    <Product>Naveen PDF Editor</Product>
+    <Company>Naveen</Company>
+    <Authors>Naveen</Authors>
+    <Copyright>Copyright © 2026 Naveen</Copyright>
+    <Description>Naveen PDF Editor</Description>
+    <Version>1.0.0</Version>
+    <AssemblyTitle>Naveen PDF Editor</AssemblyTitle>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- No console window on Windows. -->
     <OutputType Condition="'$(RuntimeIdentifier)' != '' And $(RuntimeIdentifier.StartsWith('win'))">WinExe</OutputType>
   </PropertyGroup>
@@ -15,6 +25,12 @@
   <!-- Same AngularJS frontend as the web version, served from the app folder. -->
   <ItemGroup>
     <Content Include="..\frontend\**\*" LinkBase="wwwroot" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Window icon (Windows: .ico, Linux: .png) and the licences of the bundled libraries. -->
+  <ItemGroup>
+    <Content Include="Assets\app.ico;Assets\app.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\THIRD-PARTY-NOTICES.txt" Link="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

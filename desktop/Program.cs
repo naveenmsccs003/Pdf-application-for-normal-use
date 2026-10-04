@@ -37,6 +37,7 @@ public static class Program
 
         var window = new PhotinoWindow()
             .SetTitle("Naveen PDF Editor")
+            .SetIconFile(Path.Combine(AppContext.BaseDirectory, "Assets", OperatingSystem.IsWindows() ? "app.ico" : "app.png"))
             .SetUseOsDefaultSize(false)
             .SetSize(1280, 860)
             .SetMinSize(640, 480)

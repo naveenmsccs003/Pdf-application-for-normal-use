@@ -36,15 +36,33 @@ dotnet run                      # or: dotnet run -- /path/to/file.pdf
 Linux needs WebKitGTK 4.1 (`sudo apt install libwebkit2gtk-4.1-0`, already present on Ubuntu desktops).
 Windows 10/11 already include the required WebView2 runtime.
 
-Build a standalone app folder (includes .NET, no install needed on the target PC):
+### Windows installer
 
-```bash
-cd desktop
-dotnet publish -c Release -r win-x64   --self-contained -o ../dist/NaveenPdfEditor-win-x64     # Windows: NaveenPdfEditor.exe
-dotnet publish -c Release -r linux-x64 --self-contained -o ../dist/NaveenPdfEditor-linux-x64   # Linux: ./NaveenPdfEditor
-```
+`NaveenPdfEditor-Setup-<version>.exe` installs the app like any Windows program: Start menu entry, optional desktop
+shortcut, **Open with > Naveen PDF Editor** for PDF files, and **Uninstall** in Settings > Apps. It includes .NET, so
+nothing else is needed (Windows 10/11 already have the WebView2 runtime the window uses; the installer checks).
 
-Copy the whole folder to the target computer and run `NaveenPdfEditor.exe` / `NaveenPdfEditor`.
+- **From GitHub**: every push to `main` that changes the app builds the installer on a Windows machine
+  (`.github/workflows/windows-installer.yml`); download it from the run's *Artifacts* on the Actions tab. Pushing a
+  version tag (`git tag v1.0.0 && git push origin v1.0.0`) also attaches it to a GitHub release.
+- **On a Windows PC**: install [Inno Setup 6](https://jrsoftware.org/isinfo.php) (free), then from the repository
+  root:
+
+  ```bash
+  dotnet publish desktop -c Release -r win-x64 --self-contained -o dist/NaveenPdfEditor-win-x64
+  "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\NaveenPdfEditor.iss
+  ```
+
+  The installer is written to `dist\`.
+
+The version (shown in the installer, Settings > Apps and the file's Properties) is `<Version>` in
+`desktop/PdfViewer.Desktop.csproj`; raise it for each release so the installer upgrades the old one. The installer is
+not code-signed, so Windows may show "Windows protected your PC" when it is downloaded: click **More info > Run
+anyway**. Signing it needs a paid code-signing certificate.
+
+Without an installer, the published folder also runs as it is (copy it and start `NaveenPdfEditor.exe`, or
+`./NaveenPdfEditor` for a `linux-x64` build). The licences of the bundled libraries are in `THIRD-PARTY-NOTICES.txt`,
+which is copied next to the app.
 
 ### Large file limits (desktop)
 
@@ -490,7 +508,10 @@ shared/PdfViewer.Tools/          PDF tools used by both apps
   PageEditor.cs                   blank PDFs; rebuild a document's pages (delete, insert, move, copy, rotate, replace)
   Pdfium.cs                       shared PDFium lock, open and save helpers
   PngEncoder.cs                   small PNG writer
+installer/NaveenPdfEditor.iss     Windows installer (Inno Setup)
+THIRD-PARTY-NOTICES.txt          licences of the bundled libraries
 desktop/
+  Assets/                         app icon (.ico for Windows, .png for Linux)
   Program.cs                      starts the local server (127.0.0.1, random port) and the native window
   DesktopBridge.cs                messages between UI and host: open, close, recent files, tools, pages, save
   DesktopTools.cs                 tools, page edits, New and Save on disk with native save / folder dialogs
